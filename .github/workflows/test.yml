@@ -1,0 +1,36 @@
+name: test
+
+# Esegue la suite a ogni push e su ogni pull request: una regressione va
+# scoperta subito, non alla ripresa del lavoro dopo settimane.
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    # config.py verifica queste variabili all'import e fallisce se mancano
+    # (fail-fast voluto). Il file .env non e' versionato, quindi in CI si
+    # forniscono valori fittizi: i test usano un client finto e non
+    # contattano mai un modello reale, percio' non serve alcun segreto.
+    env:
+      ORC2_BASE_URL: http://localhost:4000
+      ORC2_API_KEY: chiave-fittizia-ci
+      ORC2_MODEL: modello-finto
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Stessa versione dell'ambiente di sviluppo locale: se i test
+          # passano qui, passano anche sulla macchina di sviluppo.
+          python-version: "3.14"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Esegui i test
+        run: pytest -q
