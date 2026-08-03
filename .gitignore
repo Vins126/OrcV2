@@ -1,0 +1,18 @@
+# Ambiente e dipendenze
+venv/
+__pycache__/
+*.pyc
+
+# Segreti
+.env
+
+# Configurazione locale IDE / editor
+.idea/
+.vscode/
+
+# Cache degli strumenti
+.pytest_cache/
+.claude/
+
+# Output di esecuzione dell'agente
+workspace/
