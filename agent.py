@@ -338,7 +338,6 @@ def _configura_logging():
     # Zittisco i log troppo verbosi delle librerie di terze parti
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-
 if __name__ == "__main__":
     # Punto d'ingresso manuale: compone le dipendenze concrete (client reale,
     # modello da configurazione, tool con sandbox) e lancia un task di prova che

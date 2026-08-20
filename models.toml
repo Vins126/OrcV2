@@ -1,0 +1,163 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Registro dei modelli disponibili al sistema ORC
+#
+#  Questo file e' CONFIGURAZIONE, non codice: aggiungere un modello, cambiare
+#  un prezzo o introdurre una nuova capacita' non deve mai richiedere di
+#  modificare Python (decisione D9 del PIANO_completo.md).
+#
+#  Riferimenti: PIANO_completo.md §3.11 (tassonomia delle capacita' e unita'
+#  di fatturazione multiple) e §3.12 (costo marginale vs costo fisso).
+#
+#  I prezzi vanno trascritti ESATTAMENTE come li espone il fornitore: la
+#  sezione [units] qui sotto dice al contabile a quante unita' si riferiscono.
+#  Prezzi verificati ad agosto 2026 — vanno riverificati periodicamente.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  BASI DI PREZZO
+#
+#  Per ogni unita' di consumo, a quante unita' si riferisce il prezzo scritto
+#  nella sezione [models]. Serve perche' i fornitori usano scale diverse: i
+#  token si quotano per milione, le immagini per singolo pezzo.
+#
+#  Il contabile applica una sola formula, valida per tutte le unita':
+#
+#      costo = quantita' / base * prezzo
+#
+#  Esempi:  350 token input  -> 350 / 1_000_000 * 5.00 = $0.00175
+#             3 immagini     ->   3 / 1         * 0.003 = $0.009
+#            25 crediti      ->  25 / 1         * 0.01  = $0.25
+#
+#  Aggiungere qui una riga e' l'unico passo necessario per supportare una
+#  nuova unita' di fatturazione.
+# ───────────────────────────────────────────────────────────────────────────
+[units]
+input_tokens        = 1_000_000   # prezzi per milione di token
+output_tokens       = 1_000_000
+cached_input_tokens = 1_000_000   # token di input serviti dalla cache
+character           = 1_000_000   # sintesi vocale (TTS)
+image               = 1           # per immagine generata
+video_second        = 1           # per secondo di video
+credit              = 1           # servizi a crediti (es. generazione 3D)
+audio_minute        = 1           # trascrizione (STT)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  COSTI DI ACCESSO  (decisione D12)
+#
+#  Costi fissi ricorrenti per fornitore. NON entrano nel calcolo del costo
+#  per chiamata: sono costi affondati, non variano in base alle decisioni del
+#  router e non devono quindi influenzarne le scelte. Vanno pero' dichiarati
+#  a parte nel capitolo sperimentale, altrimenti il costo complessivo del
+#  sistema risulterebbe sottostimato.
+#
+#  A parita' di capacita' si preferisce il fornitore con fatturazione
+#  marginale: l'abbonamento rende il costo unitario dipendente dal tasso di
+#  utilizzo mensile, quindi non riproducibile fra esecuzioni.
+# ───────────────────────────────────────────────────────────────────────────
+[providers.anthropic]
+monthly_fee = 0.0
+
+[providers.moonshot]
+monthly_fee = 0.0
+
+[providers.minimax]
+monthly_fee = 0.0
+
+[providers.openai]
+monthly_fee = 0.0
+
+[providers.tripo]
+monthly_fee = 0.0   # pay-as-you-go: nessun abbonamento richiesto
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  MODELLI
+#
+#  capabilities — nomi leggibili, mappati sulla tassonomia di §3.11:
+#      reasoning (C1)     pianificazione, decomposizione
+#      code      (C2)     generazione di codice (include SVG, che e' codice)
+#      text      (C3)     scrittura di contenuti
+#      vision_input (C4)  lettura di immagini: mockup, screenshot
+#      image_gen (C5)     generazione di immagini raster
+#      video_gen (C7)     generazione di video
+#      model_3d  (C8)     generazione di asset 3D
+#      tts       (C9)     sintesi vocale
+#      stt       (C10)    trascrizione
+#      embedding (C11)    vettori per RAG e per il router stesso
+#      rerank    (C12)    riordino per rilevanza
+#
+#  Il filtro per capacita' PRECEDE quello sul costo: un modello privo della
+#  capacita' richiesta non e' confrontabile sul prezzo, per quanto economico.
+#
+#  prices — solo le unita' pertinenti al modello. Un'unita' assente significa
+#  che il modello non offre quel tipo di consumo.
+# ───────────────────────────────────────────────────────────────────────────
+
+# --- Fascia frontier: planner, escalation finale, giudice ---
+
+[models.opus-5]
+provider     = "anthropic"
+capabilities = ["reasoning", "code", "text", "vision_input"]
+prices       = { input_tokens = 5.00, output_tokens = 25.00 }
+
+# --- Fascia media: worker su sotto-task complessi ---
+
+[models.kimi-k3]
+provider     = "moonshot"
+capabilities = ["reasoning", "code", "text"]
+prices       = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens = 0.30 }
+
+# --- Fascia economica: worker standard ---
+# SWE-Pro 56.2%, Terminal Bench 2 57.0%. Scelto al posto di alternative piu'
+# economiche ma deboli sul coding: un modello che fallisce costa piu' di uno
+# mediocre che completa, perche' si pagano le iterazioni sprecate e la
+# successiva escalation.
+
+[models.minimax-m2-7]
+provider     = "minimax"
+capabilities = ["reasoning", "code", "text"]
+prices       = { input_tokens = 0.24, output_tokens = 0.96, cached_input_tokens = 0.06 }
+
+# --- Infrastruttura: embedding per RAG e per il router appreso (S3) ---
+
+[models.text-embedding-3-small]
+provider     = "openai"
+capabilities = ["embedding"]
+prices       = { input_tokens = 0.02 }
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  CAPACITA' NON TESTUALI — esempi disattivati
+#
+#  Servono alla demo multi-capacita' (M4), non alla campagna sperimentale di
+#  M7, che resta focalizzata su codice e frontend (decisione D11). Sono qui
+#  come riferimento: attivarli richiede solo di togliere i commenti e
+#  verificare i prezzi correnti.
+# ───────────────────────────────────────────────────────────────────────────
+
+# [models.gemini-3-flash]           # vision input per il giudice su screenshot
+# provider     = "google"
+# capabilities = ["reasoning", "code", "text", "vision_input"]
+# prices       = { input_tokens = 0.50, output_tokens = 3.00 }
+
+# [models.flux-schnell]             # immagini, fascia ultra-economica
+# provider     = "fal"
+# capabilities = ["image_gen"]
+# prices       = { image = 0.003 }
+
+# [models.imagen-4-fast]            # immagini, fascia economica
+# provider     = "google"
+# capabilities = ["image_gen"]
+# prices       = { image = 0.02 }
+
+# [models.veo-3-1-lite]             # video 720p, senza audio nativo
+# provider     = "google"
+# capabilities = ["video_gen"]
+# prices       = { video_second = 0.03 }
+
+# [models.tripo]                    # 3D, pay-as-you-go (~20-30 crediti per
+# provider     = "tripo"            # modello completo => ~$0.20-0.30)
+# capabilities = ["model_3d"]       # I crediti effettivi vanno MISURATI sui
+# prices       = { credit = 0.01 }  # 300 crediti gratuiti, non stimati.
