@@ -6,6 +6,65 @@
 
 ---
 
+## 0. Roadmap esecutiva e confini di responsabilita'
+
+Un mapper **non** rende una capacita' disponibile: una capacita' e' completa
+solo quando il sistema puo' invocarla, conservare il risultato, misurarne il
+costo ed esporla al controller nel formato utile al task.
+
+### M2a — Osservabilita' dei costi (baseline mono-modello)
+
+| Milestone | Stato | Criterio di completamento |
+|---|---|---|
+| M2a.1 — Listino | completata | `ModelRegistry` valida provider, modelli, capacita', basi e prezzi da `models.toml`. |
+| M2a.2 — Dominio accounting | completata | `UsageRecord`, `Accountant` e `InMemoryAccountant` calcolano e conservano il costo di ogni unita'. |
+| M2a.3 — Accounting alla frontiera LLM | completata per chat | Gateway chat riceve la risposta completa, il mapper crea il record e il contabile lo registra. Retry solo per errori di rete; usage assente non equivale a costo zero. |
+| **M2a.4 — Ledger persistente per run** | **completata** | `run_id`, inizio/fine, durata e stato della run; record append-only JSONL, eventi sanitizzati e `summary.json` con totale, chiamate e breakdown per modello/operazione. Scrittura atomica, `schema_version`, nessun segreto o prompt completo nei log per default. |
+| M2a.5 — Budget guard | completata | Budget USD opzionale per singola run, soglia morbida derivata all'80%, log/evento senza prompt injection e stop pulito prima della prossima chiamata; sforamento residuo documentato. |
+| M2a.6 — Report di fine task | completata | Report umano e macchina per ogni esito: durata, iterazioni, quantita', costo, motivazione di fine e riferimento al ledger. |
+
+La baseline e' pronta solo quando lo stesso task, eseguito su un modello
+configurato, lascia un dataset persistente con costo, latenza, esito e contesto
+minimo di attribuzione. I record soltanto in RAM non alimentano il flywheel.
+
+### M2b — Routing e dataset comparativo
+
+1. Filtro capability-aware prima del confronto costo/qualita'.
+2. Harness: stesso task su piu' modelli/configurazioni, una run confrontabile per modello.
+3. Metriche: build/test/lint; Lighthouse/axe e screenshot; costo, latenza, esito autonomo.
+4. Cascade cheap-first con escalation condizionata alla qualita'.
+5. Dataset che collega task/sotto-task, modello, capacita', costo, metriche e preferenze pairwise.
+
+### M4 — Capacita' non testuali: piano esplicito
+
+I mapper gia' presenti sono solo il primo strato; non attivano endpoint.
+
+| Capacita' | Componenti necessari | Criterio di completamento |
+|---|---|---|
+| `vision_input` | Input chat multimodale, riferimento file/URL, gateway e listino token input. | Screenshot analizzabile e consumo reale registrato. |
+| `image_gen` | `GenerateImageTool`, gateway, storage asset, mapper, modello/prezzi attivi, gestione safety/failure. | Tool call -> immagine recuperabile + record persistito. |
+| `video_gen` | Tool, gateway submit/poll/retrieve, `job_id` persistito, resume, idempotency key, storage e mapper terminale. | `queued` non costa; `completed` produce asset e un solo record. |
+| `model_3d` | Tool, gateway, job asincrono se necessario, storage asset, unita' `credit`, listino e mapper. | Asset 3D e crediti effettivi tracciati. |
+| `tts` | Tool, gateway audio, storage, formato/voce e contabilita' a caratteri. | Testo -> file audio + record fatturato. |
+| `stt` | Upload/file-reference, gateway trascrizione, transcript, durata/usage provider. | Audio -> transcript + record fatturato. |
+| `embedding` | Servizio RAG: chunking, vector store, upsert/query, gateway e accounting. | Indicizzazione/query misurate e valutabili. |
+| `rerank` | Stadio retrieval, contratto query-documenti-risultati, gateway/listino e metriche ranking. | Reranking invocabile, misurato e valutabile. |
+
+Ogni capacita' M4 richiede: contratto richiesta/risposta, gateway provider,
+mapper usage, prezzi verificati, persistenza dell'asset o job e test con
+fixture. Video e spesso 3D richiedono anche stati terminali, polling/resume e
+idempotenza: senza questi un riavvio puo' duplicare la spesa.
+
+### Assunzioni da non lasciare implicite
+
+- Il record deve essere correlabile a run, task/sotto-task e, in futuro, worker.
+- Modello e unita' senza prezzo sono errori visibili, mai costo zero silenzioso.
+- Un asset non e' una URL temporanea: va salvato o referenziato stabilmente.
+- Errori di rete, safety refusal e job incompleti sono eventi di run, non consumi riusciti.
+- I log non contengono API key, contenuto sensibile o prompt completi per default.
+
+---
+
 ## 1. Il problema e l'obiettivo della tesi
 
 Oggi ogni task va su **un modello fisso** = **baseline mono-modello** (il termine di paragone).
@@ -326,4 +385,3 @@ SE open-ended, swarm su artefatto condiviso, modelli commerciali eterogenei, val
 
 ⚠️ **Punto critico:** la **valutazione open-ended** è dove la difesa sarà più dura — è esattamente
 ciò che OI-MAS evita usando task verificabili. È il capitolo più rischioso e più importante.
-

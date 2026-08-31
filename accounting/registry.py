@@ -25,6 +25,7 @@ Nota di design (tesi):
 """
 
 import tomllib
+from math import isfinite
 
 from accounting.errors import MalformedRegistry, ModelNotFound, UnitNotFound
 
@@ -127,6 +128,8 @@ class ModelRegistry:
             ModelNotFound: se il modello non e' a registro.
             UnitNotFound: se il modello non espone un prezzo per quell'unita'.
         """
+        if not self._is_finite_number(quantity) or quantity < 0:
+            raise ValueError(f"quantita' non valida per '{unit}': {quantity}")
         prezzi = self._modello(model).get("prices", {})
         if unit not in prezzi:
             raise UnitNotFound(
@@ -211,7 +214,7 @@ class ModelRegistry:
                 del modello e del campo responsabili.
         """
         for base in self.units.values():
-            if base <= 0:
+            if not self._is_finite_number(base) or base <= 0:
                 raise MalformedRegistry(
                     f"le basi in [units] devono essere positive, trovato {base}"
                 )
@@ -245,7 +248,16 @@ class ModelRegistry:
                         f"[units], quindi manca la base con cui calcolare il costo. "
                         f"Dichiarate: {self._elenca(self.units)}"
                     )
-                if prezzo < 0:
+                if not self._is_finite_number(prezzo) or prezzo < 0:
                     raise MalformedRegistry(
                         f"modello '{nome}': prezzo negativo per '{unita}' ({prezzo})"
                     )
+
+    @staticmethod
+    def _is_finite_number(value: object) -> bool:
+        """Accetta solo numeri reali finiti, escludendo booleani mascherati da int."""
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and isfinite(value)
+        )

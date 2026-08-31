@@ -5,13 +5,14 @@ tutti importano da qui. Oltre alla pulizia, il motivo è sperimentale — queste
 costanti sono le variabili degli esperimenti della tesi, e averle in un solo
 punto rende le esecuzioni riproducibili e confrontabili.
 
-I segreti vivono nel file `.env` (non versionato), caricato all'import.
+I segreti vivono nel file `.env` (non versionato), caricato solo dal punto di
+ingresso tramite `load_llm_settings`.
 """
 
 import os
+from dataclasses import dataclass
+from pathlib import Path
 from dotenv import load_dotenv
-
-load_dotenv()
 
 def richiedi_env(nome: str) -> str:
     """Legge una variabile d'ambiente obbligatoria, fallendo subito se manca.
@@ -34,34 +35,54 @@ def richiedi_env(nome: str) -> str:
         raise RuntimeError(f"Variabile d'ambiente mancante: {nome}")
     return valore
 
-# --CONNESSIONE LLM --
-# Puntano a un proxy compatibile con l'API OpenAI (es. LiteLLM): è il punto di
-# indirezione che in M2 permetterà di cambiare o aggiungere modelli senza
-# toccare il codice dell'agente.
-ORC2_BASE_URL = richiedi_env("ORC2_BASE_URL")
-ORC2_API_KEY = richiedi_env("ORC2_API_KEY")
-ORC2_MODEL = richiedi_env("ORC2_MODEL")
+@dataclass(frozen=True)
+class LLMSettings:
+    """Dati di connessione caricati solo dal punto d'ingresso dell'applicazione."""
+
+    base_url: str
+    api_key: str
+    model: str
+    api_provider: str
+    billing_provider: str
 
 
-# --- COMPORTAMENTO AGENTE --
-MAX_ITERAZIONI = 30   # Tetto ai passi ReAct: garantisce la terminazione e limita il costo
-RETRY_MAX = 3         # Tentativi prima di dichiarare l'LLM irraggiungibile
-RETRY_DELAY = 2       # Base del backoff esponenziale: attese di 2^0, 2^1, 2^2 = 1s, 2s, 4s
+def load_llm_settings(
+    *, model_override: str | None = None, dotenv_path: str | Path | None = None
+) -> LLMSettings:
+    """Carica i segreti al runtime, non durante l'import dei moduli.
+
+    Separare il caricamento dall'import rende possibile usare `Agent`, i test e
+    gli strumenti di sviluppo senza avere un `.env` locale o una API key.
+    """
+    load_dotenv(dotenv_path=dotenv_path)
+    return LLMSettings(
+        base_url=richiedi_env("ORC2_BASE_URL"),
+        api_key=richiedi_env("ORC2_API_KEY"),
+        model=model_override or richiedi_env("ORC2_MODEL"),
+        api_provider=os.getenv("ORC2_API_PROVIDER", "litellm"),
+        billing_provider=os.getenv("ORC2_BILLING_PROVIDER", "openrouter"),
+    )
+
+
+# --- COMPORTAMENTO AGENTE ---
+MAX_ITERAZIONI = 30
+RETRY_MAX = 3
+RETRY_DELAY = 2
 
 # -- LOOP DETECTION --
 # Due soglie per una escalation graduale "prima avvisa, poi ferma": alla 4ª
 # ripetizione identica il modello riceve un richiamo e può ancora correggersi,
 # alla 7ª il task viene interrotto.
-LOOP_THRESHOLD = 7    # Ripetizioni identiche che causano l'arresto (FERMA)
-ALERT_THRESHOLD = 4   # Ripetizioni identiche che causano l'avviso (AVVISA)
+LOOP_THRESHOLD = 7
+ALERT_THRESHOLD = 4
 
 # -- SANDBOX DOCKER --
 # Limiti del container in cui gira il tool `bash`, per contenere i danni di un
 # comando sbagliato o malevolo.
 DOCKER_IMAGE = "debian:bookworm-slim"
 DOCKER_MEMORY = "512m"
-DOCKER_PIDS_LIMIT = "256"   # Anti fork-bomb
-EXEC_TIMEOUT = 60           # Secondi oltre i quali un comando è considerato bloccato
+DOCKER_PIDS_LIMIT = "256"
+EXEC_TIMEOUT = 60
 
 # -- LOGGING --
 # Unica costante con default: il livello di log è comodità di sviluppo, non

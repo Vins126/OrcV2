@@ -42,3 +42,14 @@ class UnitNotFound(RegistryError):
     diversa: il modello esiste, ma non fattura quel tipo di consumo (chiedere
     il prezzo per immagine a un modello di solo testo, per esempio).
     """
+
+class UnpricedUsage(RegistryError):
+    """Il consumo non ha una misura sufficientemente affidabile per il prezzo.
+
+    Non equivale a un consumo gratuito: il provider non ha restituito l'usage
+    necessario per calcolarne il costo in modo riproducibile.
+    """
+
+
+class InvalidUsage(ValueError):
+    """Un UsageRecord contiene quantita' non valide per la contabilita'."""

@@ -18,9 +18,9 @@ from workspace import Workspace
 
 def test_resolve_path_valido(tmp_path):
     """Un percorso relativo interno viene risolto senza errori."""
-    ws = Workspace(str(tmp_path))               #Cartella temporanea
-    risolto = ws.resolve("file.txt")            #Testo metodo
-    assert risolto.endswith("file.txt")         #Se trovo nome corretto allroa funziona corretta
+    ws = Workspace(str(tmp_path))
+    risolto = ws.resolve("file.txt")
+    assert risolto.endswith("file.txt")
 
 
 def test_resolve_blocca_traversal(tmp_path):

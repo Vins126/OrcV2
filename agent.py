@@ -1,51 +1,19 @@
-"""Agente ReAct: il nucleo esecutivo del sistema ORC.
+"""Nucleo ReAct: decide, invoca tool e restituisce un esito strutturato.
 
-Implementa l'unità atomica dell'architettura — un modello linguistico chiuso in
-un ciclo che gli permette di usare strumenti e di osservarne i risultati, fino a
-completare il compito assegnato.
-
-Il ciclo ReAct (Reason + Act):
-    1. il modello riceve la conversazione e decide;
-    2. se chiede uno o più tool, questi vengono eseguiti;
-    3. i risultati rientrano nella conversazione come *osservazioni*;
-    4. si torna al punto 1, con più informazione di prima.
-    Il ciclo termina quando il modello risponde a parole senza chiedere tool.
-
-Nota di design (tesi):
-    Questo modulo è il **milestone M1** e svolge due ruoli nel lavoro complessivo:
-
-    - è la **baseline mono-modello**, cioè il termine di paragone che la tesi
-      deve battere: un solo modello fisso, chiamato per ogni passo, senza alcuna
-      scelta di costo;
-    - è il **worker** dello swarm di M2: nell'architettura futura ogni agente
-      sarà un'istanza di questa classe con un modello diverso, assegnato dal
-      router. Per questo il modello non è cablato ma iniettato nel costruttore:
-      quel singolo parametro è il punto in cui il cost-routing si innesterà.
-
-    Un secondo principio attraversa tutto il file — gli **errori non
-    interrompono il ciclo, diventano osservazioni**. Un JSON malformato, un tool
-    inesistente, un comando fallito: tutto viene catturato e restituito al
-    modello come testo che lui può leggere. È la resilienza per auto-correzione,
-    e riproduce alla scala più piccola lo stesso schema "valuta e reagisci" che
-    in M2 governerà l'escalation di modello.
-
-Limite noto:
-    Il campo `usage` della risposta API (numero di token consumati) viene
-    attualmente scartato in `_chiama_llm`. È l'informazione da cui si ricava il
-    costo di ogni chiamata, e quindi il primo elemento da introdurre per la
-    contabilità dei costi prevista da M2.
+Questo modulo non conosce SDK, chiavi API, listini o filesystem di persistenza.
+Riceve un `ChatGateway` e tool gia' costruiti dal punto d'ingresso; per questo e'
+facile da testare e riutilizzare con provider o ruoli diversi.
 """
 
 import json
 import logging
-import time
-
-from openai import OpenAI
+from dataclasses import dataclass
 
 import config
 from alerts import Alerts
+from budget_guard import BudgetExceeded
+from llm_contracts import ChatGateway
 from loop_detector import RilevatoreLoop
-from tools import ALL_TOOLS
 
 # Un logger per modulo. Il nome segue la gerarchia dei moduli (__name__).
 log = logging.getLogger(__name__)
@@ -62,36 +30,73 @@ SYSTEM_PROMPT = (
 )
 
 
+class AgentFailure(Exception):
+    """Errore inatteso durante una run, con il conteggio delle iterazioni svolte.
+
+    Serve a non perdere un dato che esiste solo dentro il ciclo: quando
+    un'eccezione lo attraversa, il numero di iterazioni gia' compiute andrebbe
+    perduto e il ledger registrerebbe `iterations: 0` anche per una run che
+    aveva gia' lavorato e speso. Il conteggio viaggia quindi con l'eccezione
+    invece di stare in un attributo dell'agente: un attributo condiviso
+    sarebbe scorretto in M4, dove lo stesso agente puo' servire piu' run.
+
+    Attributes:
+        iterations: iterazioni completate prima del guasto.
+        cause_type: nome della classe dell'eccezione originale, da registrare
+            nel ledger al posto di questo involucro.
+    """
+
+    def __init__(self, iterations: int, cause: BaseException):
+        super().__init__(
+            f"run interrotta da {type(cause).__name__} "
+            f"all'iterazione {iterations}"
+        )
+        self.iterations = iterations
+        self.cause_type = type(cause).__name__
+
+
+@dataclass(frozen=True)
+class RunResult:
+    """Esito strutturato di una run dell'agente.
+
+    Il valore e' separato dai messaggi stampati perche' il chiamante (oggi il
+    ledger, domani l'orchestratore) deve poter registrare la fine della run
+    senza analizzare testo destinato a un essere umano.
+    """
+
+    status: str
+    iterations: int
+    final_message: str | None = None
+
+
 class Agent:
     """Modello linguistico in un ciclo ReAct, dotato di strumenti.
 
-    Le dipendenze (client, modello, tool) sono iniettate dall'esterno anziché
-    costruite internamente. Ne derivano due proprietà: la classe è testabile con
-    un client finto, senza chiamate di rete né costi; ed è riutilizzabile con
-    modelli e set di strumenti diversi, che è il presupposto dello swarm di M2.
+    Le dipendenze (gateway del modello, tool) sono iniettate dall'esterno
+    anziché costruite internamente. Ne derivano due proprietà: la classe è
+    testabile con un gateway finto, senza chiamate di rete né costi; ed è
+    riutilizzabile con modelli e set di strumenti diversi, che è il
+    presupposto del routing per ruolo (M2s) e dello swarm (M4).
 
     Attributes:
-        client: client compatibile con l'API OpenAI, già configurato.
-        model: identificatore del modello da interrogare.
+        llm: confine che invoca il modello, senza esporre SDK o prezzi.
         tools: strumenti messi a disposizione del modello.
         tool_schemas: descrizioni dei tool nel formato atteso dall'API.
         tool_registry: mappa nome→tool, per ritrovare lo strumento richiesto
             dal modello in tempo costante.
     """
 
-    def __init__(self, client, model, tools):
+    def __init__(self, llm: ChatGateway, tools):
         """Registra le dipendenze e precalcola le strutture di lookup.
 
         Schemi e registro sono costruiti una sola volta qui, non a ogni
         iterazione: sono invarianti per tutta la vita dell'agente.
 
         Args:
-            client: client dell'API (o un suo sostituto nei test).
-            model: nome del modello da usare per ogni chiamata.
+            llm: gateway del modello (o un suo sostituto nei test).
             tools: lista di istanze di `tools.base.Tool`.
         """
-        self.client = client
-        self.model = model
+        self.llm = llm
         self.tools = tools
         self.tool_schemas = [t.schema for t in tools]
         self.tool_registry = {t.name: t for t in tools}
@@ -117,20 +122,33 @@ class Agent:
 
         for iterazione in range(1, max_iterations + 1):
             log.debug("--- iterazione %d/%d ---", iterazione, max_iterations)
-            if not self._esegui_iterazione(messages, rilevatore, iterazione):
-                return
+            try:
+                status, final_message = self._esegui_iterazione(messages, rilevatore, iterazione)
+            except Exception as errore:
+                # Gli esiti previsti (budget, servizio giu') sono gia' gestiti
+                # dentro l'iterazione: qui arriva solo cio' che non era atteso.
+                # Non lo si nasconde — resta un difetto da correggere — ma gli
+                # si allega il numero di iterazioni, altrimenti perduto.
+                raise AgentFailure(iterazione, errore) from errore
+            if status is not None:
+                return RunResult(status=status, iterations=iterazione, final_message=final_message)
 
         log.error("Raggiunto il limite di %d iterazioni", max_iterations)
-        print(f"AGENTE: limite di {max_iterations} iterazioni raggiunto, mi fermo.")
+        return RunResult(
+            status="max_iterations", iterations=max_iterations,
+            final_message=f"Limite di {max_iterations} iterazioni raggiunto.",
+        )
 
-    def _esegui_iterazione(self, messages, rilevatore, iterazione) -> bool:
-        """Esegue un passo ReAct. Ritorna True se il task deve continuare, False se è concluso.
+    def _esegui_iterazione(
+        self, messages, rilevatore, iterazione
+    ) -> tuple[str | None, str | None]:
+        """Esegue un passo ReAct e restituisce l'esito terminale, se presente.
 
         Concentra le tre condizioni che possono chiudere un task — servizio
         irraggiungibile, compito completato, loop persistente — e altrimenti
         esegue i tool richiesti.
 
-        L'ordine delle operazioni non è arbitrario:
+       L'ordine delle operazioni non è arbitrario:
             - il controllo del loop precede l'esecuzione dei tool, per non pagare
               l'ennesima ripetizione di un'azione già riconosciuta come sterile;
             - l'eventuale avviso viene accodato *dopo* i risultati dei tool, così
@@ -145,28 +163,29 @@ class Agent:
             iterazione: numero del passo corrente, usato solo per il logging.
 
         Returns:
-            True se il ciclo deve proseguire, False se il task è terminato (per
-            completamento, per servizio non raggiungibile o per loop).
+            Una coppia ``(stato, messaggio)``. Lo stato e' ``None`` se il ciclo
+            deve proseguire; altrimenti il messaggio e' destinato al chiamante,
+            che decide come mostrarlo all'utente.
         """
         try:
             msg = self._chiama_llm(messages)
+        except BudgetExceeded:
+            log.warning("Interrompo il task: budget esaurito")
+            return "budget_exhausted", "Budget della run esaurito: nessuna nuova chiamata effettuata."
         except RuntimeError as e:
             log.error("Interrompo il task: %s", e)
-            print("AGENTE: Servizio LLM non raggiungibile. Riprova più tardi.")
-            return False
+            return "service_unavailable", "Servizio LLM non raggiungibile. Riprova più tardi."
 
         # L'AI non chiede tool -> ha finito
         if not msg.tool_calls:
             log.info("Task completato in %d iterazioni", iterazione)
-            print("AGENTE:", msg.content)
-            return False
+            return "completed", msg.content
 
         # Rilevo loop per evitare sprechi
         verdetto = rilevatore.in_loop_verdict(msg.tool_calls)
         if verdetto == Alerts.FERMA:
             log.error("Loop persistente (%d ripetizioni): interrompo", rilevatore.ripetizioni)
-            print("AGENTE: Loop persistente, non sono riuscito a risolvere il problema.")
-            return False
+            return "loop_detected", "Loop persistente: non sono riuscito a risolvere il problema."
 
         # L'AI chiede tool -> li eseguo
         messages.append(msg)
@@ -177,7 +196,7 @@ class Agent:
             log.warning("Possibile loop (%d ripetizioni): avviso il modello", rilevatore.ripetizioni)
             messages.append({"role": "user", "content": verdetto.avviso})
 
-        return True
+        return None, None
 
     def _messaggi_iniziali(self, task):
         """Costruisce la conversazione di partenza.
@@ -194,17 +213,10 @@ class Agent:
         ]
 
     def _chiama_llm(self, messages):
-        """Interroga il modello, riprovando con backoff esponenziale sui fallimenti.
+        """Chiede il messaggio successivo al gateway del modello.
 
-        L'intera conversazione viene rispedita a ogni chiamata: il modello non ha
-        memoria tra una richiesta e l'altra, e l'illusione di continuità è
-        prodotta interamente dal contenuto di `messages`. Ne segue che il costo di
-        un'iterazione cresce con la lunghezza della conversazione, e che il costo
-        totale di un task non è lineare nel numero di passi.
-
-        Il ritardo tra i tentativi è `RETRY_DELAY ** tentativo`, cioè 1s, 2s, 4s:
-        un servizio momentaneamente sovraccarico ha il tempo di riprendersi,
-        senza che l'attesa complessiva diventi eccessiva.
+        Il gateway incapsula SDK, retry, misurazione e accounting; qui resta
+        soltanto l'azione necessaria al ciclo ReAct.
 
         Args:
             messages: conversazione completa da inviare al modello.
@@ -217,33 +229,12 @@ class Agent:
                 e volutamente generica: al chiamante interessa solo che il
                 servizio non sia raggiungibile, non quale errore di rete sia
                 occorso.
-
-        Limite noto:
-            Si conserva solo `risposta.choices[0].message` e si scarta
-            `risposta.usage`, che contiene il conteggio dei token di input e di
-            output. È l'informazione necessaria a calcolare il costo di ogni
-            chiamata: catturarla è il primo passo verso la contabilità dei costi.
+            BudgetExceeded: se il tetto di spesa era già raggiunto prima della
+                chiamata. Non è un guasto: è una terminazione voluta.
         """
-        for tentativo in range(config.RETRY_MAX):
-            try:
-                risposta = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=self.tool_schemas,
-                )
-                msg = risposta.choices[0].message
-                self._log_risposta(msg)
-                return msg
-
-            except Exception as e:
-                attesa = config.RETRY_DELAY ** tentativo
-                log.warning("Tentativo %d/%d fallito: %s. Riprovo tra %d secondi",
-                            tentativo + 1, config.RETRY_MAX, e, attesa)
-                if tentativo < config.RETRY_MAX - 1:
-                    time.sleep(attesa)
-
-        log.error("Impossibile connettersi al modello dopo %d tentativi", config.RETRY_MAX)
-        raise RuntimeError("LLM irraggiungibile")
+        msg = self.llm.complete(messages, self.tool_schemas)
+        self._log_risposta(msg)
+        return msg
 
     def _log_risposta(self, msg):
         """Registra a livello DEBUG cosa ha deciso il modello.
@@ -324,25 +315,8 @@ class Agent:
             return {"error": f"{type(e).__name__}: {e}"}
 
 
-def _configura_logging():
-    """Imposta il logging dell'applicazione.
-
-    La configurazione è applicata qui e non a livello di modulo perché è una
-    responsabilità del punto d'ingresso: importare `agent` come libreria non deve
-    alterare il logging di chi lo importa.
-    """
-    logging.basicConfig(
-        level=config.LOG_LEVEL,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    # Zittisco i log troppo verbosi delle librerie di terze parti
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-
 if __name__ == "__main__":
-    # Punto d'ingresso manuale: compone le dipendenze concrete (client reale,
-    # modello da configurazione, tool con sandbox) e lancia un task di prova che
-    # esercita l'intera catena — shell nel container e lettura dal workspace.
-    _configura_logging()
-    client = OpenAI(base_url=config.ORC2_BASE_URL, api_key=config.ORC2_API_KEY)
-    agent = Agent(client, config.ORC2_MODEL, ALL_TOOLS)
-    agent.run("usando bash crea il file ciao.txt con dentro 'hello', poi con read_file rileggilo")
+    # Compatibilita' con il comando storico `python agent.py`.
+    from main import main
+
+    raise SystemExit(main())

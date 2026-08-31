@@ -25,6 +25,7 @@ from accounting import (
     ModelNotFound,
     UsageRecord,
 )
+from accounting.errors import UnpricedUsage
 
 
 class RegistroFinto:
@@ -86,6 +87,31 @@ def test_il_costo_viene_scritto_nel_record():
 
 def test_record_senza_quantita_costa_zero():
     assert _contabile().register(_record()) == 0.0
+
+
+def test_record_con_usage_mancante_non_e_prezzabile():
+    record = UsageRecord(
+        model="modello",
+        quantities={},
+        measurement_source="missing",
+    )
+
+    assert record.is_priceable is False
+
+
+def test_usage_mancante_non_viene_archiviato_ne_contabilizzato():
+    contabile = _contabile()
+    record = UsageRecord(
+        model="modello",
+        quantities={},
+        measurement_source="missing",
+    )
+
+    with pytest.raises(UnpricedUsage):
+        contabile.register(record)
+
+    assert contabile.call_count == 0
+    assert contabile.total_cost == 0.0
 
 
 def test_il_modello_del_record_arriva_al_registro():

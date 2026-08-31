@@ -121,6 +121,13 @@ def test_prezzo_negativo_rifiutato():
         _registro(models=modelli)
 
 
+def test_prezzo_non_finito_rifiutato():
+    modelli = {"rotto": {"provider": "acme", "capabilities": ["code"],
+                         "prices": {"input_tokens": float("nan")}}}
+    with pytest.raises(MalformedRegistry):
+        _registro(models=modelli)
+
+
 def test_unita_senza_base_rifiutata():
     modelli = {"rotto": {"provider": "acme", "capabilities": ["code"],
                          "prices": {"unita_fantasma": 1.0}}}

@@ -1,9 +1,8 @@
 """Composizione dei tool disponibili all'agente.
 
-Questo package espone `ALL_TOOLS`, l'insieme di capacità con cui l'agente viene
-equipaggiato. È qui, e solo qui, che i pezzi vengono messi insieme: si sceglie
-quale executor usare, si crea il workspace e si passano i limiti definiti in
-`config`.
+Questo package espone `build_default_tools`, la factory con cui il punto di
+ingresso costruisce gli strumenti. Qui, e solo qui, vengono scelti executor,
+workspace e limiti.
 
 Nota di design (tesi):
     Il modulo funge da *composition root*: concentra in un unico punto le
@@ -12,10 +11,9 @@ Nota di design (tesi):
     diversi insiemi di tool diversi (scenario M2), significa intervenire qui
     senza toccare né l'agente né i tool.
 
-Limite noto:
-    Il workspace è creato dal percorso relativo `"workspace"`, risolto rispetto
-    alla directory da cui si lancia il programma. Avviando il progetto da un'altra
-    cartella si otterrebbe quindi un workspace diverso.
+Non esistono istanze globali: importare `tools` non crea directory e non prepara
+Docker. Questo evita effetti collaterali nei test e permette a run concorrenti di
+ricevere workspace distinti.
 """
 
 import config
@@ -25,19 +23,14 @@ from tools.read_file import ReadFileTool
 from tools.write_file import WriteFileTool
 from workspace import Workspace
 
-# Unica istanza di workspace, condivisa dai tool di lettura/scrittura e montata
-# nel container: agente e sandbox devono vedere la stessa cartella.
-ws = Workspace("workspace")
-
-#: Insieme dei tool passati all'Agent. L'ordine non è significativo.
-ALL_TOOLS = [
-    BashTool(DockerExecutor(
-        ws.path,
+def build_default_tools(workspace_path: str) -> list:
+    """Costruisce i tool standard, tutti confinati nello stesso workspace."""
+    workspace = Workspace(workspace_path)
+    executor = DockerExecutor(
+        workspace.path,
         image=config.DOCKER_IMAGE,
         timeout=config.EXEC_TIMEOUT,
         memory=config.DOCKER_MEMORY,
         pids_limit=config.DOCKER_PIDS_LIMIT,
-    )),
-    ReadFileTool(ws),
-    WriteFileTool(ws),
-]
+    )
+    return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace)]

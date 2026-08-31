@@ -265,13 +265,162 @@ valutazione **execution-based + multimodale** del soggettivo, flywheel cascade�
   - Tool (ABC/Strategy): bash→DockerExecutor (sandbox: no-net, non-root, read-only, effimero, limiti),
     read/write→Workspace (guardia path-traversal).
   - config centralizzata, logging professionale, requirements pinnati, **7 test pytest verdi**.
-- **M2 PROGETTATO** (non ancora scritto): vedi §3-6 e `M2_routing_design.md`.
-- **Prossimo passo concreto consigliato:** la **contabilità costi** (cattura `usage` token × prezzo
-  per modello) — serve a *qualsiasi* strategia ed è il primo mattone del flywheel.
+- **M2a COMPLETO — osservabilita' dei costi** (dettaglio in §9):
+  listino TOML, `UsageRecord`, contabile con contratto astratto, mapper per
+  provider, gateway LLM, ledger per run (JSONL + summary), budget guard e
+  report di fine run. **103 test verdi**, CI verde.
+  Resta scoperto solo l'agganciamento delle unita' non testuali
+  (immagini/video/audio/3D), gia' previsto dallo schema ma non ancora esercitato
+  su chiamate reali.
+- **M2s PROSSIMO — routing statico per ruolo:** il registro sa gia' filtrare per
+  capacita' (`models_with`); manca la fabbrica di agenti che sceglie il modello
+  in base al ruolo. La roadmap esecutiva, inclusi i requisiti espliciti per
+  immagini/video/audio/3D/RAG, vive in `M2_routing_design.md` §0.
 
 ---
 
-## 9. Rischi & domande aperte (per il colloquio)
+## 9. Contabilità e osservabilità (M2a — implementato)
+
+> **Perché è un capitolo e non un dettaglio implementativo.** Il claim della tesi (§0) è
+> *«riduzione di costo a parità di qualità»*. Un claim del genere è **falsificabile solo se il
+> costo è misurato in modo riproducibile**: senza un apparato di misura, "costa meno" è
+> un'opinione. Questa sezione descrive l'apparato. È anche il primo giro del flywheel (§2.2):
+> gli stessi log servono a tre cose diverse — prova sperimentale, dataset del router,
+> decisione di escalation a runtime (§2.7).
+
+### 9.1 Tre responsabilità separate, tre oggetti
+
+| Oggetto | Domanda a cui risponde | Non sa |
+|---|---|---|
+| `UsageRecord` | *quanto è stato consumato?* (quantità grezze) | quanto costa |
+| `ModelRegistry` | *quanto costano le cose?* (listino da `models.toml`) | cosa è successo |
+| `Accountant` | *quanto si è speso?* (la moltiplicazione) | come si chiama l'SDK |
+
+La separazione non è estetica: produce una proprietà che serve alla tesi.
+
+**Ricomputabilità.** Nei log finiscono le **quantità grezze**, non solo i dollari. Se un listino
+cambia — e in una campagna sperimentale che dura mesi cambia — oppure se si scopre un errore di
+prezzo, i costi si **ricalcolano sui log storici** senza rieseguire nulla. Rieseguire costerebbe
+di nuovo denaro e, peggio, produrrebbe output diversi: la campagna non sarebbe più la stessa.
+
+### 9.2 Le due trappole del conteggio
+
+Entrambe producono **errori silenziosi**: nessuna eccezione, solo numeri sbagliati.
+
+- `reasoning_tokens` è **già incluso** in `output_tokens`. Sommarlo farebbe pagare due volte la
+  parte di ragionamento — e proprio sui modelli forti, che ragionano di più: l'errore sarebbe
+  **sistematico e sbilanciato a sfavore del baseline costoso**, cioè nella direzione che
+  gonfierebbe artificialmente il risultato della tesi.
+- I token serviti dalla **cache** sono un sottoinsieme di quelli di input ma hanno **tariffa
+  propria** (≈0.1× il prezzo pieno). Vanno scorporati: 350 token di cui 200 da cache sono
+  `{input: 150, cached: 200}`, mai `{input: 350, cached: 200}`, che ne conterebbe 550.
+
+Per questo `reasoning_tokens` vive **fuori** da `quantities`, dove entra solo ciò che viene
+davvero moltiplicato per un prezzo.
+
+### 9.3 Unità eterogenee, un solo dollaro
+
+Il registro dichiara le unità e la loro base di prezzo: token (per milione), immagine, secondo di
+video, credito, minuto audio, carattere. Un asset 3D fatturato a crediti e una chiamata testuale
+fatturata a token diventano **confrontabili** perché il registro normalizza entrambi in dollari.
+È il presupposto del routing capability-aware: il filtro per **capacità precede** quello sul
+prezzo — un modello privo della capacità richiesta non è confrontabile sul costo, per quanto
+economico.
+
+### 9.4 `measurement_source`: distinguere «zero» da «non lo so»
+
+Un provider che non restituisce l'usage **non ha erogato un servizio gratuito**. Il record marca
+quindi la provenienza della misura: `reported` (dichiarata dal provider), `derived` (ricavata da
+un parametro contrattuale o dall'output), `missing` (non affidabile).
+
+Un consumo non prezzabile diventa **evento**, non riga di costo. Conseguenza: non gonfia né
+sgonfia il totale, resta visibile nel ledger, e il summary lo conta in `unpriced_count`. Senza
+questa distinzione, una chiamata senza usage entrerebbe nel dataset del flywheel come *chiamata
+gratis* — un dato falso che il router poi imparerebbe.
+
+> **Nota metodologica (difetto reale, trovato in verifica).** Un modello del listino non
+> dichiarava il prezzo dei token da cache. La prima risposta con prompt cache attiva — condizione
+> **ordinaria**, non caso limite — faceva fallire la prezzatura *dopo* che la chiamata era stata
+> pagata, e la run veniva archiviata con `total_cost: 0`. Una spesa reale, invisibile nei dati.
+> La correzione ha agito su due livelli: il prezzo mancante (il dato) e il comportamento (la
+> struttura) — ogni fallimento di prezzatura è ora un evento che **conserva le quantità
+> osservate**, così il costo resta ricomputabile invece di sparire. È l'illustrazione concreta
+> del perché §9.1 conta.
+
+### 9.5 Il ledger per run: lo schema iniziale del dataset
+
+```
+runs/<run_id>/
+  usage.jsonl    consumi prezzati, append-only, una riga per chiamata
+  events.jsonl   fatti che NON sono consumi: errore provider, budget, usage non prezzabile
+  summary.json   esito, durata, iterazioni, costo totale, costo per modello e per operazione
+```
+
+Tre scelte di design con conseguenze sui dati:
+
+1. **Consumi ed eventi sono separati.** Un errore di provider o uno stop per budget non sono
+   record di costo. Se lo fossero, il costo medio per chiamata risulterebbe falsato da righe a
+   costo zero che chiamate non sono.
+2. **Il summary è derivato rileggendo i JSONL**, non da un contatore parallelo. Un contatore
+   sarebbe una **seconda fonte di verità** per lo stesso dato, e prima o poi divergerebbe.
+3. **Nessun prompt, nessuna chiave.** Del task si conserva l'hash. Il costo di questa scelta è
+   dichiarato: dal log non si può rileggere il testo del task. È una politica esplicita, non una
+   dimenticanza.
+
+### 9.6 Il budget guard e il suo limite intrinseco
+
+Il tetto è espresso in **USD, mai in numero di passi**: una chiamata al modello frontier può
+costare venti volte una chiamata al modello economico, quindi "massimo N passi" non è un budget.
+Il controllo vive nel gateway, **prima** della chiamata, sul costo già osservato.
+
+> **Il limite, da dichiarare in tesi.** Il costo di una chiamata si conosce solo **dopo** averla
+> fatta. Il controllo pre-chiamata non può quindi impedire che l'ultima chiamata sfori il tetto:
+> può solo impedire di farne un'altra. **Lo sforamento massimo possibile è il costo di una
+> singola chiamata**, ed è riportato nel report (`overrun_usd`). Non è un difetto
+> dell'implementazione: è una proprietà del modello di fatturazione a consumo.
+
+**Scelta metodologica deliberata:** alla soglia morbida il sistema **non inietta** messaggi nel
+contesto del modello (del tipo *«concludi presto»*). Lo farebbe volentieri un prodotto; una
+tesi no — altererebbe invisibilmente la politica dell'agente e sporcherebbe la baseline
+sperimentale. Lo strumento di misura non deve perturbare l'oggetto misurato. Solo log ed evento.
+
+### 9.7 Perché l'osservabilità viene PRIMA del routing
+
+È la giustificazione dell'ordine `M2a → M2s → M3/M4 → M2b`, ed è difendibile al colloquio:
+
+- **Senza contabilità non esiste né baseline né prova.** Il pilastro 3 (validazione) si regge
+  sull'apparato di misura, quindi l'apparato viene prima.
+- **Addestrare il router su dati di un agente singolo riprodurrebbe il limite che MasRouter
+  denuncia** (§7): il routing classico è single-agent. Il dataset del router deve nascere da uno
+  swarm reale, altrimenti il delta rivendicato dalla tesi si dissolve.
+- Ne segue: prima si **misura**, poi si instrada per ruolo in modo statico (M2s), poi si
+  costruisce lo **swarm** (M4), e solo allora si apprende il router (M2b) sui dati che lo swarm
+  ha prodotto.
+
+### 9.8 Limiti dichiarati della misura
+
+Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
+
+| Limite | Perché esiste | Come è trattato |
+|---|---|---|
+| Costi fissi (abbonamenti) esclusi dal costo per chiamata | Sono costi affondati: non variano con le scelte del router, quindi non devono influenzarle | Dichiarati a parte nel capitolo sperimentale (`monthly_fee`); ignorarli sottostimerebbe il costo di sistema |
+| Costo **di listino**, non fatturato | Sconti, tier e minimi di fatturazione non sono modellati | Il confronto è fra sistemi sotto lo stesso listino, quindi il bias è comune a baseline e sistema |
+| Sforamento residuo del budget | §9.6 | Quantificato e riportato per ogni run |
+| Consumi non prezzabili | Provider che non dichiara l'usage, o unità senza listino | Il totale è una **sottostima nota e quantificata** (`unpriced_count`), non un valore silenziosamente sbagliato |
+
+### 9.9 Dal claim al codice
+
+| Ciò che la tesi afferma | Meccanismo che lo rende verificabile |
+|---|---|
+| «costa meno» | costo per chiamata, per modello, per operazione, per run |
+| «a parità di qualità» | `finish_reason == length` = risposta troncata: segnale di qualità a costo zero, e motivo di escalation nella cascade |
+| «riproducibile» | quantità grezze + hash del task + schema versionato → ricalcolo senza rieseguire |
+| «il flywheel apprende» | `usage.jsonl` è già il formato del dataset di M2b |
+| «il sistema è controllabile» | budget in USD con limite intrinseco dichiarato |
+
+---
+
+## 10. Rischi & domande aperte (per il colloquio)
 1. **Valutazione open-ended**: il capitolo più rischioso (è ciò che OI-MAS evita con task verificabili).
 2. **Bias del giudice** (self-preference) → contamina valutazione *e* training. Mitigazioni: panel, pairwise, position-swap, giudice terzo.
 3. **Validità del soggettivo** → misurare l'accordo annotatori (kappa); rivendicare fino a quel soffitto.
@@ -282,7 +431,7 @@ valutazione **execution-based + multimodale** del soggettivo, flywheel cascade�
 
 ---
 
-## 10. Glossario rapido
+## 11. Glossario rapido
 - **Cost-routing**: instradare ogni (sotto-)task al modello più economico che soddisfa τ.
 - **Cascade**: prova cheap → escala su qualità insufficiente (scopre, non predice).
 - **Reward model**: rete che assegna un punteggio di qualità appreso da preferenze.
@@ -293,3 +442,12 @@ valutazione **execution-based + multimodale** del soggettivo, flywheel cascade�
 - **Pareto costo/qualità**: a parità di qualità, scegli il più economico (e viceversa).
 - **kappa (Cohen/Fleiss)**: misura dell'accordo tra annotatori → soffitto di validità del soggettivo.
 - **Pilastro C**: resilienza/auto-correzione (errore → osservazione → riprova).
+- **Ricomputabilità**: proprietà dei log che conservano le *quantità* e non solo i dollari → i
+  costi si ricalcolano su dati storici quando cambia un listino, senza rieseguire nulla (§9.1).
+- **`measurement_source`**: provenienza della misura di consumo — `reported` / `derived` /
+  `missing`; distingue «zero» da «non lo so» ed evita che una chiamata senza usage entri nel
+  dataset come gratuita (§9.4).
+- **Ledger di run**: archivio append-only per singola esecuzione (`usage.jsonl` + `events.jsonl`
+  + `summary.json`); è lo schema iniziale del dataset del flywheel (§9.5).
+- **Sforamento residuo**: quanto una run può superare il tetto di budget — al massimo il costo di
+  una singola chiamata, perché il costo si conosce solo a chiamata avvenuta (§9.6).

@@ -21,6 +21,7 @@ Nota di design (tesi):
 """
 
 from accounting.base import Accountant
+from accounting.errors import UnpricedUsage
 from accounting.record import UsageRecord
 
 class InMemoryAccountant(Accountant):
@@ -68,6 +69,8 @@ class InMemoryAccountant(Accountant):
                 unita' dichiarate (per esempio chiedere il prezzo di
                 un'immagine a un modello di solo testo).
         """
+        if not record.is_priceable:
+            raise UnpricedUsage()
         totale = 0.0
 
         for unit, qty in record.quantities.items():

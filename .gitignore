@@ -16,6 +16,16 @@ __pycache__/
 
 # Output di esecuzione dell'agente
 workspace/
+runs/
 Docs_Utili/STUDIO.md
 Docs_Utili/PIANO_completo.md
 Docs_Utili/ROADMAP.md
+
+# Istruzioni locali per assistenti
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+# Istruzioni locali per assistenti
+AGENTS.md
+CLAUDE.md
+GEMINI.md

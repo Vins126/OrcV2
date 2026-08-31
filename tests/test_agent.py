@@ -12,38 +12,32 @@ Nota di design (tesi):
     sostituzione.
 
 Copertura attuale (limite noto):
-    Sono verificate le due condizioni di uscita principali, con lista di tool
-    vuota. Non sono coperti: l'esecuzione reale dei tool, il retry con backoff,
-    l'interruzione per loop persistente e la sandbox Docker.
+    Sono verificate le condizioni di uscita del ciclo — conclusione, limite di
+    iterazioni, budget esaurito, servizio irraggiungibile, guasto inatteso.
+    Non sono coperti: l'esecuzione reale dei tool, il retry con backoff (che
+    ora vive nel gateway), l'interruzione per loop persistente e la sandbox
+    Docker.
 """
 
 from types import SimpleNamespace
 
+import pytest
+
 import config
-from agent import Agent
+from agent import Agent, AgentFailure, RunResult
+from budget_guard import BudgetExceeded
 from loop_detector import RilevatoreLoop
 
 
-class FakeClient:
-    """Finge client.chat.completions.create restituendo sempre un messaggio preconfezionato."""
+class FakeGateway:
+    """Finge il confine LLM: Agent riceve soltanto il messaggio finale."""
     def __init__(self, message):
-        """Costruisce la catena di attributi attesa dall'agente.
+        self.message = message
+        self.calls = []
 
-        Riproduce con `SimpleNamespace` la struttura annidata
-        `client.chat.completions.create(...) -> .choices[0].message`, ignorando
-        gli argomenti ricevuti: al test interessa solo cosa l'agente fa della
-        risposta, non come la richiede.
-
-        Args:
-            message: messaggio che ogni chiamata dovrà restituire.
-        """
-        self.chat = SimpleNamespace(
-            completions=SimpleNamespace(
-                create=lambda **kwargs: SimpleNamespace(
-                    choices=[SimpleNamespace(message=message)]
-                )
-            )
-        )
+    def complete(self, messages, tools):
+        self.calls.append((messages, tools))
+        return self.message
 
 
 def _rilevatore():
@@ -64,11 +58,11 @@ def test_agente_finisce_senza_tool():
     """
     # L'LLM risponde a parole (niente tool_calls) -> il task è concluso
     risposta = SimpleNamespace(tool_calls=None, content="Ho finito")
-    agent = Agent(FakeClient(risposta), "modello-finto", [])
+    agent = Agent(FakeGateway(risposta), [])
 
-    continua = agent._esegui_iterazione([], _rilevatore(), 1)
+    outcome = agent._esegui_iterazione([], _rilevatore(), 1)
 
-    assert continua is False
+    assert outcome == ("completed", "Ho finito")
 
 
 def test_agente_continua_con_tool():
@@ -82,8 +76,87 @@ def test_agente_continua_con_tool():
     # L'LLM chiede un tool -> il task deve continuare
     chiamata = SimpleNamespace(id="1", function=SimpleNamespace(name="bash", arguments="{}"))
     risposta = SimpleNamespace(tool_calls=[chiamata], content=None)
-    agent = Agent(FakeClient(risposta), "modello-finto", [])
+    agent = Agent(FakeGateway(risposta), [])
 
-    continua = agent._esegui_iterazione([], _rilevatore(), 1)
+    outcome = agent._esegui_iterazione([], _rilevatore(), 1)
 
-    assert continua is True
+    assert outcome == (None, None)
+
+
+def test_run_restituisce_esito_e_numero_di_iterazioni():
+    risposta = SimpleNamespace(tool_calls=None, content="Ho finito")
+    agent = Agent(FakeGateway(risposta), [])
+
+    result = agent.run("task")
+
+    assert result == RunResult(status="completed", iterations=1, final_message="Ho finito")
+
+
+def test_run_dichiara_il_limite_di_iterazioni():
+    chiamata = SimpleNamespace(id="1", function=SimpleNamespace(name="bash", arguments="{}"))
+    risposta = SimpleNamespace(tool_calls=[chiamata], content=None)
+    agent = Agent(FakeGateway(risposta), [])
+
+    result = agent.run("task", max_iterations=1)
+
+    assert result == RunResult(
+        status="max_iterations", iterations=1,
+        final_message="Limite di 1 iterazioni raggiunto.",
+    )
+
+
+def test_agente_distingue_il_budget_esaurito_da_un_servizio_irraggiungibile():
+    class GatewayConBudgetEsaurito:
+        def complete(self, _messages, _tools):
+            raise BudgetExceeded("budget esaurito")
+
+    outcome = Agent(GatewayConBudgetEsaurito(), [])._esegui_iterazione([], _rilevatore(), 1)
+
+    assert outcome[0] == "budget_exhausted"
+
+
+def test_un_errore_inatteso_conserva_le_iterazioni_gia_svolte():
+    """Un guasto non azzera il conteggio del lavoro gia' fatto.
+
+    Senza questo, una run caduta alla terza iterazione verrebbe archiviata
+    come "0 iterazioni": il report mostrerebbe un costo per iterazione nullo
+    pur in presenza di spesa registrata, e il dato finirebbe cosi' nel
+    dataset del flywheel.
+    """
+    class GatewayCheSiRompeAllaTerza:
+        def __init__(self):
+            self.chiamate = 0
+
+        def complete(self, _messages, _tools):
+            self.chiamate += 1
+            if self.chiamate == 3:
+                raise ZeroDivisionError("difetto di programmazione")
+            chiamata = SimpleNamespace(
+                id="1", function=SimpleNamespace(name="bash", arguments="{}"))
+            return SimpleNamespace(tool_calls=[chiamata], content=None)
+
+    agent = Agent(GatewayCheSiRompeAllaTerza(), [])
+
+    with pytest.raises(AgentFailure) as errore:
+        agent.run("task", max_iterations=10)
+
+    assert errore.value.iterations == 3
+    assert errore.value.cause_type == "ZeroDivisionError"
+    assert isinstance(errore.value.__cause__, ZeroDivisionError)
+
+
+def test_gli_esiti_previsti_non_diventano_guasti():
+    """Budget e servizio irraggiungibile restano esiti, non eccezioni.
+
+    Sono terminazioni volute: se finissero in `AgentFailure` il ledger le
+    archivierebbe come difetti del programma invece che come informazione
+    sperimentale.
+    """
+    class GatewaySenzaServizio:
+        def complete(self, _messages, _tools):
+            raise RuntimeError("LLM irraggiungibile")
+
+    result = Agent(GatewaySenzaServizio(), []).run("task", max_iterations=3)
+
+    assert result.status == "service_unavailable"
+    assert result.iterations == 1

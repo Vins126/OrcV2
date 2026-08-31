@@ -36,6 +36,11 @@
 input_tokens        = 1_000_000   # prezzi per milione di token
 output_tokens       = 1_000_000
 cached_input_tokens = 1_000_000   # token di input serviti dalla cache
+cache_write_tokens  = 1_000_000   # token scritti nella prompt cache
+input_text_tokens   = 1_000_000   # immagini: token del prompt testuale
+input_image_tokens  = 1_000_000   # immagini: token delle immagini in input
+output_text_tokens  = 1_000_000   # immagini: token testuali emessi dal modello
+output_image_tokens = 1_000_000   # immagini: token immagine generati
 character           = 1_000_000   # sintesi vocale (TTS)
 image               = 1           # per immagine generata
 video_second        = 1           # per secondo di video
@@ -97,10 +102,15 @@ monthly_fee = 0.0   # pay-as-you-go: nessun abbonamento richiesto
 
 # --- Fascia frontier: planner, escalation finale, giudice ---
 
+# I prezzi della prompt cache seguono i rapporti standard del fornitore:
+# lettura dalla cache 0.1x il prezzo di input, scrittura 1.25x. Vanno
+# dichiarati anche quando non si usa la cache di proposito: il provider puo'
+# attivarla da solo, e un'unita' senza prezzo rende la chiamata non
+# contabilizzabile (vedi la nota sulle unita' assenti piu' sopra).
 [models.opus-5]
 provider     = "anthropic"
 capabilities = ["reasoning", "code", "text", "vision_input"]
-prices       = { input_tokens = 5.00, output_tokens = 25.00 }
+prices       = { input_tokens = 5.00, output_tokens = 25.00, cached_input_tokens = 0.50, cache_write_tokens = 6.25 }
 
 # --- Fascia media: worker su sotto-task complessi ---
 
