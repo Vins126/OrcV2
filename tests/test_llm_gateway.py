@@ -4,8 +4,10 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from accounting.base import Accountant
 from accounting.errors import UnpricedUsage
 from budget_guard import BudgetExceeded, BudgetGuard
+from llm_contracts import AssistantTurn, ToolCall
 from llm_gateway import OpenAIChatGateway
 
 
@@ -53,7 +55,14 @@ class EventSink:
         self.events.append((event_type, details))
 
 
-class Accountant:
+class ContabileFinto(Accountant):
+    """Contabile che non conosce prezzi: registra e basta.
+
+    Eredita dal contratto invece di limitarsi ad assomigliargli: cosi' se un
+    domani `Accountant` acquisisse un metodo obbligatorio, questo finto
+    smetterebbe di costruirsi e il test lo direbbe subito.
+    """
+
     def __init__(self, error=None, total_cost=0.0):
         self.records = []
         self.error = error
@@ -69,9 +78,13 @@ class Accountant:
     def total_cost(self):
         return self._total_cost
 
+    @property
+    def call_count(self):
+        return len(self.records)
+
 
 def test_gateway_registra_la_risposta_e_restituisce_solo_il_messaggio():
-    client, accountant = Client(_response()), Accountant()
+    client, accountant = Client(_response()), ContabileFinto()
     gateway = OpenAIChatGateway(client, "m", accountant, retry_max=1)
 
     message = gateway.complete([], [])
@@ -82,7 +95,7 @@ def test_gateway_registra_la_risposta_e_restituisce_solo_il_messaggio():
 
 
 def test_gateway_registra_separatamente_api_e_billing_provider():
-    client, accountant = Client(_response()), Accountant()
+    client, accountant = Client(_response()), ContabileFinto()
     gateway = OpenAIChatGateway(
         client, "m", accountant, retry_max=1,
         api_provider="litellm", billing_provider="openrouter",
@@ -97,7 +110,7 @@ def test_gateway_registra_separatamente_api_e_billing_provider():
 
 def test_errore_accounting_non_ripete_una_risposta_gia_ricevuta():
     client = Client(_response())
-    gateway = OpenAIChatGateway(client, "m", Accountant(ValueError("listino errato")), retry_max=3)
+    gateway = OpenAIChatGateway(client, "m", ContabileFinto(ValueError("listino errato")), retry_max=3)
 
     with pytest.raises(ValueError, match="listino errato"):
         gateway.complete([], [])
@@ -110,7 +123,7 @@ def test_usage_non_prezzabile_non_interrompe_il_task():
     response_without_usage = _response()
     response_without_usage.usage = None
     client.response = response_without_usage
-    gateway = OpenAIChatGateway(client, "m", Accountant(UnpricedUsage()), retry_max=1)
+    gateway = OpenAIChatGateway(client, "m", ContabileFinto(UnpricedUsage()), retry_max=1)
 
     message = gateway.complete([], [])
 
@@ -122,7 +135,7 @@ def test_gateway_registra_errore_provider_sanitizzato_dopo_l_ultimo_tentativo():
     error = RuntimeError("testo remoto che non deve finire nel ledger")
     client, events = FailingClient(error), EventSink()
     gateway = OpenAIChatGateway(
-        client, "m", Accountant(), retry_max=1,
+        client, "m", ContabileFinto(), retry_max=1,
         api_provider="litellm", billing_provider="openrouter", event_sink=events,
     )
 
@@ -140,7 +153,7 @@ def test_gateway_registra_errore_provider_sanitizzato_dopo_l_ultimo_tentativo():
 
 def test_gateway_non_ritenta_un_errore_di_richiesta_non_recuperabile():
     client = FailingClient(HttpError(400))
-    gateway = OpenAIChatGateway(client, "m", Accountant(), retry_max=3)
+    gateway = OpenAIChatGateway(client, "m", ContabileFinto(), retry_max=3)
 
     with pytest.raises(RuntimeError, match="LLM irraggiungibile"):
         gateway.complete([], [])
@@ -151,7 +164,7 @@ def test_gateway_non_ritenta_un_errore_di_richiesta_non_recuperabile():
 def test_gateway_ferma_prima_della_rete_quando_il_budget_e_esaurito():
     client, events = Client(_response()), EventSink()
     gateway = OpenAIChatGateway(
-        client, "m", Accountant(total_cost=0.01), retry_max=1,
+        client, "m", ContabileFinto(total_cost=0.01), retry_max=1,
         event_sink=events, budget_guard=BudgetGuard(0.01),
     )
 
@@ -167,3 +180,61 @@ def test_gateway_ferma_prima_della_rete_quando_il_budget_e_esaurito():
         "total_cost_usd": 0.01,
         "overrun_usd": 0.0,
     })]
+
+
+# ── Conversione fra il contratto e il formato del provider ────────────────
+
+def test_le_tool_call_del_provider_diventano_tipi_del_progetto():
+    """La forma dell'SDK si ferma al gateway.
+
+    E' il confine che permette di aggiungere un fornitore scrivendo un gateway
+    invece di ramificare l'agente.
+    """
+    risposta = _response()
+    risposta.choices[0].message = NS(
+        content=None,
+        tool_calls=[NS(id="call_1", function=NS(name="bash", arguments='{"cmd":"ls"}'))],
+    )
+    gateway = OpenAIChatGateway(Client(risposta), "m", ContabileFinto(), retry_max=1)
+
+    turno = gateway.complete([], [])
+
+    assert isinstance(turno, AssistantTurn)
+    assert turno.tool_calls == (ToolCall(id="call_1", name="bash", arguments='{"cmd":"ls"}'),)
+
+
+def test_il_turno_torna_al_provider_nella_sua_forma():
+    """Un turno gia' prodotto deve poter rientrare nella conversazione.
+
+    L'agente riaccoda il turno del modello e lo rispedisce all'iterazione
+    successiva: se il gateway non lo riserializzasse, la seconda chiamata
+    porterebbe al provider un oggetto che non sa leggere.
+    """
+    client = Client(_response())
+    gateway = OpenAIChatGateway(client, "m", ContabileFinto(), retry_max=1)
+    storia = [
+        {"role": "user", "content": "ciao"},
+        AssistantTurn(content=None, tool_calls=(ToolCall(id="1", name="bash", arguments="{}"),)),
+        {"role": "tool", "tool_call_id": "1", "content": "{}"},
+    ]
+
+    inviato = gateway._to_wire(storia)
+
+    assert inviato[0] is storia[0]          # i dizionari passano invariati
+    assert inviato[2] is storia[2]
+    assert inviato[1] == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": "1", "type": "function", "function": {"name": "bash", "arguments": "{}"}}
+        ],
+    }
+
+
+def test_una_risposta_a_parole_non_porta_tool_calls():
+    gateway = OpenAIChatGateway(Client(_response()), "m", ContabileFinto(), retry_max=1)
+
+    turno = gateway.complete([], [])
+
+    assert turno.content == "ok"
+    assert turno.tool_calls == ()

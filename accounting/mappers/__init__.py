@@ -6,6 +6,7 @@ modalita' significa quindi aggiungere un mapper, non ramificare l'agente o il
 contabile.
 """
 
+from accounting.mappers.anthropic import AnthropicMessagesUsageMapper
 from accounting.mappers.openai import (
     OpenAIChatCompletionsUsageMapper,
     OpenAIImageUsageMapper,
@@ -14,6 +15,7 @@ from accounting.mappers.openai import (
 )
 
 __all__ = [
+    "AnthropicMessagesUsageMapper",
     "OpenAIChatCompletionsUsageMapper",
     "OpenAIImageUsageMapper",
     "OpenAIResponsesUsageMapper",

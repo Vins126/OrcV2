@@ -185,7 +185,7 @@ def test_il_record_non_viene_archiviato_se_il_calcolo_fallisce():
 
 def test_il_contratto_non_e_istanziabile():
     with pytest.raises(TypeError):
-        Accountant()
+        Accountant()  # type: ignore[abstract]  <- il rifiuto E' cio' che si verifica
 
 
 def test_una_sottoclasse_incompleta_e_rifiutata():
@@ -201,7 +201,7 @@ def test_una_sottoclasse_incompleta_e_rifiutata():
         # total_cost e call_count mancano di proposito
 
     with pytest.raises(TypeError):
-        ContabileMonco()
+        ContabileMonco()  # type: ignore[abstract]  <- idem: deve fallire
 
 
 def test_inmemory_rispetta_il_contratto():

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import config
 from alerts import Alerts
 from budget_guard import BudgetExceeded
-from llm_contracts import ChatGateway
+from llm_contracts import AssistantTurn, ChatGateway
 from loop_detector import RilevatoreLoop
 
 # Un logger per modulo. Il nome segue la gerarchia dei moduli (__name__).
@@ -47,6 +47,13 @@ class AgentFailure(Exception):
     """
 
     def __init__(self, iterations: int, cause: BaseException):
+        """Compone il messaggio e conserva il conteggio delle iterazioni.
+
+        Args:
+            iterations: iterazioni completate prima del guasto.
+            cause: l'eccezione originale. Se ne conserva il nome della classe per
+                registrare nel ledger la causa vera, non questo involucro.
+        """
         super().__init__(
             f"run interrotta da {type(cause).__name__} "
             f"all'iterazione {iterations}"
@@ -222,7 +229,8 @@ class Agent:
             messages: conversazione completa da inviare al modello.
 
         Returns:
-            Il messaggio prodotto dal modello, con `content` e/o `tool_calls`.
+            Un `AssistantTurn`: cio' che il modello ha prodotto, senza traccia
+            dell'SDK che glielo ha chiesto.
 
         Raises:
             RuntimeError: se tutti i tentativi falliscono. È un'eccezione distinta
@@ -248,7 +256,7 @@ class Agent:
         """
         if msg.tool_calls:
             log.debug("LLM richiede %d tool: %s", len(msg.tool_calls),
-                      [tc.function.name for tc in msg.tool_calls])
+                      [tc.name for tc in msg.tool_calls])
         else:
             log.debug("LLM risponde a parole: %s", (msg.content or "")[:200])
 
@@ -267,7 +275,7 @@ class Agent:
         for tool_call in msg.tool_calls:
             risultato = self._esegui_singolo_tool(tool_call)
             log.debug("tool %s(%s) -> %s",
-                      tool_call.function.name, tool_call.function.arguments, risultato)
+                      tool_call.name, tool_call.arguments, risultato)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
@@ -296,9 +304,9 @@ class Agent:
             Il dizionario prodotto dal tool in caso di successo, oppure un
             dizionario con la sola chiave `error` che descrive il fallimento.
         """
-        name = tool_call.function.name
+        name = tool_call.name
         try:
-            args = json.loads(tool_call.function.arguments)
+            args = json.loads(tool_call.arguments)
         except json.JSONDecodeError as e:
             log.warning("argomenti JSON non validi per '%s': %s", name, e)
             return {"error": f"argomenti JSON non validi: {e}"}

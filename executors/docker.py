@@ -15,7 +15,7 @@ Nota di design (tesi):
       2. **validità della misura** — un ambiente identico e ripulito a ogni
          esecuzione è la condizione perché costo e qualità osservati siano
          confrontabili tra modelli diversi;
-      3. **parallelismo** — nello swarm di M2 container separati permettono a più
+      3. **parallelismo** — nello swarm (M4) container separati permettono a più
          agenti di lavorare senza interferire.
 
 Prerequisito operativo:

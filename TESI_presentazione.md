@@ -2,7 +2,11 @@
 
 > Uso: ogni slide è leggibile da sola (anche come materiale di studio). Sotto ogni slide,
 > "💬 da dire a voce" = i passaggi/transizioni da raccontare a parole. Lingua: italiano.
-> Da trasferire su Canva (vedi nota finale).
+>
+> **Natura del documento.** È la traccia parlata con cui la tesi è stata *proposta*.
+> Lo stato dell'implementazione è andato avanti da allora: per quello fanno fede
+> `README.md` (sintesi) e `Docs_Utili/ROADMAP.md` (dettaglio). Le slide 11 e 12
+> sono aggiornate; il resto conserva l'impostazione originale della proposta.
 
 ---
 
@@ -116,18 +120,35 @@ La tesi sta o cade su **tre parti inseparabili**:
 ---
 
 ## Slide 11 — Cosa ho già costruito (non è solo teoria)
-Ho già implementato e **testato** un **agente singolo robusto** (la base su cui costruire lo swarm):
+Due fasi complete e una in corso, con **138 test automatici** verdi e integrazione continua.
+
+**Agente singolo (M1, completata)**
 - ciclo **ReAct**, **auto-correzione** dagli errori, rilevamento dei loop;
 - **sandbox di sicurezza Docker** (niente rete, niente privilegi root, filesystem isolato);
-- strumenti confinati (anti path-traversal), configurazione centralizzata, logging professionale;
-- **7 test automatici** verdi.
+- strumenti confinati (anti path-traversal), configurazione centralizzata, logging.
 
-💬 *"Ho già un 'atomo' funzionante e sicuro. La tesi lo moltiplica in uno swarm con il cost-routing."*
+**Infrastruttura di misura (M2a, completata)** — *l'apparato che rende dimostrabile il claim*
+- listino di modelli, capacità e prezzi in configurazione, con unità di fatturazione multiple;
+- contabilità per chiamata: quantità grezze × prezzo, con costo ricalcolabile a posteriori;
+- **ledger per esecuzione** (JSONL append-only + riepilogo derivato): è il dataset del flywheel;
+- **tetto di spesa** in dollari, con il suo limite intrinseco dichiarato;
+- rapporto di fine esecuzione con costo totale e per iterazione.
+
+**Instradamento statico per ruolo (M2s, in corso)**
+- ruoli mappati sui modelli da configurazione, con verifica delle capacità al caricamento;
+- **secondo fornitore integrato** senza toccare il ciclo dell'agente: è la verifica sul campo
+  che l'architettura regge l'aggiunta di modelli.
+
+💬 *"Non ho solo un 'atomo' funzionante: ho già lo strumento di misura, che è la parte senza la quale il risparmio non sarebbe dimostrabile."*
 
 ---
 
 ## Slide 12 — Piano e metodologia sperimentale
-- **Milestone:** M2 cost-routing → M3 parallelo → M4 swarm → M5 RAG/contesto → M6 macchina a stati → M7 misurazione.
+- **Milestone:** M2a misura ✅ → M2s instradamento per ruolo → M3 parallelo → M4 swarm →
+  M2b intelligenza di instradamento → M7 campagna sperimentale.
+  *(M5 «RAG/contesto» e M6 «macchina a stati» sono state assorbite: la disciplina del
+  contesto è una leva di costo dentro lo swarm, la macchina a stati è l'orchestratore.
+  Vedi `PIANO_completo.md` §3.10, decisione D7.)*
 - **Esperimento:** **baseline** mono-modello (tutto sul modello top) **vs ORC** con routing, sugli **stessi task**.
 - **Metriche:** **costo** per task, **qualità** (oggettiva + giudizio calibrato), **tasso di completamento autonomo**, latenza.
 - **Tesi dimostrata** se: costo ↓↓ con qualità statisticamente **non inferiore** alla baseline.
@@ -147,7 +168,9 @@ Ho già implementato e **testato** un **agente singolo robusto** (la base su cui
 
 ---
 
-## Nota build (Canva)
-- **Stile:** slide dense ma pulite; 1 colore d'accento, font leggibile, niente muri indistinti — usa i bullet così come sono.
-- **Diagrammi da inserire** (li abbiamo già in `M2_routing_design.md` / `TESI_master.md`): slide 6 (architettura team-su-git), slide 7 (flywheel), slide 12 (timeline milestone). Vanno ridisegnati puliti in Canva.
-- Opzioni: (a) genero io il deck via il connettore Canva; (b) lo monti tu in Canva con questo testo. Da decidere.
+## Nota di impaginazione
+- **Stile:** slide dense ma pulite; un colore d'accento, font leggibile, niente muri
+  indistinti — i bullet sono già nella forma definitiva.
+- **Diagrammi da inserire**, disponibili in `M2_routing_design.md` e `TESI_master.md`:
+  slide 6 (architettura team-su-repository), slide 7 (flywheel), slide 12 (timeline
+  delle milestone). Vanno ridisegnati puliti nello strumento di presentazione.

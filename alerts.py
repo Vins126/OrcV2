@@ -9,7 +9,7 @@ Nota di design (tesi):
     stessa azione può essere legittimamente in attesa di qualcosa; un modello che
     la ripete sette volte no. L'enum codifica quindi una **escalation graduale**
     (procedi → avvisa → interrompi), che è la stessa forma logica della
-    *cascade* di M2: osserva un segnale, e reagisci in modo proporzionato.
+    *cascade* di M2b: osserva un segnale, e reagisci in modo proporzionato.
 
     Ogni verdetto trasporta anche i dati necessari ad agire (`ferma`, `avviso`),
     così l'Agent non deve contenere una tabella di corrispondenze parallela.

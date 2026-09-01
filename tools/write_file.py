@@ -1,8 +1,8 @@
 """Tool di scrittura di file nel workspace.
 
 Nota di design (tesi):
-    È il tool con cui l'agente produce il proprio artefatto. Nella prospettiva di
-    M2 questa è l'operazione centrale della topologia "team su git": il progetto
+    È il tool con cui l'agente produce il proprio artefatto. Nella prospettiva dello
+    swarm (M4) questa è l'operazione centrale della topologia "team su git": il progetto
     non nasce da un merge finale degli output, ma **cresce incrementalmente**
     nel workspace condiviso, una scrittura alla volta. Ne segue che la qualità
     andrà misurata sullo *stato del workspace* ai checkpoint (compila? i test

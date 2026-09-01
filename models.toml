@@ -61,20 +61,44 @@ audio_minute        = 1           # trascrizione (STT)
 #  marginale: l'abbonamento rende il costo unitario dipendente dal tasso di
 #  utilizzo mensile, quindi non riproducibile fra esecuzioni.
 # ───────────────────────────────────────────────────────────────────────────
+#  base_url / api_key_env — come si raggiunge il fornitore. Entrambi
+#  FACOLTATIVI: un models.toml che descriva solo prezzi resta valido, ed e'
+#  cio' che usano i test. Chi vuole chiamare davvero il fornitore li pretende
+#  al momento dell'uso, con un errore che nomina provider e variabile.
+#
+#  api_key_env e' il NOME della variabile d'ambiente, mai il valore. Il
+#  registro viene letto dai test, stampato nei messaggi d'errore e in
+#  prospettiva serializzato nei log: una chiave qui dentro uscirebbe da
+#  qualche parte, prima o poi.
+#
+#  ⚠️ Il percorso conta quanto il modello. Verificato ago 2026: passando da un
+#  aggregatore la prompt cache non sopravvive (cache_control respinto, sconti
+#  di Moonshot/Kimi/MiniMax non trasferiti), e lo stesso modello arriva a
+#  costare 2.25x. Per le misure della campagna si chiama sempre diretto.
+
 [providers.anthropic]
 monthly_fee = 0.0
+base_url    = "https://api.anthropic.com"
+api_key_env = "ORC2_ANTHROPIC_KEY"
 
 [providers.moonshot]
 monthly_fee = 0.0
+base_url    = "https://api.moonshot.ai/v1"
+api_key_env = "ORC2_MOONSHOT_KEY"
 
 [providers.minimax]
 monthly_fee = 0.0
+base_url    = "https://api.minimax.io/v1"   # rotta OpenAI-compatible, verificata
+api_key_env = "ORC2_MINIMAX_KEY"
 
 [providers.openai]
 monthly_fee = 0.0
+base_url    = "https://api.openai.com/v1"
+api_key_env = "ORC2_OPENAI_KEY"
 
 [providers.tripo]
 monthly_fee = 0.0   # pay-as-you-go: nessun abbonamento richiesto
+api_key_env = "ORC2_TRIPO_KEY"
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -136,6 +160,24 @@ prices       = { input_tokens = 0.24, output_tokens = 0.96, cached_input_tokens 
 provider     = "openai"
 capabilities = ["embedding"]
 prices       = { input_tokens = 0.02 }
+
+# ───────────────────────────────────────────────────────────────────────────
+#  RUOLI  (stadio S1: assegnazione statica)
+#
+#  requires — le capacita' che il MESTIERE richiede, non quelle che il modello
+#  assegnato possiede per caso. Il registro verifica al caricamento che il
+#  modello le abbia tutte: un ruolo mal assegnato fallisce all'avvio, non a
+#  meta' di una run gia' pagata.
+# ───────────────────────────────────────────────────────────────────────────
+
+[roles.planner]
+model    = "opus-5"
+requires = ["reasoning", "code"]
+
+[roles.worker]
+model    = "minimax-m2-7"
+requires = ["code"]
+
 
 
 # ───────────────────────────────────────────────────────────────────────────

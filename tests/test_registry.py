@@ -1,8 +1,9 @@
 """Test del registro dei modelli.
 
-Coprono le due responsabilita' della classe: il **calcolo del costo** con la
-formula unica valida per ogni unita' di fatturazione, e la **validazione** che
-impedisce a una configurazione incoerente di entrare nel sistema.
+Coprono le tre responsabilita' della classe: il **calcolo del costo** con la
+formula unica valida per ogni unita' di fatturazione, la **validazione** che
+impedisce a una configurazione incoerente di entrare nel sistema, e
+l'**assegnazione ruolo -> modello** dello stadio S1 del routing.
 
 Nota di design (tesi):
     I test costruiscono il registro da dizionari invece che da file, cosi' che
@@ -15,9 +16,11 @@ Nota di design (tesi):
 import pytest
 
 from accounting import (
+    CapabilityUnavailable,
     MalformedRegistry,
     ModelNotFound,
     ModelRegistry,
+    RoleNotFound,
     UnitNotFound,
 )
 
@@ -57,7 +60,8 @@ def _registro(**modifiche):
     """Costruisce un registro dalla configurazione base, con sostituzioni.
 
     Args:
-        **modifiche: sezioni da sostituire (`units`, `providers`, `models`).
+        **modifiche: sezioni da sostituire (`units`, `providers`,
+            `models`, `roles`).
 
     Returns:
         Il `ModelRegistry` corrispondente.
@@ -199,3 +203,139 @@ def test_file_toml_malformato(tmp_path):
     rotto.write_text("questo non e' [ TOML valido")
     with pytest.raises(MalformedRegistry):
         ModelRegistry.from_file(rotto)
+
+
+# ── Ruoli: assegnazione statica (stadio S1) ───────────────────────────────
+
+RUOLI = {
+    "planner": {"model": "grosso", "requires": ["reasoning", "code"]},
+    "worker": {"model": "piccolo", "requires": ["code"]},
+}
+
+
+def test_il_ruolo_restituisce_il_modello_assegnato():
+    """Il lookup che rende possibile il routing per ruolo.
+
+    Chi chiama nomina un mestiere e non un modello: e' cio' che permette di
+    cambiare l'assegnazione senza toccare una riga di codice.
+    """
+    r = _registro(roles=RUOLI)
+    assert r.model_for("planner") == "grosso"
+    assert r.model_for("worker") == "piccolo"
+
+
+def test_ruolo_sconosciuto_elenca_quelli_disponibili():
+    with pytest.raises(RoleNotFound) as errore:
+        _registro(roles=RUOLI).model_for("giudice")
+    messaggio = str(errore.value)
+    assert "giudice" in messaggio
+    assert "planner" in messaggio and "worker" in messaggio
+
+
+def test_un_registro_senza_ruoli_resta_valido():
+    """I ruoli sono facoltativi: senza `[roles]` il registro funziona lo stesso.
+
+    Serve a non rompere le configurazioni precedenti a M2s, e a permettere ai
+    test di costruire registri che dei ruoli non hanno bisogno.
+    """
+    r = _registro()
+    assert r.roles == {}
+    with pytest.raises(RoleNotFound):
+        r.model_for("planner")
+
+
+# ── Ruoli: validazione al caricamento ─────────────────────────────────────
+
+def test_ruolo_su_modello_inesistente_e_rifiutato():
+    with pytest.raises(MalformedRegistry) as errore:
+        _registro(roles={"planner": {"model": "fantasma", "requires": []}})
+    assert "fantasma" in str(errore.value)
+
+
+def test_ruolo_con_capacita_sconosciuta_e_rifiutato():
+    """Un refuso in `requires` non deve passare inosservato.
+
+    Senza questo controllo, `requires = ["reasonning"]` non verrebbe mai
+    soddisfatta da nessun modello, ma il file sembrerebbe corretto.
+    """
+    with pytest.raises(MalformedRegistry) as errore:
+        _registro(roles={"planner": {"model": "grosso", "requires": ["reasonning"]}})
+    assert "reasonning" in str(errore.value)
+
+
+def test_modello_privo_di_una_capacita_richiesta_e_rifiutato():
+    """Il cuore del capability-aware routing (D10/D11).
+
+    `piccolo` sa scrivere codice ma non sa ragionare: assegnarlo al planner e'
+    un errore di configurazione, e va scoperto all'avvio — non a meta' di una
+    run gia' pagata. Il messaggio deve dire **quale** capacita' manca, non
+    limitarsi a rifiutare.
+    """
+    with pytest.raises(MalformedRegistry) as errore:
+        _registro(roles={"planner": {"model": "piccolo", "requires": ["reasoning", "code"]}})
+    messaggio = str(errore.value)
+    assert "reasoning" in messaggio
+    assert "piccolo" in messaggio
+
+
+def test_le_capacita_in_eccesso_non_disturbano():
+    """Al ruolo interessa che il modello sappia fare almeno cio' che serve.
+
+    `grosso` offre anche capacita' che il worker non richiede: e' irrilevante.
+    Il controllo e' di inclusione, non di uguaglianza.
+    """
+    r = _registro(roles={"worker": {"model": "grosso", "requires": ["code"]}})
+    assert r.model_for("worker") == "grosso"
+
+
+def test_un_ruolo_senza_requisiti_e_ammesso():
+    """`requires` assente significa "nessun requisito", non configurazione rotta."""
+    r = _registro(roles={"worker": {"model": "piccolo"}})
+    assert r.model_for("worker") == "piccolo"
+
+
+# ── Capacita' pretesa dal pool ────────────────────────────────────────────
+
+def test_require_capability_restituisce_i_modelli_capaci():
+    assert _registro().require_capability("code") == ["grosso", "piccolo"]
+
+
+def test_capacita_non_coperta_dal_pool_e_un_errore_parlante():
+    """Chiedere cio' che nessuno sa fare deve fermarsi qui.
+
+    Il messaggio elenca le capacita' effettivamente coperte: e' la risposta
+    alla domanda successiva di chi legge l'errore — *e allora cosa posso
+    fare?*
+    """
+    with pytest.raises(CapabilityUnavailable) as errore:
+        _registro().require_capability("video_gen")
+    messaggio = str(errore.value)
+    assert "video_gen" in messaggio
+    assert "code" in messaggio and "image_gen" in messaggio
+
+
+def test_models_with_resta_tollerante():
+    """`models_with` non deve essere stato contagiato da `require_capability`.
+
+    Le due domande convivono: una accetta "nessuno" come risposta, l'altra no.
+    Se un domani qualcuno le unificasse, questo test lo segnalerebbe.
+    """
+    assert _registro().models_with("video_gen") == []
+
+
+# ── I ruoli reali del progetto ────────────────────────────────────────────
+
+def test_i_ruoli_di_models_toml_sono_coerenti():
+    """L'assegnazione realmente in uso regge la validazione delle capacita'.
+
+    E' il test che intercetterebbe un'assegnazione sbagliata introdotta
+    modificando la tabella dei ruoli: il caricamento del file reale esercita
+    gia' tutti e tre i controlli.
+    """
+    r = ModelRegistry.from_file("models.toml")
+    assert r.model_for("planner") in r.models
+    assert r.model_for("worker") in r.models
+    # Il worker deve costare meno del planner, altrimenti il routing per ruolo
+    # non ha alcun senso economico.
+    costo = lambda m: r.cost(m, "output_tokens", 1_000_000)
+    assert costo(r.model_for("worker")) < costo(r.model_for("planner"))

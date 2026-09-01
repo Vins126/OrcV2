@@ -9,24 +9,23 @@ Le soglie sono passate esplicitamente e ridotte (2 e 3) invece di usare quelle d
 anche se le soglie di produzione vengono ritarate.
 """
 
-from types import SimpleNamespace
-
+from llm_contracts import ToolCall
 from loop_detector import RilevatoreLoop
 from alerts import Alerts
 
 
 def _finta_chiamata(nome, argomenti):
-    # Ricrea la forma di una vera tool_call: serve .function.name e .function.arguments
-    """Costruisce una tool call minima con la struttura attesa dal rilevatore.
+    """Costruisce una tool call nel tipo del progetto.
 
     Args:
         nome: nome del tool invocato.
-        argomenti: argomenti come stringa grezza, così come arriverebbero dall'API.
+        argomenti: argomenti come stringa grezza, così come li produce il modello.
 
     Returns:
-        Un oggetto con gli attributi `.function.name` e `.function.arguments`.
+        Una `ToolCall`. Non serve piu' imitare la forma dell'SDK: il rilevatore
+        vede lo stesso tipo che vede l'agente.
     """
-    return SimpleNamespace(function=SimpleNamespace(name=nome, arguments=argomenti))
+    return ToolCall(id="1", name=nome, arguments=argomenti)
 
 
 def test_escalation_loop():

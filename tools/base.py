@@ -8,7 +8,7 @@ Nota di design (tesi):
     conseguenza architetturale è che l'`Agent` non conosce nessun tool concreto:
     ne riceve una lista e li tratta in modo uniforme. Aggiungere una capacità al
     sistema (una ricerca web, un browser, un linter) non richiede quindi di
-    modificare l'agente — è la proprietà che rende praticabile lo swarm di M2,
+    modificare l'agente — è la proprietà che rende praticabile lo swarm (M4),
     dove worker specializzati avranno insiemi di tool diversi.
 
     La classe separa due responsabilità: ciò che ogni tool deve **dichiarare**

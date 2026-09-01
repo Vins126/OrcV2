@@ -27,6 +27,17 @@ class BudgetGuard:
     DEFAULT_SOFT_RATIO = 0.8
 
     def __init__(self, hard_limit_usd: float | None, *, soft_ratio: float = DEFAULT_SOFT_RATIO):
+        """Fissa il tetto della run e ne deriva la soglia morbida.
+
+        Args:
+            hard_limit_usd: tetto in dollari, oppure `None` per una run non limitata.
+            soft_ratio: frazione del tetto a cui emettere l'avviso, una volta sola.
+
+        Raises:
+            ValueError: se il tetto non e' un numero finito positivo, o se il
+                rapporto non e' strettamente compreso fra zero e uno. Entrambi
+                sarebbero policy prive di senso, e vanno rifiutate all'avvio.
+        """
         if hard_limit_usd is not None and (
             not isfinite(hard_limit_usd) or hard_limit_usd <= 0
         ):
@@ -58,11 +69,15 @@ class BudgetGuard:
 
     def check(self, total_cost_usd: float) -> BudgetVerdict:
         """Restituisce il verdetto per la prossima chiamata, senza effetti esterni."""
-        if not self.enabled:
+        # Le soglie si leggono in locali: `enabled` dice gia' che non sono None,
+        # ma legarlo qui rende la garanzia visibile anche a un lettore (e al
+        # controllo dei tipi) senza doverla inseguire in un'altra proprieta'.
+        tetto, soglia = self.hard_limit_usd, self.soft_limit_usd
+        if tetto is None or soglia is None:
             return BudgetVerdict.OK
-        if total_cost_usd >= self.hard_limit_usd:
+        if total_cost_usd >= tetto:
             return BudgetVerdict.HARD_LIMIT_REACHED
-        if total_cost_usd >= self.soft_limit_usd and not self._soft_warning_emitted:
+        if total_cost_usd >= soglia and not self._soft_warning_emitted:
             self._soft_warning_emitted = True
             return BudgetVerdict.SOFT_LIMIT_REACHED
         return BudgetVerdict.OK

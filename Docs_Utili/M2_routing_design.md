@@ -1,8 +1,12 @@
 # ORC — M2: Cost-Routing & Valutazione (documento di lavoro per il colloquio)
 
-> Stato: M1 completo (agente singolo robusto, sandbox Docker, resilienza, test).
-> Questo documento raccoglie il ragionamento di design su **M2 (cost-routing)** e sul
-> **problema della valutazione della qualità**, con architettura attuale e futura.
+> **Stato (settembre 2026):** M1 e M2a complete, M2s in corso. Lo stato aggiornato e
+> granulare vive in `ROADMAP.md`; questo documento raccoglie il **ragionamento di
+> design** su cost-routing e valutazione della qualità, che resta valido.
+>
+> ⚠️ La fase «M2» qui nominata è stata poi **divisa in tre**: `M2a` (misura), `M2s`
+> (instradamento statico per ruolo) e `M2b` (intelligenza di instradamento). Dove il
+> testo dice «M2» senza suffisso si riferisce all'insieme.
 
 ---
 
@@ -26,6 +30,21 @@ costo ed esporla al controller nel formato utile al task.
 La baseline e' pronta solo quando lo stesso task, eseguito su un modello
 configurato, lascia un dataset persistente con costo, latenza, esito e contesto
 minimo di attribuzione. I record soltanto in RAM non alimentano il flywheel.
+
+### M2s — Instradamento statico per ruolo (stadio S1)
+
+Fase introdotta dopo la stesura originale, fra la misura e l'intelligenza.
+
+1. Ruoli dichiarati in configurazione (`[roles]` in `models.toml`), con le capacità
+   che ciascun mestiere richiede; il registro verifica **al caricamento** che il
+   modello assegnato le possieda tutte.
+2. Un gateway per fornitore, con percorso **diretto** alle API: passando da un
+   aggregatore la prompt cache non sopravvive, e lo stesso modello arriva a costare
+   più del doppio.
+3. Fabbrica di agenti: dato un ruolo costruisce l'agente col suo modello, il suo
+   contabile, il suo ledger e il suo workspace.
+4. Prima misura reale: tassa dell'aggregatore, tasso di fallimento del modello
+   economico, quota dei token di output sul costo.
 
 ### M2b — Routing e dataset comparativo
 
@@ -184,34 +203,47 @@ overfitting** (pochi task non generalizzano); **modelli che cambiano** → pipel
 
 ---
 
-## 7. Architettura ATTUALE (M1, implementata e testata)
+## 7. Architettura ATTUALE (M1 + M2a + M2s, implementata e testata)
 
 ```
-                ┌──────────────────────────────┐
-                │        LLM (proxy LiteLLM)    │  1 modello fisso = BASELINE
-                └───────────────┬──────────────┘
-            (3) osservazione    │   ▲ (1) decide (ReAct)
-                    ▼           │   │
-                ┌──────────────────────────────┐
-                │   Agent (classe, DI)          │
-                │   - loop ReAct + max iter      │
-                │   - retry + backoff (resilienza)│
-                │   - loop detection (escalation) │
-                │   - errori → osservazioni       │
-                └───────────────┬──────────────┘
-                   (2) esegui    │   ▲ risultato
-                                 ▼   │
-                ┌──────────────────────────────┐
-                │   Tools (ABC/Strategy)         │
-                │   • bash → DockerExecutor       │ sandbox: --network none,
-                │   • read/write → Workspace      │ non-root, read-only, effimero
-                │                                 │ + guardia path-traversal
-                └──────────────────────────────┘
+   ┌───────────────────────────────────────────┐
+   │  Provider LLM (API dirette, per fornitore)│  1 modello per ruolo
+   └────────────────────┬──────────────────────┘
+                        │  (2) chiamata + cronometro
+   ┌────────────────────┴──────────────────────┐
+   │  ChatGateway  — l'unico che tocca la rete  │
+   │   • retry solo su guasti transitori        │
+   │   • BudgetGuard PRIMA della chiamata       │
+   │   • mapper: usage del provider → record    │
+   │   • Accountant: quantità × prezzo          │
+   │   • Ledger: riga append-only su disco      │
+   └────────────────────┬──────────────────────┘
+       (1) AssistantTurn│   ▲ (3) turno, senza costi né SDK
+                        ▼   │
+   ┌───────────────────────────────────────────┐
+   │  Agent (ReAct, dipendenze iniettate)       │
+   │   • max iterazioni · rilevamento loop      │
+   │   • errori → osservazioni → auto-correzione│
+   └────────────────────┬──────────────────────┘
+              (4) esegui │   ▲ risultato
+                         ▼   │
+   ┌───────────────────────────────────────────┐
+   │  Tools (ABC/Strategy)                      │
+   │   • bash → DockerExecutor                  │ sandbox: --network none,
+   │   • read/write → Workspace                 │ non-root, read-only, effimero
+   │                                            │ + guardia path-traversal
+   └───────────────────────────────────────────┘
 
-   Config centralizzata · logging professionale · test pytest · requirements pinnati
+   ModelRegistry (models.toml): prezzi, capacità, ruoli — nessun codice da toccare
+   RunLedger: usage.jsonl · events.jsonl · summary.json — il dataset del flywheel
+   138 test offline · CI su ogni push · configurazione centralizzata
 ```
 
-## 8. Architettura FUTURA (ipotesi M2→M4)
+**Il confine che conta:** `Agent` non conosce SDK, prezzi né filesystem. È la
+proprietà che ha permesso di aggiungere un secondo fornitore senza toccarlo, ed è
+il presupposto dello swarm di M4 — N agenti, N contabili distinti, un registro solo.
+
+## 8. Architettura FUTURA (ipotesi M2s → M4)
 
 ```
                          TASK utente

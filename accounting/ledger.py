@@ -37,6 +37,20 @@ class RunLedger:
         agent_id: str | None = None,
         role: str | None = None,
     ):
+        """Prepara la directory della run e i contatori di sequenza.
+
+        Args:
+            root: directory che raccoglie tutte le run.
+            task: testo del task, di cui si conserva soltanto l'hash.
+            run_id: identificatore della run; se assente ne viene generato uno.
+            agent_id: quale agente ha prodotto la run (serve da M4 in poi).
+            role: ruolo svolto dall'agente.
+
+        Raises:
+            FileExistsError: se la directory esiste gia'. E' voluto: riusarla
+                mescolerebbe i dati di due esecuzioni e renderebbe il riepilogo
+                non piu' riproducibile.
+        """
         self.run_id = run_id or uuid4().hex
         self.run_dir = Path(root) / self.run_id
         self.task_hash = sha256(task.encode("utf-8")).hexdigest()

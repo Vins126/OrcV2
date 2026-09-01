@@ -6,6 +6,7 @@ import pytest
 
 from accounting.ledger import RunLedger
 from agent import AgentFailure, RunResult
+from run_reporter import RunReporter
 from run_session import RunSession
 
 
@@ -22,12 +23,18 @@ class AgentFinto:
         return self.result
 
 
-class ReporterFinto:
+class ReporterFinto(RunReporter):
+    """Reporter che raccoglie invece di stampare."""
+
     def __init__(self):
         self.calls = []
 
-    def emit(self, summary, events, ledger_path, agent_message=None):
+    def emit(self, summary, events, ledger_path, agent_message=None) -> str:
         self.calls.append((summary, events, ledger_path, agent_message))
+        # Il contratto promette il testo del report: restituirlo anche qui evita
+        # che un chiamante futuro si trovi un None dove si aspetta una stringa.
+        return ""
+
 
 
 def test_chiude_il_ledger_con_l_esito_dell_agente(tmp_path):

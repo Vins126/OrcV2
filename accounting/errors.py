@@ -50,6 +50,26 @@ class UnpricedUsage(RegistryError):
     necessario per calcolarne il costo in modo riproducibile.
     """
 
+class RoleNotFound(RegistryError):
+    """E' stato richiesto un ruolo che il registro non conosce.
+
+    Sollevata al **lookup**, come `ModelNotFound`: la configurazione e'
+    valida: e' il chiamante ad aver chiesto un mestiere che nessuno ha
+    dichiarato in `[roles]`.
+    """
+
+
+class CapabilityUnavailable(RegistryError):
+    """Nessun modello del pool offre la capacita' richiesta.
+
+    Distinta da `MalformedRegistry` perche' non c'e' nulla di sbagliato nel
+    file: il listino e' coerente, semplicemente il pool non copre quel
+    bisogno. Si corregge aggiungendo un modello, non riparando una riga.
+
+    Distinta anche da una lista vuota restituita da `models_with`: li'
+    l'assenza e' un'informazione da interpretare, qui e' un impedimento.
+    """
+
 
 class InvalidUsage(ValueError):
     """Un UsageRecord contiene quantita' non valide per la contabilita'."""

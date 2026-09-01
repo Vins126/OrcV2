@@ -6,7 +6,8 @@ costanti sono le variabili degli esperimenti della tesi, e averle in un solo
 punto rende le esecuzioni riproducibili e confrontabili.
 
 I segreti vivono nel file `.env` (non versionato), caricato solo dal punto di
-ingresso tramite `load_llm_settings`.
+ingresso. Da M2s.2 ce n'e' uno per fornitore: `load_llm_settings` serve il
+percorso mono-agente, `credenziali_fornitore` quello per ruolo.
 """
 
 import os
@@ -61,6 +62,73 @@ def load_llm_settings(
         model=model_override or richiedi_env("ORC2_MODEL"),
         api_provider=os.getenv("ORC2_API_PROVIDER", "litellm"),
         billing_provider=os.getenv("ORC2_BILLING_PROVIDER", "openrouter"),
+    )
+
+
+@dataclass(frozen=True)
+class ProviderCredentials:
+    """Come raggiungere un fornitore specifico.
+
+    Attributes:
+        provider: nome del fornitore, come compare in `[providers.*]`.
+        base_url: endpoint dichiarato nel registro, oppure `None` per usare
+            quello di default dell'SDK.
+        api_key: il segreto, letto dall'ambiente. Non compare mai nel registro.
+    """
+
+    provider: str
+    base_url: str | None
+    api_key: str
+
+
+def credenziali_fornitore(provider: str, dati_provider: dict) -> ProviderCredentials:
+    """Risolve le credenziali di un fornitore a partire dai suoi dati a registro.
+
+    Nota di design (tesi):
+        La separazione fra *nome* e *valore* del segreto non e' formalismo. Il
+        registro viene letto dai test, stampato nei messaggi d'errore e in
+        prospettiva serializzato nei log: una chiave dichiarata li' dentro
+        uscirebbe da qualche parte. Il registro conosce il nome della
+        variabile, l'ambiente conosce il valore, e i due si incontrano solo
+        qui.
+
+        `base_url` e `api_key_env` sono facoltativi nel registro perche' un
+        `models.toml` di soli prezzi deve restare valido — e' cio' che usano i
+        test. Il costo di quella scelta e' che l'assenza va gestita al momento
+        dell'uso: e' questa funzione a pretenderli, non il caricamento.
+
+    Args:
+        provider: nome del fornitore.
+        dati_provider: la sua voce in `[providers.*]`, come la restituisce
+            `ModelRegistry.providers`.
+
+    Returns:
+        Le credenziali pronte per costruire un client.
+
+    Raises:
+        RuntimeError: se il fornitore non dichiara `api_key_env`, oppure se la
+            variabile dichiarata non e' definita nell'ambiente. Il messaggio
+            nomina **sia il fornitore sia la variabile**: con cinque fornitori
+            un "manca una chiave" non basta a capire quale.
+    """
+    nome_variabile = dati_provider.get("api_key_env")
+    if not nome_variabile:
+        raise RuntimeError(
+            f"il fornitore '{provider}' non dichiara 'api_key_env' in models.toml: "
+            f"non si puo' costruire un client senza sapere dove sta la sua chiave"
+        )
+
+    valore = os.getenv(nome_variabile)
+    if valore is None:
+        raise RuntimeError(
+            f"il fornitore '{provider}' richiede la variabile d'ambiente "
+            f"'{nome_variabile}', che non e' definita. Vedi .env.example"
+        )
+
+    return ProviderCredentials(
+        provider=provider,
+        base_url=dati_provider.get("base_url"),
+        api_key=valore,
     )
 
 

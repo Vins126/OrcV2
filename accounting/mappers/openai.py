@@ -24,6 +24,12 @@ def _common(
     dimensions: dict[str, Any] | None = None,
     measurement_source: str = "reported",
 ) -> dict[str, Any]:
+    """Compone i campi che identificano l'operazione, comuni a ogni mapper.
+
+    Tiene separato cio' che **descrive** il consumo — chi e' stato chiamato,
+    che tipo di operazione era, come si e' chiusa — da cio' che viene
+    **moltiplicato per un prezzo**, che vive solo in `quantities`.
+    """
     return {
         "model": model,
         "api_provider": api_provider,
@@ -45,6 +51,23 @@ class OpenAIChatCompletionsUsageMapper:
     def to_record(response: Any, *, model: str, latency_s: float | None,
                   attempt: int = 1, api_provider: str = "openai",
                   billing_provider: str | None = "openai") -> UsageRecord:
+        """Converte una risposta chat.completions in un record di consumo.
+
+        Scorpora i token serviti dalla cache da quelli di input:
+        `prompt_tokens` li **include**, quindi sommarli entrambi ne
+        conterebbe una parte due volte.
+
+        Args:
+            response: la risposta del provider, o un suo finto.
+            model: nome del modello, come compare nel registro.
+            latency_s: durata misurata dal gateway.
+            attempt: a quale tentativo la chiamata e' riuscita.
+            api_provider: chi e' stato chiamato direttamente.
+            billing_provider: chi fattura il consumo.
+
+        Returns:
+            Il `UsageRecord` corrispondente.
+        """
         usage = field(response, "usage")
         prompt = number(field(usage, "prompt_tokens"))
         cached = number(nested(usage, "prompt_tokens_details", "cached_tokens"))
@@ -81,6 +104,22 @@ class OpenAIResponsesUsageMapper:
     def to_record(response: Any, *, model: str, latency_s: float | None,
                   attempt: int = 1, api_provider: str = "openai",
                   billing_provider: str | None = "openai") -> UsageRecord:
+        """Converte una risposta Responses API in un record di consumo.
+
+        Distingue lettura e scrittura di cache, che questa API riporta
+        come voci separate dentro `input_tokens_details`.
+
+        Args:
+            response: la risposta del provider, o un suo finto.
+            model: nome del modello, come compare nel registro.
+            latency_s: durata misurata dal gateway.
+            attempt: a quale tentativo la chiamata e' riuscita.
+            api_provider: chi e' stato chiamato direttamente.
+            billing_provider: chi fattura il consumo.
+
+        Returns:
+            Il `UsageRecord` corrispondente.
+        """
         usage = field(response, "usage")
         input_tokens = number(field(usage, "input_tokens"))
         cached = number(nested(usage, "input_tokens_details", "cached_tokens"))
@@ -118,6 +157,23 @@ class OpenAIImageUsageMapper:
                   attempt: int = 1, operation: str = "image_generation",
                   api_provider: str = "openai",
                   billing_provider: str | None = "openai") -> UsageRecord:
+        """Converte una risposta Images API in un record di consumo.
+
+        Quando il provider non dichiara l'usage, il numero di immagini
+        prodotte e' una misura **derivata** e viene marcata come tale:
+        non e' la stessa cosa di un consumo dichiarato.
+
+        Args:
+            response: la risposta del provider, o un suo finto.
+            model: nome del modello, come compare nel registro.
+            latency_s: durata misurata dal gateway.
+            attempt: a quale tentativo la chiamata e' riuscita.
+            api_provider: chi e' stato chiamato direttamente.
+            billing_provider: chi fattura il consumo.
+
+        Returns:
+            Il `UsageRecord` corrispondente.
+        """
         usage = field(response, "usage")
         data = field(response, "data") or []
         dimensions = {
@@ -157,6 +213,22 @@ class OpenAIVideoUsageMapper:
                   attempt: int = 1, operation: str = "video_generation",
                   api_provider: str = "openai",
                   billing_provider: str | None = "openai") -> UsageRecord:
+        """Converte una risposta job video in un record di consumo.
+
+        Registra un consumo solo a job `completed`: contabilizzare una
+        creazione ancora in coda fatturerebbe un video mai prodotto.
+
+        Args:
+            response: la risposta del provider, o un suo finto.
+            model: nome del modello, come compare nel registro.
+            latency_s: durata misurata dal gateway.
+            attempt: a quale tentativo la chiamata e' riuscita.
+            api_provider: chi e' stato chiamato direttamente.
+            billing_provider: chi fattura il consumo.
+
+        Returns:
+            Il `UsageRecord` corrispondente.
+        """
         status = field(response, "status", "unknown")
         seconds = number(field(response, "seconds"))
         dimensions = {

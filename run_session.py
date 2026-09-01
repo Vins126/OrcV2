@@ -11,6 +11,13 @@ class RunSession:
     """Esegue un agente e chiude sempre il ledger associato alla sua run."""
 
     def __init__(self, agent: Any, ledger: RunLedger, reporter: RunReporter | None = None):
+        """Registra agente, ledger e reporter della run.
+
+        Args:
+            agent: l'agente da eseguire.
+            ledger: il ledger da chiudere in ogni esito, eccezioni comprese.
+            reporter: chi emette il rapporto finale; se assente ne viene creato uno.
+        """
         self.agent = agent
         self.ledger = ledger
         self.reporter = reporter or RunReporter()

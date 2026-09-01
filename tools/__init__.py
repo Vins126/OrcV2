@@ -8,7 +8,7 @@ Nota di design (tesi):
     Il modulo funge da *composition root*: concentra in un unico punto le
     decisioni di cablaggio, lasciando le altre classi ignare di come vengano
     costruite. Sostituire `DockerExecutor` con `LocalExecutor`, o dare a worker
-    diversi insiemi di tool diversi (scenario M2), significa intervenire qui
+    diversi insiemi di tool diversi (scenario M4), significa intervenire qui
     senza toccare né l'agente né i tool.
 
 Non esistono istanze globali: importare `tools` non crea directory e non prepara

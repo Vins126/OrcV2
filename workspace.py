@@ -12,7 +12,7 @@ Nota di design (tesi):
       2. **riproducibilità della misura** — ogni esecuzione parte da uno stato
          noto e delimitato, condizione necessaria perché costo e qualità
          misurati siano confrontabili tra loro;
-      3. **parallelismo** — nello swarm di M2 più agenti potranno lavorare senza
+      3. **parallelismo** — nello swarm (M4) più agenti potranno lavorare senza
          calpestarsi, ciascuno con il proprio spazio.
 
     Questa classe copre la difesa a livello di *percorso*; la difesa a livello di

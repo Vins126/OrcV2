@@ -27,12 +27,13 @@ Nota di design (tesi):
 import tomllib
 from math import isfinite
 
-from accounting.errors import MalformedRegistry, ModelNotFound, UnitNotFound
-
-#: Capacita' riconosciute, dalla tassonomia di `PIANO_completo.md` §3.11.
-#: Vive nel codice e non nella configurazione perche' e' un elemento del
-#: modello di dominio, non un parametro: introdurre una capacita' nuova
-#: richiede comunque di scrivere il codice che sa invocarla. Validare i nomi
+from accounting.errors import (
+    CapabilityUnavailable,
+    MalformedRegistry,
+    ModelNotFound,
+    RoleNotFound,
+    UnitNotFound,
+)
 #: contro questa lista intercetta i refusi (`"embeding"`) che altrimenti
 #: renderebbero un modello invisibile al filtro per capacita'.
 CAPACITA_NOTE = frozenset({
@@ -58,6 +59,9 @@ class ModelRegistry:
             prezzo dichiarato: 1_000_000 per i token, 1 per le immagini).
         providers: mappa fornitore -> dati del fornitore (costi di accesso).
         models: mappa modello -> dati del modello (provider, capacita', prezzi).
+        roles: mappa ruolo -> {model, requires}, cioe' l'assegnazione statica
+            di stadio S1. Vive in configurazione e non nel codice: cambiare
+            quale modello svolge un mestiere non richiede di toccare Python.
     """
 
     def __init__(self, data: dict):
@@ -78,6 +82,7 @@ class ModelRegistry:
         self.units = data.get("units", {})
         self.providers = data.get("providers", {})
         self.models = data.get("models", {})
+        self.roles = data.get("roles", {})
         self._valida()
 
     @classmethod
@@ -183,6 +188,61 @@ class ModelRegistry:
             )
         return self.providers[provider].get("monthly_fee", 0.0)
 
+    def model_for(self, role: str) -> str:
+        """Restituisce il modello assegnato a un ruolo.
+
+        E' lo stadio S1 del routing: l'assegnazione vive in `models.toml`,
+        quindi cambiare quale modello svolge un mestiere non richiede di
+        toccare il codice. Chi chiama non sa, e non deve sapere, quale
+        modello otterra'.
+
+        Args:
+            role: nome del ruolo, come compare in `[roles.*]`.
+
+        Returns:
+            Il nome del modello, utilizzabile come chiave nelle altre
+            interrogazioni del registro.
+
+        Raises:
+            RoleNotFound: se il ruolo non e' dichiarato.
+        """
+        if role not in self.roles:
+            raise RoleNotFound(
+                f"ruolo '{role}' non dichiarato in [roles]; "
+                f"disponibili: {self._elenca(self.roles)}"
+            )
+        return self.roles[role]["model"]
+
+    def require_capability(self, capability: str) -> list[str]:
+        """Come `models_with`, ma pretende che almeno un modello la offra.
+
+        Nota di design (tesi):
+            Le due domande sono diverse e spettano a chiamanti diversi.
+            `models_with` chiede *chi sa fare X* e accetta "nessuno" come
+            risposta legittima — e' cio' che serve a un router che sta
+            confrontando alternative. Questo metodo chiede *chi sa fare X, e
+            guai se nessuno*, ed e' cio' che serve quando il sistema sta per
+            impegnarsi a svolgere un compito che richiede quella capacita'.
+            Tenerli separati evita che un chiamante debba ricordarsi di
+            controllare una lista vuota.
+
+        Args:
+            capability: nome della capacita' (vedi `CAPACITA_NOTE`).
+
+        Returns:
+            I nomi dei modelli che la offrono, in ordine alfabetico.
+
+        Raises:
+            CapabilityUnavailable: se nessun modello del pool la offre.
+        """
+        modelli = self.models_with(capability)
+        if not modelli:
+            raise CapabilityUnavailable(
+                f"nessun modello del pool offre la capacita' '{capability}'; "
+                f"coperte dal pool: {self._elenca(self._capacita_coperte())}"
+            )
+        return modelli
+
     # ── Interni ───────────────────────────────────────────────────────────
 
     def _modello(self, model: str) -> dict:
@@ -194,6 +254,14 @@ class ModelRegistry:
             )
         return self.models[model]
 
+    def _capacita_coperte(self) -> set:
+        """Le capacita' offerte da almeno un modello del pool."""
+        return {
+            capacita
+            for dati in self.models.values()
+            for capacita in dati.get("capabilities", [])
+        }
+
     @staticmethod
     def _elenca(nomi) -> str:
         """Formatta un elenco di nomi per i messaggi d'errore."""
@@ -202,7 +270,7 @@ class ModelRegistry:
     def _valida(self):
         """Verifica la coerenza dell'intera configurazione.
 
-        Cinque controlli, tutti bloccanti. Il registro e' il guardiano della
+        Tutti i controlli sono bloccanti. Il registro e' il guardiano della
         correttezza dei prezzi: un dato sbagliato che passi di qui si
         propagherebbe silenziosamente a ogni misura della campagna
         sperimentale, e un costo negativo o un'unita' senza base non
@@ -211,7 +279,7 @@ class ModelRegistry:
 
         Raises:
             MalformedRegistry: al primo problema incontrato, con l'indicazione
-                del modello e del campo responsabili.
+                del modello (o del ruolo) e del campo responsabili.
         """
         for base in self.units.values():
             if not self._is_finite_number(base) or base <= 0:
@@ -252,6 +320,33 @@ class ModelRegistry:
                     raise MalformedRegistry(
                         f"modello '{nome}': prezzo negativo per '{unita}' ({prezzo})"
                     )
+
+        for ruolo, dati in self.roles.items():
+            model = dati.get("model")
+            if model not in self.models:
+                raise MalformedRegistry(
+                    f"ruolo '{ruolo}': modello '{model}' non a registro; "
+                    f"disponibili: {self._elenca(self.models)}"
+                )
+
+            richieste = dati.get("requires", [])
+            for capacita in richieste:
+                if capacita not in CAPACITA_NOTE:
+                    raise MalformedRegistry(
+                        f"ruolo '{ruolo}': capacita' '{capacita}' sconosciuta; "
+                        f"riconosciute: {self._elenca(CAPACITA_NOTE)}"
+                    )
+
+            possedute = self.models[model].get("capabilities", [])
+            mancanti = set(richieste) - set(possedute)
+            if mancanti:
+                raise MalformedRegistry(
+                    f"ruolo '{ruolo}': il modello '{model}' non offre "
+                    f"{self._elenca(mancanti)}. Il filtro per capacita' precede "
+                    f"quello sul costo: un modello privo di cio' che il ruolo "
+                    f"richiede non e' confrontabile sul prezzo, per quanto "
+                    f"economico. Offre: {self._elenca(possedute)}"
+                )
 
     @staticmethod
     def _is_finite_number(value: object) -> bool:

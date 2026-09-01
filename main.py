@@ -1,7 +1,16 @@
 """Punto d'ingresso CLI e composizione delle dipendenze concrete.
 
 Il resto del progetto usa contratti e dipendenze iniettate; solo questo modulo
-legge segreti, importa l'SDK OpenAI e decide filesystem/workspace della run.
+legge i segreti, costruisce i client dei fornitori e decide dove vivranno
+workspace e ledger della run. E' il *composition root*: l'unico posto in cui
+si sa quali implementazioni concrete stanno dietro le interfacce.
+
+Stato (M2s.2): la run mono-agente passa ancora dal solo gateway compatibile
+OpenAI, configurato via `.env`. Il percorso per fornitore — un client e un
+gateway scelti in base al modello del ruolo — arriva con la fabbrica di agenti
+di M2s.3; l'infrastruttura che gli serve (`config.credenziali_fornitore`,
+`AnthropicChatGateway`, i campi `base_url` / `api_key_env` del registro) e' gia'
+in piedi e coperta da test.
 """
 
 import argparse
@@ -30,9 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
     """Costruisce la CLI senza accedere a ambiente, rete o Docker."""
     parser = argparse.ArgumentParser(description="Esegue una run dell'agente ORC")
     parser.add_argument("task", nargs="?", default=DEFAULT_TASK, help="task da assegnare all'agente")
-    parser.add_argument("--model", help="alias del modello nel proxy e in models.toml")
+    parser.add_argument(
+        "--model",
+        help="modello da usare: deve essere una chiave di models.toml, e un nome che "
+             "l'endpoint configurato sappia servire",
+    )
     parser.add_argument("--budget-usd", type=float, default=None,
-                        help="tetto opzionale in USD per questa run")
+                        help="tetto opzionale in USD per questa sola run; senza, la run "
+                             "non e' limitata")
     parser.add_argument("--max-iterations", type=int, default=config.MAX_ITERAZIONI,
                         help="numero massimo di iterazioni ReAct")
     parser.add_argument("--workspace", type=Path, default=PROJECT_ROOT / "workspace",

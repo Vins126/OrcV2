@@ -11,6 +11,11 @@ Nota di design (tesi):
     delle dipendenze nel costruttore di `Agent` a rendere possibile questa
     sostituzione.
 
+    Dal contratto esplicito (M2s.2) i finti restituiscono `AssistantTurn`, non
+    piu' una imitazione della risposta OpenAI. E' la prova che l'agente non
+    conosce piu' alcun SDK: se un giorno lo riconoscesse di nuovo, questi test
+    smetterebbero di compilare la finzione.
+
 Copertura attuale (limite noto):
     Sono verificate le condizioni di uscita del ciclo — conclusione, limite di
     iterazioni, budget esaurito, servizio irraggiungibile, guasto inatteso.
@@ -19,13 +24,12 @@ Copertura attuale (limite noto):
     Docker.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 import config
 from agent import Agent, AgentFailure, RunResult
 from budget_guard import BudgetExceeded
+from llm_contracts import AssistantTurn, ToolCall
 from loop_detector import RilevatoreLoop
 
 
@@ -38,6 +42,11 @@ class FakeGateway:
     def complete(self, messages, tools):
         self.calls.append((messages, tools))
         return self.message
+
+
+def _turno_con_tool(name="bash", arguments="{}"):
+    """Turno in cui il modello chiede uno strumento."""
+    return AssistantTurn(tool_calls=(ToolCall(id="1", name=name, arguments=arguments),))
 
 
 def _rilevatore():
@@ -57,8 +66,7 @@ def test_agente_finisce_senza_tool():
     `tool_calls` significa che il modello considera il compito concluso.
     """
     # L'LLM risponde a parole (niente tool_calls) -> il task è concluso
-    risposta = SimpleNamespace(tool_calls=None, content="Ho finito")
-    agent = Agent(FakeGateway(risposta), [])
+    agent = Agent(FakeGateway(AssistantTurn(content="Ho finito")), [])
 
     outcome = agent._esegui_iterazione([], _rilevatore(), 1)
 
@@ -74,9 +82,7 @@ def test_agente_continua_con_tool():
     interrompono il task, ma vi rientrano come informazione.
     """
     # L'LLM chiede un tool -> il task deve continuare
-    chiamata = SimpleNamespace(id="1", function=SimpleNamespace(name="bash", arguments="{}"))
-    risposta = SimpleNamespace(tool_calls=[chiamata], content=None)
-    agent = Agent(FakeGateway(risposta), [])
+    agent = Agent(FakeGateway(_turno_con_tool()), [])
 
     outcome = agent._esegui_iterazione([], _rilevatore(), 1)
 
@@ -84,8 +90,7 @@ def test_agente_continua_con_tool():
 
 
 def test_run_restituisce_esito_e_numero_di_iterazioni():
-    risposta = SimpleNamespace(tool_calls=None, content="Ho finito")
-    agent = Agent(FakeGateway(risposta), [])
+    agent = Agent(FakeGateway(AssistantTurn(content="Ho finito")), [])
 
     result = agent.run("task")
 
@@ -93,9 +98,7 @@ def test_run_restituisce_esito_e_numero_di_iterazioni():
 
 
 def test_run_dichiara_il_limite_di_iterazioni():
-    chiamata = SimpleNamespace(id="1", function=SimpleNamespace(name="bash", arguments="{}"))
-    risposta = SimpleNamespace(tool_calls=[chiamata], content=None)
-    agent = Agent(FakeGateway(risposta), [])
+    agent = Agent(FakeGateway(_turno_con_tool()), [])
 
     result = agent.run("task", max_iterations=1)
 
@@ -107,7 +110,7 @@ def test_run_dichiara_il_limite_di_iterazioni():
 
 def test_agente_distingue_il_budget_esaurito_da_un_servizio_irraggiungibile():
     class GatewayConBudgetEsaurito:
-        def complete(self, _messages, _tools):
+        def complete(self, messages, tools):
             raise BudgetExceeded("budget esaurito")
 
     outcome = Agent(GatewayConBudgetEsaurito(), [])._esegui_iterazione([], _rilevatore(), 1)
@@ -127,13 +130,11 @@ def test_un_errore_inatteso_conserva_le_iterazioni_gia_svolte():
         def __init__(self):
             self.chiamate = 0
 
-        def complete(self, _messages, _tools):
+        def complete(self, messages, tools):
             self.chiamate += 1
             if self.chiamate == 3:
                 raise ZeroDivisionError("difetto di programmazione")
-            chiamata = SimpleNamespace(
-                id="1", function=SimpleNamespace(name="bash", arguments="{}"))
-            return SimpleNamespace(tool_calls=[chiamata], content=None)
+            return _turno_con_tool()
 
     agent = Agent(GatewayCheSiRompeAllaTerza(), [])
 
@@ -153,7 +154,7 @@ def test_gli_esiti_previsti_non_diventano_guasti():
     sperimentale.
     """
     class GatewaySenzaServizio:
-        def complete(self, _messages, _tools):
+        def complete(self, messages, tools):
             raise RuntimeError("LLM irraggiungibile")
 
     result = Agent(GatewaySenzaServizio(), []).run("task", max_iterations=3)

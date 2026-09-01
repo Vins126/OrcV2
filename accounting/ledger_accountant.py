@@ -14,6 +14,12 @@ class LedgerAccountant(Accountant):
     """Avvolge un contabile e persiste i suoi esiti nella run corrente."""
 
     def __init__(self, accountant: Accountant, ledger: RunLedger):
+        """Avvolge un contabile e gli affianca il ledger della run.
+
+        Args:
+            accountant: il contabile a cui delegare interamente il calcolo.
+            ledger: dove persistere gli esiti e le anomalie.
+        """
         self.accountant = accountant
         self.ledger = ledger
 

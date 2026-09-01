@@ -251,8 +251,48 @@ OFFLINE (flywheel):
 | **LLM-as-a-judge** (Zheng 2023; survey 2025) | giudice LLM (~>80% accordo umano, con bias) | metodo di valutazione del soggettivo |
 | **RLHF / DPO / RLAIF** | preference tuning | come alleni Giudice e Router |
 
+### 7.1 Rassegna di agosto 2026 (lavori successivi alla prima stesura)
+
+| Lavoro | Cosa fa | Relazione con la tesi |
+|---|---|---|
+| **DeLM** (2606.10662) | Contesto condiviso **verificato** + coda di task; memoria gerarchica (gist → summary → grezzo) con srotolamento su richiesta; gate di ammissione. **SWE-bench Verified 77.4% pass@4 vs 73.2%, a $0.12/task ≈ metà dei baseline** | **Il vicino più stretto**: stessa forma di claim (meno costo, non meno qualità) sullo stesso dominio. Da leggere per intero. Se ne prende il **gate di ammissione** e l'idea dei riferimenti compatti; il delta va ridefinito rispetto a lui |
+| **FlyRoute** (2605.22057) | Profili di capacità degli agenti **auto-evolventi** via data flywheel, per instradamento adattivo | Prior più vicino sull'idea di *competenze apprese* invece che dichiarate. **Da leggere prima di rivendicare novità** su quel punto |
+| **LLM-as-a-Verifier** (2607.05391, Stanford) | Punteggi continui dall'attesa sui **logit** invece del voto intero; *Probabilistic Pivot Tournament*: ordina N candidati in **O(Nk)** anziché O(N²) | Risolve i **pareggi** che affliggono i giudici a scala 1-5, e rende economico il confronto fra molti candidati. Materiale diretto per il Judge L2 |
+| **GoAgent** (2603.19677) | Genera la **topologia di comunicazione** trattando i gruppi come unità atomiche; information bottleneck sulla comunicazione fra gruppi. −17% token | Ortogonale: loro instradano *l'informazione fra agenti*, la tesi instrada *il task verso il modello*. Utile come contrasto, non come concorrente |
+| **Blackboard LLM** (2510.01285) | Lavagna a **volontariato**: l'agente centrale pubblica, i subordinati si auto-candidano per capacità. +13-57% di successo end-to-end | Versione 2026 dell'idea di lavagna. **Non adottata** (§7.2), ma va citata: risolve un problema — il coordinatore che ignora le capacità — che qui non si pone perché il registro le conosce per costruzione |
+| **Comunicazione latente** (2606.05711) | Gli agenti si scambiano embedding / hidden state / KV-cache invece di testo | **Non applicabile**: richiede accesso agli interni del modello, impossibile con API commerciali. Da citare come direzione futura |
+| **Survey protocolli** (2505.02279) | MCP, A2A, ACP, ANP: interoperabilità fra agenti di organizzazioni diverse | Non adottati: gli agenti sono tutti dello stesso sistema, nello stesso processo |
+| **Agentic plan caching** (2506.14852) | Riuso dei piani fra task simili; la fase di pianificazione è la maggior parte del costo di calcolo | Rilevante perché nel sistema instradato **l'orchestratore diventa la voce di costo dominante**: qualunque leva sul planner domina le altre |
+
+### 7.2 Tre rivendicazioni aggiuntive, emerse dalla rassegna
+
+Tutte e tre sono misurabili con l'infrastruttura già costruita in M2a.
+
+1. **Il routing ha due dimensioni.** Non solo *quale modello*, ma *attraverso quale
+   percorso*. Verificato: la prompt cache non sopravvive al passaggio da un
+   aggregatore, e lo **stesso modello** arriva a costare **2,25×**. La letteratura
+   sul cost-routing assume accesso diretto alle API e non modella la seconda
+   dimensione; i campi `api_provider` e `billing_provider` dello `UsageRecord`
+   permettono di misurarla.
+2. **Token e dollari non sono la stessa metrica.** Dove la cache è attiva i token
+   ripetuti costano un decimo, quindi una riduzione del 17% dei token vale ~2,5%
+   della spesa. Le due misure divergono di un ordine di grandezza **esattamente nel
+   punto in cui la letteratura riporta i propri risultati**.
+3. **CPT-τ — costo per task completato a qualità ≥ τ.** Ogni lavoro censito riporta
+   costo *e* qualità come due numeri accostati; nessuno li riporta come uno solo
+   vincolato. È la funzione obiettivo di §0 scritta nella forma in cui si misura, e
+   assorbe quattro cose oggi relegate alle note: i tentativi economici falliti, il
+   costo dell'escalation, l'overhead di coordinamento, i task che a τ non arrivano.
+
+> ⚠️ Sono **candidate**, non risultati acquisiti. Prima di rivendicarle vanno letti
+> per intero DeLM e FlyRoute, che sono i due lavori in grado di anticiparle.
+
+---
+
 **Gap difendibile:** cost-routing in uno **swarm di coding-agent** su **artefatto condiviso**, con
 valutazione **execution-based + multimodale** del soggettivo, flywheel cascade→router, e isolamento/sicurezza.
+A cui la rassegna 2026 aggiunge la misura del **percorso** oltre che del modello, e una
+metrica congiunta di costo e qualità.
 
 ---
 
@@ -268,14 +308,24 @@ valutazione **execution-based + multimodale** del soggettivo, flywheel cascade�
 - **M2a COMPLETO — osservabilita' dei costi** (dettaglio in §9):
   listino TOML, `UsageRecord`, contabile con contratto astratto, mapper per
   provider, gateway LLM, ledger per run (JSONL + summary), budget guard e
-  report di fine run. **103 test verdi**, CI verde.
+  report di fine run.
   Resta scoperto solo l'agganciamento delle unita' non testuali
   (immagini/video/audio/3D), gia' previsto dallo schema ma non ancora esercitato
   su chiamate reali.
-- **M2s PROSSIMO — routing statico per ruolo:** il registro sa gia' filtrare per
-  capacita' (`models_with`); manca la fabbrica di agenti che sceglie il modello
-  in base al ruolo. La roadmap esecutiva, inclusi i requisiti espliciti per
-  immagini/video/audio/3D/RAG, vive in `M2_routing_design.md` §0.
+- **M2s IN CORSO — instradamento statico per ruolo** (2 task su 4):
+  - *M2s.1* ✅ ruoli in `models.toml` (`planner` → modello frontier, `worker` →
+    modello economico) con le capacita' che ogni mestiere richiede; il registro
+    **verifica al caricamento** che il modello assegnato le possieda, quindi
+    un'assegnazione sbagliata fallisce all'avvio e non a meta' di una run pagata.
+  - *M2s.2* ✅ percorso **diretto** ai fornitori e secondo gateway. Il contratto
+    fra gateway e agente, fino a qui implicito nella forma dell'SDK OpenAI, e'
+    stato reso esplicito: `Agent` lavora su tipi del progetto e il secondo
+    fornitore e' entrato **senza toccarlo**. E' la verifica sul campo della
+    proprieta' che rende possibile lo swarm.
+  - *M2s.3* ⬜ fabbrica di agenti · *M2s.4* ⬜ prima misura reale.
+- **138 test verdi**, nessuno dei quali tocca la rete o consuma budget; CI su ogni
+  push. La roadmap esecutiva, inclusi i requisiti espliciti per
+  immagini/video/audio/3D/RAG, vive in `M2_routing_design.md` §0 e in `ROADMAP.md`.
 
 ---
 

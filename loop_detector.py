@@ -8,7 +8,7 @@ ferma solo al tetto di iterazioni, dopo aver consumato token (e denaro) inutili.
 Nota di design (tesi):
     Questo modulo è la forma più semplice del pattern che regge tutta la tesi:
     **osserva un segnale di (non-)progresso e agisci di conseguenza.** Qui il
-    segnale è sintattico e gratuito (le azioni sono identiche?); in M2 lo stesso
+    segnale è sintattico e gratuito (le azioni sono identiche?); in M2b lo stesso
     schema riapparirà con un segnale semantico e costoso (la qualità
     dell'output regge la soglia τ?) per decidere l'escalation di modello.
     In altre parole: il rilevatore di loop è il "giudice" dei poveri, e occupa
@@ -52,15 +52,21 @@ class RilevatoreLoop:
         """Registra un nuovo gruppo di tool call e restituisce il verdetto.
 
         La "firma" di un'iterazione è la tupla dei `(nome_tool, argomenti)`
-        richiesti. Si confrontano gli argomenti in forma di stringa grezza, così
-        come arrivano dall'API: due chiamate sono considerate identiche solo se
-        il modello ha prodotto esattamente lo stesso testo. Se la firma coincide
+        richiesti. Si confrontano gli argomenti in forma di **stringa grezza**,
+        così come li ha prodotti il modello: due chiamate sono identiche solo se
+        il testo coincide esattamente. È la ragione per cui `ToolCall.arguments`
+        conserva il JSON come stringa invece di deserializzarlo — normalizzarlo
+        farebbe sembrare identiche due chiamate che il modello ha scritto in
+        modo diverso, e il rilevatore fermerebbe un agente che stava provando
+        qualcosa di nuovo. Se la firma coincide
         con quella precedente il contatore avanza, altrimenti riparte da uno
         (qualunque azione diversa è considerata progresso).
 
         Args:
-            tool_calls: lista di tool call dell'iterazione corrente, nel formato
-                dell'API OpenAI (serve `.function.name` e `.function.arguments`).
+            tool_calls: le `ToolCall` dell'iterazione corrente. Dal contratto
+                esplicito di M2s.2 sono tipi del progetto e non piu' oggetti
+                dell'SDK: il rilevatore, come l'agente, non sa quale fornitore
+                le abbia prodotte.
 
         Returns:
             `Alerts.FERMA` se la soglia di stop è stata raggiunta o superata,
@@ -68,7 +74,7 @@ class RilevatoreLoop:
             volutamente emesso una sola volta, per non inondare il contesto di
             richiami ripetuti), `Alerts.OK` in tutti gli altri casi.
         """
-        firma = tuple((tc.function.name, tc.function.arguments) for tc in tool_calls)
+        firma = tuple((tc.name, tc.arguments) for tc in tool_calls)
         if firma == self.ultima_firma:
             self.ripetizioni += 1
         else:

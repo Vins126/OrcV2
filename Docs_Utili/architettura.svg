@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430"
+     font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"
+     role="img" aria-label="Il percorso di una chiamata: l'agente chiede un turno al gateway, il gateway controlla il budget prima della rete, chiama il provider, misura la latenza, converte la risposta in UsageRecord tramite il mapper, il contabile la prezza col registro e la scrive nel ledger, e all'agente torna soltanto il turno.">
+
+  <rect x="0" y="0" width="880" height="430" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+
+  <defs>
+    <marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/>
+    </marker>
+    <marker id="fb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da"/>
+    </marker>
+    <marker id="fw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9a6700"/>
+    </marker>
+  </defs>
+
+  <text x="32" y="34" font-size="14" font-weight="600" fill="#1f2328">Il percorso di una chiamata</text>
+  <text x="32" y="53" font-size="11.5" fill="#656d76">in grigio il ciclo ReAct (M1) · in blu la contabilità (M2a) · tratteggiato ciò che sta fuori dal processo</text>
+
+  <!-- guardia budget -->
+  <rect x="292" y="76" width="196" height="42" rx="4" fill="#fff8c5" stroke="#9a6700" stroke-width="1.4" stroke-dasharray="5 3"/>
+  <text x="390" y="94" text-anchor="middle" font-size="12" font-weight="600" fill="#9a6700">BudgetGuard</text>
+  <text x="390" y="110" text-anchor="middle" font-size="10.5" fill="#9a6700">costo già speso ≥ tetto?</text>
+  <line x1="390" y1="118" x2="390" y2="150" stroke="#9a6700" stroke-width="1.4" marker-end="url(#fw)"/>
+  <text x="400" y="139" font-size="10.5" fill="#9a6700">2 · prima della rete</text>
+
+  <!-- riga 1 -->
+  <rect x="44" y="152" width="152" height="54" rx="4" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+  <text x="120" y="176" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2328">Agent</text>
+  <text x="120" y="193" text-anchor="middle" font-size="10.5" fill="#656d76">ciclo ReAct</text>
+
+  <rect x="292" y="152" width="196" height="54" rx="4" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+  <text x="390" y="176" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2328">ChatGateway</text>
+  <text x="390" y="193" text-anchor="middle" font-size="10.5" fill="#656d76">retry · cronometro</text>
+
+  <rect x="592" y="152" width="180" height="54" rx="4" fill="#ffffff" stroke="#57606a" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="682" y="176" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2328">provider LLM</text>
+  <text x="682" y="193" text-anchor="middle" font-size="10.5" fill="#656d76">rete · a pagamento</text>
+
+  <line x1="196" y1="170" x2="286" y2="170" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+  <text x="241" y="163" text-anchor="middle" font-size="10.5" fill="#656d76">1 · conversazione</text>
+
+  <line x1="286" y1="192" x2="202" y2="192" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+  <text x="244" y="209" text-anchor="middle" font-size="10.5" fill="#656d76">8 · solo il turno</text>
+
+  <line x1="488" y1="170" x2="586" y2="170" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+  <text x="537" y="163" text-anchor="middle" font-size="10.5" fill="#656d76">3 · chiamata</text>
+
+  <path d="M 682 206 L 682 262 L 494 262" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+  <text x="612" y="255" text-anchor="middle" font-size="10.5" fill="#656d76">4 · risposta + usage</text>
+
+  <!-- riga 2: mapper -->
+  <rect x="292" y="240" width="196" height="44" rx="4" fill="#ddf4ff" stroke="#0969da" stroke-width="1.4"/>
+  <text x="390" y="259" text-anchor="middle" font-size="12" font-weight="600" fill="#0969da">mapper</text>
+  <text x="390" y="275" text-anchor="middle" font-size="10.5" fill="#0969da">scorpora i token da cache</text>
+
+  <line x1="390" y1="284" x2="390" y2="312" stroke="#0969da" stroke-width="1.4" marker-end="url(#fb)"/>
+  <text x="400" y="303" font-size="10.5" fill="#0969da">5 · UsageRecord</text>
+
+  <!-- riga 3: contabile -->
+  <rect x="292" y="314" width="196" height="44" rx="4" fill="#ddf4ff" stroke="#0969da" stroke-width="1.4"/>
+  <text x="390" y="333" text-anchor="middle" font-size="12" font-weight="600" fill="#0969da">Accountant</text>
+  <text x="390" y="349" text-anchor="middle" font-size="10.5" fill="#0969da">quantità × prezzo</text>
+
+  <line x1="488" y1="336" x2="586" y2="336" stroke="#0969da" stroke-width="1.4" marker-end="url(#fb)"/>
+  <text x="537" y="329" text-anchor="middle" font-size="10.5" fill="#0969da">6 · quanto costa?</text>
+  <rect x="592" y="314" width="180" height="44" rx="4" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+  <text x="682" y="333" text-anchor="middle" font-size="12" font-weight="600" fill="#0969da">ModelRegistry</text>
+  <text x="682" y="349" text-anchor="middle" font-size="10.5" fill="#656d76">models.toml</text>
+
+  <line x1="286" y1="336" x2="202" y2="336" stroke="#0969da" stroke-width="1.4" marker-end="url(#fb)"/>
+  <text x="244" y="329" text-anchor="middle" font-size="10.5" fill="#0969da">7 · riga</text>
+  <rect x="44" y="314" width="152" height="44" rx="4" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+  <text x="120" y="333" text-anchor="middle" font-size="12" font-weight="600" fill="#0969da">RunLedger</text>
+  <text x="120" y="349" text-anchor="middle" font-size="10.5" fill="#656d76">usage.jsonl</text>
+
+  <line x1="44" y1="388" x2="836" y2="388" stroke="#d0d7de" stroke-width="1"/>
+  <text x="44" y="409" font-size="11" fill="#656d76">L'Agent non conosce SDK, prezzi né filesystem: riceve soltanto il passo 8. È ciò che ha permesso di aggiungere un secondo fornitore senza toccarlo.</text>
+</svg>

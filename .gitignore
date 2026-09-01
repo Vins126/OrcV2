@@ -1,31 +1,28 @@
-# Ambiente e dipendenze
+# ───────────────────────────────────────────────────────────────────────────
+#  Cosa NON entra nel repository, e perche'
+# ───────────────────────────────────────────────────────────────────────────
+
+# Ambiente e dipendenze: si ricostruiscono da requirements.txt
 venv/
 __pycache__/
 *.pyc
 
-# Segreti
+# Segreti. Il file .env non e' mai versionato; .env.example ne documenta la
+# forma con valori fittizi.
 .env
 
-# Configurazione locale IDE / editor
+# Configurazione locale dell'editor
 .idea/
 .vscode/
 
-# Cache degli strumenti
+# Cache degli strumenti di sviluppo
 .pytest_cache/
-.claude/
 
-# Output di esecuzione dell'agente
+# Output di esecuzione. Il workspace e' la sandbox in cui l'agente scrive; i
+# ledger delle run sono dati sperimentali che vanno archiviati a parte, non
+# mescolati alla storia del codice (vedi README, "Dati prodotti da una run").
 workspace/
 runs/
-Docs_Utili/STUDIO.md
-Docs_Utili/PIANO_completo.md
-Docs_Utili/ROADMAP.md
 
-# Istruzioni locali per assistenti
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-# Istruzioni locali per assistenti
-AGENTS.md
-CLAUDE.md
-GEMINI.md
+# Materiale di studio personale, non parte del lavoro consegnato
+Docs_Utili/STUDIO.md

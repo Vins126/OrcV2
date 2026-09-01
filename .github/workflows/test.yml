@@ -1,36 +1,40 @@
 name: test
 
-# Esegue la suite a ogni push e su ogni pull request: una regressione va
-# scoperta subito, non alla ripresa del lavoro dopo settimane.
+# Esegue suite e controllo dei tipi a ogni push e su ogni pull request: una
+# regressione va scoperta subito, non alla ripresa del lavoro dopo settimane.
 on:
   push:
   pull_request:
 
 jobs:
-  pytest:
+  verifica:
     runs-on: ubuntu-latest
-
-    # config.py verifica queste variabili all'import e fallisce se mancano
-    # (fail-fast voluto). Il file .env non e' versionato, quindi in CI si
-    # forniscono valori fittizi: i test usano un client finto e non
-    # contattano mai un modello reale, percio' non serve alcun segreto.
-    env:
-      ORC2_BASE_URL: http://localhost:4000
-      ORC2_API_KEY: chiave-fittizia-ci
-      ORC2_MODEL: modello-finto
 
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
         with:
-          # Stessa versione dell'ambiente di sviluppo locale: se i test
-          # passano qui, passano anche sulla macchina di sviluppo.
+          # Stessa versione dell'ambiente di sviluppo locale: se passa qui,
+          # passa anche sulla macchina di sviluppo.
           python-version: "3.14"
           cache: pip
 
       - name: Installa le dipendenze
         run: pip install -r requirements.txt
 
+      # Nessun segreto e nessuna variabile d'ambiente: la configurazione viene
+      # letta solo dal punto d'ingresso (`config.load_llm_settings`), mai
+      # all'import, e i test sostituiscono i provider con oggetti finti. Se un
+      # giorno la CI iniziasse a chiedere una chiave, sarebbe il sintomo che
+      # qualcosa legge l'ambiente dove non dovrebbe.
       - name: Esegui i test
         run: pytest -q
+
+      # Strumento di sviluppo, non dipendenza del progetto: sta qui e non in
+      # requirements.txt perche' non serve a eseguire l'agente.
+      - name: Installa il controllore dei tipi
+        run: pip install pyright==1.1.411
+
+      - name: Controllo dei tipi
+        run: pyright

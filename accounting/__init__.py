@@ -8,10 +8,12 @@ anche quando cambiano proxy, endpoint o modelli.
 
 from accounting.base import Accountant
 from accounting.errors import (
+    CapabilityUnavailable,
     MalformedRegistry,
     InvalidUsage,
     ModelNotFound,
     RegistryError,
+    RoleNotFound,
     UnitNotFound,
     UnpricedUsage
 )
@@ -22,12 +24,14 @@ from accounting.registry import CAPACITA_NOTE, ModelRegistry
 __all__ = [
     "CAPACITA_NOTE",
     "Accountant",
+    "CapabilityUnavailable",
     "InMemoryAccountant",
     "InvalidUsage",
     "MalformedRegistry",
     "ModelNotFound",
     "ModelRegistry",
     "RegistryError",
+    "RoleNotFound",
     "UnitNotFound",
     "UsageRecord",
     "UnpricedUsage",
