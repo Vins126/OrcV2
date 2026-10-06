@@ -30,6 +30,11 @@ SYSTEM_PROMPT = (
     "SENZA chiamare tool. "
 )
 
+#: Testi con cui `Agent._ripara_storia` rende valida una conversazione rimasta
+#: a meta': il modello li legge come qualsiasi altra osservazione.
+NOTA_TOOL_INTERROTTO = "esecuzione interrotta prima che il risultato fosse registrato"
+NOTA_INCARICO_INTERROTTO = "Incarico precedente interrotto prima di concludersi."
+
 
 class AgentFailure(Exception):
     """Errore inatteso durante una run, con il conteggio delle iterazioni svolte.
@@ -141,6 +146,7 @@ class Agent:
             max_iterations: numero massimo di passi ReAct concessi.
         """
         if self.messages:
+            self._ripara_storia()
             self.messages.append({"role": "user", "content": task})
         else:
             self.messages = self._messaggi_iniziali(task)
@@ -168,6 +174,51 @@ class Agent:
             status="max_iterations", iterations=max_iterations,
             final_message=f"Limite di {max_iterations} iterazioni raggiunto.",
         )
+
+    def _ripara_storia(self) -> None:
+        """Rende coerente la storia lasciata da un incarico finito male.
+
+        Un incarico puo' fermarsi in punti in cui la conversazione non e' una
+        sequenza valida per i fornitori, che la rifiuterebbero al giro dopo:
+
+        - **richiesta di tool senza risposta.** Se l'incarico si interrompe a
+          meta' dell'esecuzione dei tool (un risultato non serializzabile, un
+          arresto da tastiera), l'ultimo turno del modello chiede strumenti di
+          cui manca l'osservazione. Ogni richiesta orfana riceve una risposta
+          d'errore: il modello sa cosi' che quel passo non e' stato completato.
+        - **due messaggi utente di fila.** Se l'incarico si e' fermato prima
+          che il modello rispondesse (budget, servizio, loop alla prima
+          iterazione), l'ultimo messaggio e' ancora quello dell'utente: un
+          secondo accodato subito dopo darebbe due turni utente consecutivi,
+          che non tutti i fornitori accettano (il gateway Anthropic non li
+          fonde). Fra i due si mette una nota del modello.
+
+        La storia non viene cancellata: l'agente continua a ricordare cio' che
+        aveva tentato. Su una storia gia' coerente non fa nulla.
+        """
+        ultimo_turno = next(
+            (i for i in range(len(self.messages) - 1, -1, -1)
+             if isinstance(self.messages[i], AssistantTurn)), None)
+        if ultimo_turno is not None:
+            posizione = ultimo_turno + 1
+            risposti = set()
+            while (posizione < len(self.messages)
+                   and isinstance(self.messages[posizione], dict)
+                   and self.messages[posizione].get("role") == "tool"):
+                risposti.add(self.messages[posizione]["tool_call_id"])
+                posizione += 1
+            for richiesta in self.messages[ultimo_turno].tool_calls:
+                if richiesta.id not in risposti:
+                    self.messages.insert(posizione, {
+                        "role": "tool",
+                        "tool_call_id": richiesta.id,
+                        "content": json.dumps({"error": NOTA_TOOL_INTERROTTO}),
+                    })
+                    posizione += 1
+
+        ultimo = self.messages[-1]
+        if isinstance(ultimo, dict) and ultimo.get("role") == "user":
+            self.messages.append(AssistantTurn(content=NOTA_INCARICO_INTERROTTO))
 
     def _esegui_iterazione(
         self, messages, rilevatore, iterazione

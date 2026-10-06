@@ -185,7 +185,7 @@ def test_il_contabile_somma_tutta_la_vita_e_ogni_ledger_solo_il_suo_incarico(fab
     worker.assign("primo")
     worker.assign("secondo")
 
-    costo_incarico = 0.24  # un milione di token di input a $0.24
+    costo_incarico = 0.30  # un milione di token di input a $0.30
     totali = [json.loads((l.run_dir / "summary.json").read_text())["total_cost"]
               for l in worker.ledgers]
     assert totali == [pytest.approx(costo_incarico)] * 2
@@ -418,3 +418,82 @@ def test_il_client_usa_l_indirizzo_dichiarato_nel_registro(fabbrica):
 
     assert isinstance(worker.gateway, ChatGatewayBase)
     assert str(worker.gateway.client.base_url).startswith("https://api.minimax.io")
+
+
+# ── Eventi nel ledger dell'incarico corrente ──────────────────────────────
+
+def _tipi_evento(ledger):
+    return [e["event_type"] for e in ledger.read_events()]
+
+
+def test_gli_eventi_del_gateway_vanno_nel_ledger_dell_incarico_in_corso(tmp_path, chiavi):
+    """Il gateway scrive gli eventi tecnici nel ledger dell'incarico corrente.
+
+    Il secondo incarico viene fermato dal tetto: l'evento `budget_exhausted`
+    deve comparire nel suo ledger, non in quello del primo (gia' chiuso).
+    """
+    fabbrica = AgentFactory(
+        ModelRegistry.from_file("models.toml"),
+        runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
+        budget_usd=0.001, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+    )
+    worker = fabbrica.build("worker")
+    worker.gateway.client = ClientOpenAIFinto(prompt=1000, completion=1000)
+
+    worker.assign("primo")
+    worker.assign("secondo")
+
+    primo, secondo = worker.ledgers
+    assert "budget_exhausted" not in _tipi_evento(primo)
+    assert "budget_exhausted" in _tipi_evento(secondo)
+
+
+def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_ha_visto(
+        tmp_path, chiavi):
+    """Il guardiano e' per agente: l'avviso morbido non si ripete a ogni incarico.
+
+    Conseguenza da conoscere leggendo i dati: solo il ledger del primo
+    incarico che supera l'80% del tetto porta l'evento, anche se i successivi
+    restano nella zona dell'avviso.
+    """
+    fabbrica = AgentFactory(
+        ModelRegistry.from_file("models.toml"),
+        runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
+        # Un incarico costa $0.00015 (100 token in input e 100 in output sul
+        # listino del worker): il tetto lascia almeno due incarichi completati
+        # nella zona dell'avviso, fra l'80% e il 100%.
+        budget_usd=0.00125, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+    )
+    worker = fabbrica.build("worker")
+    worker.gateway.client = ClientOpenAIFinto(prompt=100, completion=100)
+
+    for _ in range(15):
+        if worker.assign("task").status == "budget_exhausted":
+            break
+
+    con_avviso = [i for i, ledger in enumerate(worker.ledgers)
+                  if "budget_soft_limit_reached" in _tipi_evento(ledger)]
+    assert len(con_avviso) == 1
+    # Dopo quello dell'avviso ce n'e' almeno un altro completato in zona avviso.
+    assert con_avviso[0] < len(worker.ledgers) - 2
+
+
+# ── Nessuna cartella orfana ───────────────────────────────────────────────
+
+def test_se_gli_strumenti_falliscono_il_workspace_non_resta_orfano(tmp_path, chiavi):
+    """Il costruttore degli strumenti crea il workspace e poi puo' fallire (Docker)."""
+    def strumenti_che_falliscono(percorso):
+        from pathlib import Path
+        Path(percorso).mkdir(parents=True)
+        raise RuntimeError("Docker non disponibile")
+
+    fabbrica = AgentFactory(
+        ModelRegistry.from_file("models.toml"),
+        runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
+        tools_builder=strumenti_che_falliscono,
+    )
+
+    with pytest.raises(RuntimeError, match="Docker"):
+        fabbrica.build("worker")
+
+    assert list((tmp_path / "ws").iterdir()) == []

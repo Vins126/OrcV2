@@ -379,8 +379,14 @@ OFFLINE (flywheel):
 
 | Lavoro | Cosa fa | Relazione con la tesi |
 |---|---|---|
-| **DeLM** (2606.10662) | Contesto condiviso **verificato** + coda di task; memoria gerarchica (gist → summary → grezzo) con srotolamento su richiesta; gate di ammissione. **SWE-bench Verified 77.4% pass@4 vs 73.2%, a $0.12/task ≈ metà dei baseline** | **Il vicino più stretto**: stessa forma di claim (meno costo, non meno qualità) sullo stesso dominio. Da leggere per intero. Se ne prende il **gate di ammissione** e l'idea dei riferimenti compatti; il delta va ridefinito rispetto a lui |
-| **FlyRoute** (2605.22057) | Profili di capacità degli agenti **auto-evolventi** via data flywheel, per instradamento adattivo | Prior più vicino sull'idea di *competenze apprese* invece che dichiarate. **Da leggere prima di rivendicare novità** su quel punto |
+| **DeLM** (2606.10662) | Agenti paralleli senza agente principale: contesto condiviso + coda di task. **Tre versioni molto diverse.** v1 (9 giu): contesto verificato da un LLM prima dell'ammissione, memoria gerarchica gist → riassunto → grezzo; SWE-bench Verified con Gemini 3 Flash 77.4% Pass@4 a $0.12 "per task" (Tab. 1, p. 8), contro 75.1% del baseline più forte a Pass@4 (mini-SWE-agent). v3 (4 ott): il gate di ammissione centralizzato è rimosso (verifica distribuita, p. 6), la tesi diventa la latenza; su SWE-bench gli stessi $0.12 sono **Cost/Submission**, il costo per task è $0.24 (n=2) e $0.47 (n=4) (Tab. 5, p. 10). Tutti gli agenti usano **lo stesso modello** (p. 7) | Vicino sull'architettura, **non sul routing**: non sceglie fra modelli. Utile come dato sul costo di coordinamento: i sotto-agenti nativi di Codex e Claude Code costano 1,5-2,9× l'agente singolo a parità di accuratezza (v3 Tab. 2, p. 8). Il cambio di significato dello stesso $0.12 fra v1 e v3 è l'argomento migliore per una metrica unica (§7.2) |
+| **FlyRoute** (2605.22057) | Profili testuali degli agenti aggiornati da un ciclo: un giudice LLM accetta le risposte con voto ≥ 0.7, ogni 20 successi la descrizione dell'agente viene riscritta, il router legge descrizione + esempi simili (BM25). 72.6% → 89.8% di accuratezza di instradamento (Tab. 2, p. 6) | Prior sul flywheel di *competenze apprese*, ma: instrada verso agenti di dominio, non verso modelli con un prezzo; **nessun costo misurato**, nemmeno quello del giudice; competenze binarie e testuali; agenti mai cambiati durante l'esperimento (p. 7); dati non pubblici. Il delta difendibile è la tabella numerica legata al prezzo, su categorie soggettive |
+| **AgentCARD** (2606.20629, mag 2026) | Team planner → esecutore: tutte le combinazioni di 4 modelli API più modelli self-hosted, su 5 benchmark (SWE-bench compreso); costo per task in dollari, frontiera di Pareto, incertezza ±2-3 punti per cella | **Il vicino più stretto di S1.** I team eterogenei stanno sulla frontiera (GPT-5.4 planner + MiniMax-M2.7 esecutore: 76.2% a $0.021 contro 68.2% di GPT-5.4 da solo, Tab. 4, p. 15), ma **la coppia conta**: Claude-Opus-4.6 planner + MiniMax-M2.7 fa 60.1%, sotto Opus da solo (66.4%). Scegliere la coppia su metà dei task funziona sull'altra metà in 4 benchmark su 5 (p. 22). Un verificatore aggiunto aiuta solo se pianifica meglio del planner (p. 9). Tratta il *deployment* (API / self-hosted) come secondo asse del costo |
+| **SWE-Router** (2607.00053, workshop ICML 2026) | Il modello economico lavora qualche turno; una testa appresa legge la traiettoria parziale e decide se continuare o passare al modello forte | Contro i router che leggono solo la descrizione: +12-15 punti di Route-AUC su 100 task SWE-bench tenuti fuori (p. 4, p. 9), non confermato sul secondo dataset (Tab. 2, p. 9). Teorema: condizionare sulla traiettoria non peggiora mai la scelta ottima. Alternativa per D6 (S3) |
+| **Agentic Routing / OpenSquilla** (2607.11399, rapporto tecnico) | Routing per passo condizionato dallo stato dell'harness; ogni decisione produce un record (query, stato, scelta, esito, costo) che addestra router successivi | Stessa idea del flywheel di §2.2, **ma il flywheel non è sperimentato** (si valuta solo il primo router, una run per configurazione, configurazioni scelte a mano). Utile per lo schema dei record: separare ciò che il router credeva, ciò che ha scelto e l'esito, e registrare se la scelta era un'esplorazione, come richiede l'apprendimento off-policy |
+| **Cost-of-Pass** (2504.13359, ICLR 2026) | Costo atteso per ottenere una soluzione corretta: costo medio diviso tasso di successo (eq. 2, p. 4); frontiera rispetto al costo di un esperto umano | **Anticipa CPT-τ** (§7.2). Prevede già costo della verifica, tentativi falliti e overhead (App. D.1, p. 22); lascia aperto il successo continuo o graduato (p. 23-24). Avverte che con criteri indulgenti un sistema economico che tira a indovinare sembra ottimo (App. C.8, p. 21-22) |
+| **Harness Tokenomics** (2609.28919, set 2026) | Router dentro gli harness di coding che non rompe la prompt cache; regola per quando un cambio di modello a metà lavoro ripaga le scritture in cache (eq. 1, p. 6); ricalcolo di circa 10.000 sessioni reali | Anticipa la **dimensione del percorso** (§7.2): le stesse famiglie open-weight costano 0,10-0,27× Opus 5 dove la cache ha un prezzo e 0,70-0,90× su Bedrock, che non lo prevede (p. 16-17); un gateway che toglie i marcatori di cache fa pagare tutto come input non in cache (p. 17). Calcolato sul listino, non sulle fatture. Il risparmio del 13-21% viene da scenari scritti dagli autori (p. 21) |
+| **Model Equality Testing** (Gao, Liang, Guestrin, ICLR 2025) | Verifica statistica di quale modello un'API sta davvero servendo | Il percorso può cambiare anche **il modello servito**, quindi la qualità, non solo il costo. Citato da Cost-of-Pass (p. 24), che consiglia di trattare ogni coppia fornitore-modello come una strategia distinta |
 | **LLM-as-a-Verifier** (2607.05391, Stanford) | Punteggi continui dall'attesa sui **logit** invece del voto intero; *Probabilistic Pivot Tournament*: ordina N candidati in **O(Nk)** anziché O(N²) | Risolve i **pareggi** che affliggono i giudici a scala 1-5, e rende economico il confronto fra molti candidati. Materiale diretto per il Judge L2 |
 | **GoAgent** (2603.19677) | Genera la **topologia di comunicazione** trattando i gruppi come unità atomiche; information bottleneck sulla comunicazione fra gruppi. −17% token | Ortogonale: loro instradano *l'informazione fra agenti*, la tesi instrada *il task verso il modello*. Utile come contrasto, non come concorrente |
 | **Blackboard LLM** (2510.01285) | Lavagna a **volontariato**: l'agente centrale pubblica, i subordinati si auto-candidano per capacità. +13-57% di successo end-to-end | Versione 2026 dell'idea di lavagna. **Non adottata** (§7.2), ma va citata: risolve un problema — il coordinatore che ignora le capacità — che qui non si pone perché il registro le conosce per costruzione |
@@ -391,37 +397,51 @@ OFFLINE (flywheel):
 | **Jev** (TypeSafe AI, accesso anticipato dal 15 set 2026) | Modello non generativo: invece di produrre testo restituisce un valore tipizzato con una confidenza. $0.042 per milione in input, output gratuito | Inutile come worker, non conveniente come router (l'embedding costa meno), **candidato come giudice**: ~180× più economico di un giudizio frontier. Da verificare su estetica e immagini (§5.11) |
 | **WebDev Arena / Design Arena** (classifiche a preferenza umana cieca) | Classifiche Elo su interfacce generate, votate da umani senza sapere quale modello le ha prodotte | Confermano che il confronto a coppie cieco è lo standard del settore (§5.2). **Nessuna isola la capacità di art direction**: misurano lo stile e il codice insieme (§5.9) |
 
-### 7.2 Tre rivendicazioni aggiuntive, emerse dalla rassegna
+### 7.2 Tre rivendicazioni della rassegna di agosto, ridimensionate a ottobre
 
-Tutte e tre sono misurabili con l'infrastruttura già costruita in M2a.
+Ad agosto erano proposte come novità. Lette per intero DeLM e FlyRoute e i lavori
+di §7.1, nessuna delle tre regge come idea nuova: due sono anticipate, una è nota.
+Resta a ciascuna un margine più stretto.
 
-1. **Il routing ha due dimensioni.** Non solo *quale modello*, ma *attraverso quale
-   percorso*. Ipotesi, da verificare in M2s.4: passando da un aggregatore la prompt
-   cache potrebbe non sopravvivere, e lo **stesso modello** arriverebbe a costare
-   **2,25×** (calcolo sul listino per opus-5, non una misura; nei log di minimax
-   via aggregatore la cache compare, con una run su tre senza). La letteratura
-   sul cost-routing assume accesso diretto alle API e non modella la seconda
-   dimensione; i campi `api_provider` e `billing_provider` dello `UsageRecord`
-   permettono di misurarla.
-2. **Token e dollari non sono la stessa metrica.** Dove la cache è attiva i token
-   ripetuti costano un decimo, quindi una riduzione del 17% dei token vale ~2,5%
-   della spesa. Le due misure divergono di un ordine di grandezza **esattamente nel
-   punto in cui la letteratura riporta i propri risultati**.
-3. **CPT-τ — costo per task completato a qualità ≥ τ.** Ogni lavoro censito riporta
-   costo *e* qualità come due numeri accostati; nessuno li riporta come uno solo
-   vincolato. È la funzione obiettivo di §0 scritta nella forma in cui si misura, e
-   assorbe quattro cose oggi relegate alle note: i tentativi economici falliti, il
-   costo dell'escalation, l'overhead di coordinamento, i task che a τ non arrivano.
-
-> ⚠️ Sono **candidate**, non risultati acquisiti. Prima di rivendicarle vanno letti
-> per intero DeLM e FlyRoute, che sono i due lavori in grado di anticiparle.
+1. **Il percorso, oltre al modello.** *Anticipata.* Che lo stesso modello costi
+   diverso a seconda della strada è già mostrato: Harness Tokenomics ricalcola
+   sessioni reali su percorsi con e senza prezzo della cache (p. 16-17); AgentCARD
+   tratta il deployment come secondo asse; Cost-of-Pass, citando Gao et al. (ICLR
+   2025), nota che il fornitore può cambiare anche il modello servito (p. 24); DeLM
+   stesso, chiamando tutto via OpenRouter, segnala in nota un costo di circa $1 per
+   task quando la cache non passa (v1 Tab. 1, p. 8). **Margine rimasto:** tutti
+   *calcolano* sul listino; qui si **misura** per chiamata, separando chi è chiamato
+   da chi fattura (`api_provider`, `billing_provider` dello `UsageRecord`), e lo si
+   confronta con il costo addebitato. È un contributo di misura, e regge solo se
+   M2s.4 lo produce. Il 2,25× di opus-5 è calcolato come i loro.
+2. **Token e dollari non sono la stessa metrica.** *Nota.* DeLM riporta dollari e
+   mostra lo stesso fenomeno (contesti di dimensione simile pesano l'1,7-3,7% della
+   spesa con un modello e il 7,7-17,7% con un altro, v3 Tab. 6, p. 14); Agentic
+   Routing osserva costi in calo con token in aumento (p. 15); Harness Tokenomics apre
+   con «List price is the wrong metric» (p. 1). Diventa una **nota di metodo**: la
+   tesi riporta dollari, i token solo come dato ausiliario. Il conto «−17% di token
+   ≈ −2,5% di spesa» per GoAgent presuppone che i token risparmiati fossero in cache:
+   va verificato su GoAgent prima di usarlo.
+3. **CPT-τ.** *Anticipata nella forma.* È il **Cost-of-Pass** (Erol et al., ICLR
+   2026) con «corretto» sostituito da «qualità ≥ τ». **Margine rimasto:** il successo
+   definito da un giudice su una qualità **graduata e soggettiva**, che Cost-of-Pass
+   lascia a lavoro futuro (p. 23-24), con il costo del giudizio e dell'escalation
+   misurati e non stimati. Differenza tecnica da dichiarare: Cost-of-Pass fa la media
+   dei rapporti per problema (eq. 8, p. 5); qui si usa il rapporto dei totali
+   (costo della campagna / task riusciti), così un task mai riuscito non manda il
+   risultato all'infinito. Rischio da gestire: con τ basso o un giudice indulgente,
+   un modello scadente ed economico ottiene un costo per successo basso (Cost-of-Pass
+   App. C.8, p. 21-22). La verifica del giudice (§5.10) e la scelta di τ servono
+   anche a questo.
 
 ---
 
-**Gap difendibile:** cost-routing in uno **swarm di coding-agent** su **artefatto condiviso**, con
-valutazione **execution-based + multimodale** del soggettivo, flywheel cascade→router, e isolamento/sicurezza.
-A cui la rassegna 2026 aggiunge la misura del **percorso** oltre che del modello, e una
-metrica congiunta di costo e qualità.
+**Gap difendibile (ottobre 2026):** cost-routing in uno **swarm di coding-agent** su
+**artefatto condiviso**, con valutazione **execution-based + multimodale del soggettivo**,
+flywheel cascade→router e isolamento/sicurezza. Nessuno dei lavori letti combina
+artefatto condiviso, giudizio soggettivo e costo misurato in fattura. I singoli pezzi
+hanno invece vicini precisi: S1 → AgentCARD, S2 → SWE-Router, S3 e flywheel → Agentic
+Routing e FlyRoute, metrica → Cost-of-Pass, percorso → Harness Tokenomics.
 
 ---
 

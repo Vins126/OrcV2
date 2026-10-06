@@ -31,6 +31,7 @@ Nota di design (tesi):
 """
 
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -317,7 +318,16 @@ class AgentFactory:
         # Il workspace porta l'id dell'agente, non quello di una run: vale per
         # tutta la sua vita, incarichi compresi.
         workspace = self.workspaces_root / agent_id
-        agent = Agent(gateway, self.tools_builder(str(workspace)))
+        try:
+            strumenti = self.tools_builder(str(workspace))
+        except BaseException:
+            # Il costruttore degli strumenti crea il workspace e poi puo'
+            # fallire (per esempio Docker assente): non si lascia una cartella
+            # orfana. `rmdir` toglie solo una cartella vuota, mai contenuti.
+            with suppress(OSError):
+                workspace.rmdir()
+            raise
+        agent = Agent(gateway, strumenti)
 
         def open_ledger(task: str) -> RunLedger:
             """Crea il ledger di un incarico, con la policy di budget in testa."""

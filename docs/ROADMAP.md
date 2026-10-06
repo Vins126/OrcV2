@@ -76,11 +76,15 @@ ingegneria, non di ricerca: un'uscita di emergenza, non un traguardo.
   divergono di un ordine di grandezza dove la cache è attiva. In tesi si riportano
   **dollari**, e la percentuale di token solo come dato ausiliario.
 - **TODO letture:** MasRouter (PDF integrale) prima di scrivere il related work;
-  Trinity/Conductor prima di M2b. **Aggiunte ago 2026:** DeLM (2606.10662) —
-  concorrente più diretto, riporta metà costo a qualità superiore su SWE-bench;
-  FlyRoute (2605.22057) — prior più vicino sulle competenze apprese, **da leggere
-  prima di rivendicare novità**; LLM-as-a-Verifier (2607.05391) — giudice a logit e
-  torneo O(Nk); GoAgent (2603.19677); agentic plan caching (2506.14852).
+  Trinity/Conductor prima di M2b; LLM-as-a-Verifier (2607.05391) — giudice a logit e
+  torneo O(Nk); GoAgent (2603.19677), per verificare il conto token/dollari; agentic
+  plan caching (2506.14852). **Aggiunte ott 2026, solo abstract finora:**
+  Agent-as-a-Router (2606.22902) e Which LLM for Which Work? (2608.29560) prima di
+  M2b.5; RACER (2605.10805), Stopping and Routing LLM Judge Panels (2608.19802) e
+  LLM-as-Judge on a Budget (2602.15481) prima di M2b.1, per il punto (7); Model
+  Equality Testing (Gao et al., ICLR 2025) prima di M2s.4b.
+  **Letti per intero il 6 ott 2026:** DeLM v1 e v3, FlyRoute, AgentCARD, SWE-Router,
+  Agentic Routing, Cost-of-Pass, Harness Tokenomics (esito in `TESI_master.md` §7).
 
 ---
 
@@ -239,10 +243,11 @@ strutturato e un report; nessun task può spendere oltre il tetto.
   |---|---:|---:|---|
   | Claude Opus 5 | $5.00 | $25.00 | frontier — planner, escalation |
   | Kimi K3 | $3.00 | $15.00 | mid (cache −90%: $0.30) |
-  | MiniMax M2.7 | $0.24 | $0.96 | cheap — SWE-Pro 56.2% |
+  | MiniMax M2.7 | $0.30 | $1.20 | cheap — SWE-Pro 56.2% |
   | text-embedding-3-small | $0.02 | — | infrastruttura del router |
 
-  Spread ~21× input / ~26× output. ⚠️ **Qwen3.7 Flash è stato scartato**: pur costando
+  Spread ~17× input / ~21× output (prezzi MiniMax allineati alla fonte ufficiale il
+  6 ott 2026; prima $0.24/$0.96, ~21×/~26×). ⚠️ **Qwen3.7 Flash è stato scartato**: pur costando
   $0.03/$0.13, è un modello *vision* (coding #180, punteggio 40/100, nessun benchmark
   pubblicato dal produttore) — inadatto a una tesi su agenti di programmazione. Un
   modello economico che fallisce costa più di uno mediocre che completa, perché paghi
@@ -377,18 +382,20 @@ strutturato e un report; nessun task può spendere oltre il tetto.
 configurazione, **chiamando ogni fornitore direttamente**. È lo stadio sperimentale S1.
 **Prerequisiti:** M2a completa.
 
-> **Il routing ha due dimensioni** (deciso ago 2026). La letteratura modella solo
-> *quale modello*, perché assume accesso diretto alle API. Calcolato sul listino del
-> progetto, lo **stesso modello** costerebbe **2,25×** a seconda del percorso, se
+> **Il routing ha due dimensioni** (ago 2026, rivisto ott 2026). Calcolato sul listino
+> del progetto, lo **stesso modello** costerebbe **2,25×** a seconda del percorso, se
 > l'aggregatore perdesse lo sconto di cache (calcolo su opus-5, mai eseguito;
-> ipotesi da verificare in M2s.4). La seconda dimensione — *attraverso quale
-> percorso* — è misurabile con i campi `api_provider` / `billing_provider` che
-> `UsageRecord` ha già, e non risulta pubblicata da nessuno.
+> ipotesi da verificare in M2s.4). L'effetto è **già documentato** in letteratura, ma
+> solo calcolato sul listino (Harness Tokenomics 2609.28919, p. 16-17; AgentCARD
+> 2606.20629; Cost-of-Pass 2504.13359, p. 24; vedi `TESI_master.md` §7.2). Ciò che
+> resta da fare qui è **misurarlo**, chiamata per chiamata, con i campi
+> `api_provider` / `billing_provider` che `UsageRecord` ha già, e confrontarlo con il
+> costo addebitato.
 
 ### Task M2s.1 — Ruoli e filtro per capacità nel registro ✅
 - `models.toml` mappa anche `ruolo → modello`. **[SCELTA FATTA]:** due ruoli —
   `planner` → `opus-5` (`requires` = reasoning, code) e `worker` → `minimax-m2-7`
-  (`requires` = code). Rapporto di prezzo ~21× in input, ~26× in output: è il
+  (`requires` = code). Rapporto di prezzo ~17× in input, ~21× in output: è il
   contrasto da cui nasce il numero della tesi. Il `reviewer` si dichiara in M2b,
   quando esiste qualcuno che lo istanzia.
 - **Capability-aware (D10/D11):** il filtro per **capacità richieste** precede quello
@@ -475,7 +482,7 @@ progetto (richiede proxy/API attivi e Docker acceso).
 
 | Misura | Come | Perché serve |
 |---|---|---|
-| **Tassa dell'aggregatore** | stesso task, stesso modello, due percorsi | non risulta pubblicata da nessuno |
+| **Tassa dell'aggregatore** | stesso task, stesso modello, due percorsi | in letteratura è solo calcolata sul listino, mai misurata in fattura |
 | **Tasso di fallimento `f`** | N task con `opus-5` e con `minimax-m2-7`, conta gli `status: completed` | determina dove cade l'ottimo di decomposizione in M4 |
 | **Quota di output** | `quantities_by_unit` con cache attiva | se supera il 50%, la strategia di ottimizzazione va riorientata dal contesto alla generazione |
 
@@ -514,6 +521,15 @@ progetto (richiede proxy/API attivi e Docker acceso).
   `README.md` (sezione sui risultati), in questa ROADMAP (regola sul tetto di spesa) e
   in `docs/esempio_run/README.md`. Per la spiegazione serve ritrovare che cosa
   abbia prodotto la riproduzione: nel codice attuale non c'e'.
+- [x] **Allineare il listino di `minimax-m2-7` alla fonte ufficiale** (6 ott 2026). La
+  documentazione MiniMax sulla cache (platform.minimax.io, pagina «Anthropic API
+  compatible cache») riporta per MiniMax-M2.7: input $0.30, output $1.20, lettura
+  cache $0.06, **scrittura cache $0.375** per milione, durata della cache 5 minuti.
+  `models.toml` aveva $0.24 / $0.96 / $0.06 e nessun prezzo di scrittura (una
+  chiamata con token scritti in cache non sarebbe stata contabilizzabile). Allineato;
+  il rapporto con opus-5 passa da ~21×/~26× a ~17×/~21×. Da confermare alla prima
+  chiamata reale (M2s.4b) che i campi di usage riportino i token scritti in cache.
+  Le stime calcolate prima del 6 ott (curva a U, preventivi) usano i prezzi vecchi.
 - [ ] **Capire perche' la run dell'1 settembre ha zero token in cache.** Stesso
   percorso e stesso modello della run 24255293, che li ha. Va ripetuta in condizioni
   controllate (stesso prompt, chiamate ravvicinate) prima di scrivere qualunque
@@ -618,6 +634,11 @@ Worker su workspace condiviso, con checkpoint L1.
 > ha un minimo interno intorno a **K≈4** ($0.0993, −69,5% sul baseline) e risale sia a
 > K=2 (foglie troppo grosse, escalation continue) sia a K=12 (coordinamento al 90%).
 > **`f` è stimato, non misurato**: lo produce M2s.4, e da lì si ricalcola l'ottimo.
+> Anche il costo di coordinamento è stimato: il dato esterno più vicino (DeLM v3,
+> 2606.10662, Tab. 2 p. 8; stesso modello per tutti gli agenti, 10 task) dà i
+> sotto-agenti nativi di Codex e Claude Code a **1,5-2,9×** il costo dell'agente
+> singolo a parità di accuratezza. Il ricalcolo della curva va confrontato con i
+> costi di coordinamento misurati in M4.
 > Corollario da tenere presente: «decomponi il più possibile» è sbagliato quanto «non
 > decomporre».
 
@@ -676,7 +697,12 @@ Worker su workspace condiviso, con checkpoint L1.
     da 4 iterazioni su un worker persistente costano 50.100 token di input contro 18.900 se
     riparte da zero (2,65×), ma restano circa 20× sotto un solo agente `opus-5`. Va
     misurato anche l'effetto sulla qualità: un agente che ricorda può lavorare meglio o
-    peggio.
+    peggio. ⚠️ Il conto va rifatto **con la cache**, che cambia il risultato in due
+    direzioni: finché la cache è calda la storia accumulata costa un decimo
+    (lettura in cache), ma la cache dei fornitori dura **5 minuti** via API (Anthropic,
+    MiniMax). Un worker che resta fermo più a lungo, per esempio mentre aspetta
+    un'ondata, al giro dopo riscrive tutta la storia al prezzo di scrittura (1,25×
+    l'input). Il tempo di inattività degli agenti diventa quindi una voce di costo.
   - **Compattazione del contesto**: oggi `Agent.messages` cresce senza limiti e prima o
     poi tocca il limite di contesto del modello. Serve una politica, che è lo stesso
     meccanismo del backlog UX1 (UX1.3).
@@ -790,9 +816,11 @@ contributo della tesi (D13), non un traguardo facoltativo.
 
 - **M2b.0** ⬜ **Gate a due stadi** (prima di tutto il resto, perché filtra a monte):
   1. **deterministico** — compila? i test passano? il lint tace? Costa **zero token**
-     e scarta ciò che non ha senso giudicare. È il gate di ammissione di DeLM, ed è lo
-     stesso schema del rilevatore di loop di M1: osserva un segnale di progresso e
-     reagisci in modo proporzionato, solo che qui il segnale è oggettivo.
+     e scarta ciò che non ha senso giudicare. Richiama il gate di ammissione della
+     prima versione di DeLM (2606.10662v1, §2.3), che però era un controllo fatto da un
+     LLM sulle prove e che la v3 ha tolto in favore di una verifica distribuita fra gli
+     agenti. Qui il segnale è oggettivo e gratuito; è lo stesso schema del rilevatore
+     di loop di M1: osserva un segnale di progresso e reagisci in modo proporzionato.
   2. **probabilistico** — solo su ciò che è sopravvissuto al primo.
   - Un output che non passa il primo stadio non inquina il contesto degli altri agenti
     **ed è** il segnale che innesca l'escalation: un meccanismo, due lavori.
@@ -830,6 +858,12 @@ contributo della tesi (D13), non un traguardo facoltativo.
 - **M2b.2** ⬜ **Cascade (S2)**: politica di escalation — foglia che fallisce L1
   (o REVISE ripetuto) → riassegnata a modello superiore; log dell'escalation
   (quale modello ce l'ha fatta, a che costo). **[SCELTA TUA]:** la scala di escalation.
+  - ⚠️ **Il costo dell'escalation include la cache.** La prompt cache vale solo per
+    lo stesso modello: passare a un modello superiore a metà lavoro significa
+    riscrivere tutto il contesto al prezzo di scrittura (opus-5: $6.25/M contro
+    $5.00/M di input). Harness Tokenomics (2609.28919, eq. 1 p. 6) dà la regola per
+    quando un cambio ripaga. Le stime di costo dell'escalation e della curva a U di M4
+    vanno ricalcolate con questa voce.
 - **M2b.3** ⬜ **Dataset dal flywheel**: estrazione dai log di coppie
   (caratteristiche sotto-task → modello minimo sufficiente, costo, qualità).
   - ⚠️ **Nel soggettivo il dataset non e' un sottoprodotto gratuito della cascade.** Per
@@ -863,9 +897,31 @@ contributo della tesi (D13), non un traguardo facoltativo.
     sotto-task dove il router e' **meno sicuro**, invece che uniformemente. Riduce
     tipicamente il fabbisogno di etichette di 2-5 volte: i soldi vanno dove c'e'
     incertezza.
+  - **Distorsione da politica (deciso ott 2026).** I log mostrano solo le scelte che
+    la politica in uso ha fatto: se la cascade prova sempre prima il modello
+    economico, quando questo riesce non si sa mai se il modello forte avrebbe reso di
+    piu'. Un router addestrato cosi' impara le abitudini della cascade, non la scelta
+    migliore (apprendimento off-policy: Dudík, Langford, Li 2011; applicato al
+    routing in Agentic Routing 2607.11399, p. 11-13). Per correggerlo dopo servono due
+    campi registrati **al momento della scelta**, perche' non si ricostruiscono:
+    - **chi ha scelto il modello** (registro statico, cascade, router appreso, scelta
+      manuale) e con quale confidenza, se la politica ne ha una;
+    - **se la scelta era un'esplorazione**, cioe' un modello provato apposta per
+      raccogliere il confronto.
+    Da aggiungere al record del ledger prima delle campagne di M7. La versione di
+    confronto generata per le etichette soggettive (sopra) e' gia' un'esplorazione e
+    va marcata come tale.
 - **M2b.4** ⬜ **Router appreso (S3)** — il contributo della tesi (D13): decisione
   D6 (default: testa leggera su embedding); training con subset del pool (D9);
   confronto contro S1/S2 su task tenuti fuori.
+  - **Alternativa da valutare in D6 (ott 2026): decidere dopo qualche turno.** Un
+    router che legge solo la descrizione del sotto-task non distingue due compiti
+    descritti allo stesso modo ma di difficolta' diversa. SWE-Router (2607.00053) fa
+    lavorare il modello economico per 3 turni e decide leggendo quei turni; dimostra
+    che questa informazione in piu' non puo' peggiorare la scelta ottima e misura
+    +12-15 punti di Route-AUC su 100 task SWE-bench (p. 4, p. 9), senza conferma sul
+    secondo dataset. Costo: i turni economici si pagano anche quando si scala, e serve
+    un dataset di traiettorie (~1.700 per modello economico nel loro caso, p. 8).
 - **M2b.5** ⬜ **Competenze morbide apprese** — capacità a due livelli:
 
   | | domanda | dove vive |
@@ -879,10 +935,13 @@ contributo della tesi (D13), non un traguardo facoltativo.
   ⚠️ La tabella morbida **non va scritta a mano**, o è un'opinione hardcoded travestita
   da configurazione. Va misurata, e va tenuta separata dal listino per la stessa
   ragione per cui listino e politica sono separati: uno è un fatto, l'altra una stima.
-  ⚠️ **Leggere FlyRoute (2605.22057) prima di rivendicare novità**: fa profiling di
-  agenti auto-evolvente via flywheel, ed è il prior più vicino. Il delta difendibile
-  non è il meccanismo — è applicarlo a **categorie estetiche soggettive** invece che
-  alla correttezza verificabile.
+  **Prior (letti ott 2026).** FlyRoute (2605.22057) aggiorna profili *testuali* di
+  agenti di dominio con un flywheel e un giudice LLM, senza misurare alcun costo.
+  Per i compiti di codice verificabili la tabella numerica «qualita' per categoria»
+  e' gia' usata: Agent-as-a-Router (2606.22902) e Which LLM for Which Work?
+  (2608.29560), letti solo nell'abstract. Il delta difendibile e' la tabella
+  **numerica, legata al prezzo, su categorie estetiche soggettive**, con il costo del
+  giudizio che la produce messo nel conto.
 - **M2b.6** ⬜ **Riuso dei piani fra task simili** (agentic plan caching, 2506.14852).
   Non è una micro-ottimizzazione: nel sistema ottimizzato **l'orchestratore è l'87%
   della spesa** (calcolo in `docs/`, artefatto «Le leve di costo»), quindi
@@ -936,6 +995,19 @@ contributo della tesi (D13), non un traguardo facoltativo.
 - **M7.1** ⬜ **Set di task**: 3 categorie (frontend, backend/logica, refactor),
   pochi task curati e ripetibili, criteri L1 definiti *a priori* per ciascuno.
   **[SCELTA TUA]:** i task concreti.
+- **M7.1b** ⬜ **Matrice ruolo × modello prima di fissare S1** (deciso ott 2026).
+  Stessi task, quattro configurazioni: opus-5 e minimax-m2-7 ciascuno da planner e da
+  worker (le due omogenee e le due incrociate). La coppia di S1 si sceglie su metà dei
+  task e si verifica sull'altra metà.
+  - Perché: in AgentCARD (2606.20629, Tab. 4 p. 15) «planner forte + esecutore
+    economico» vince con una coppia (GPT-5.4 → MiniMax-M2.7: 76.2% contro 68.2% del
+    modello forte da solo) e perde con un'altra della stessa forma (Claude-Opus-4.6 →
+    MiniMax-M2.7: 60.1% contro 66.4%). La scelta su metà dei task ha trovato la coppia
+    migliore in 4 benchmark su 5 (p. 22).
+  - **Reviewer, quando si aggiunge (M2b):** nello stesso lavoro un terzo agente che
+    rilegge il piano migliora il risultato solo se il modello che rilegge sa
+    pianificare meglio del planner (p. 9). Un reviewer economico sopra un planner
+    forte aggiunge costo senza guadagno: va messo nella stessa matrice.
 - **M7.2** ⬜ **Campagna S0** (baseline mono-modello = M1 col modello top).
 - **M7.2b** ⬜ **Batch API per la campagna.** Anthropic, OpenAI e Google offrono una
   corsia asincrona al **50%** con SLA 24h, e si somma alla cache.
@@ -958,12 +1030,20 @@ contributo della tesi (D13), non un traguardo facoltativo.
   ```
 
   È la funzione obiettivo della tesi scritta come si misura: `min Σ costo s.t.
-  qualità ≥ τ` diventa «minimizza CPT-τ». Assorbe in un numero solo quattro cose che
-  la letteratura tiene in nota a piè di pagina: i tentativi economici falliti, il
-  costo dell'escalation, l'overhead di coordinamento, e i task che a τ non arrivano
-  mai. Nessuno dei lavori censiti la riporta — DeLM dà $/task e pass@4 separati,
-  GoAgent dà % di token e accuratezza separate, il blackboard non dà costi affatto.
-  Tutti i campi necessari sono già in ogni `summary.json` da M2a.
+  qualità ≥ τ` diventa «minimizza CPT-τ». Assorbe in un numero solo i tentativi
+  economici falliti, il costo dell'escalation, l'overhead di coordinamento e i task
+  che a τ non arrivano mai. Tutti i campi necessari sono già in ogni `summary.json`
+  da M2a.
+  - **Non è una metrica nuova** (ott 2026): è il **Cost-of-Pass** (2504.13359, ICLR
+    2026, eq. 2 p. 4) con «corretto» sostituito da «qualità ≥ τ», e va presentato e
+    citato così. L'estensione propria è il successo su qualità graduata e soggettiva,
+    che loro lasciano aperto (p. 23-24). Differenza da dichiarare: Cost-of-Pass media i
+    rapporti per problema (eq. 8 p. 5), qui si usa il rapporto dei totali.
+  - ⚠️ **Rischio da gestire:** con τ basso o un giudice indulgente, un modello
+    scadente ed economico ottiene un costo per successo basso (Cost-of-Pass App. C.8,
+    p. 21-22). Contromisure: τ fissato *prima* della campagna e giustificato; giudice
+    verificato contro gli umani (M2b.1, M7.5); riportare accanto a CPT-τ il tasso di
+    successo, cosi' un CPT-τ basso con pochi successi si vede.
 - **M7.5** ⬜ **Calibrazione umana**: piccolo campione di giudizi umani, kappa
   inter-annotatore, dichiarazione del soffitto di validità.
 - **M7.6** ⬜ *(opzionale, se esce un modello nuovo durante la tesi)* **Flywheel dal
@@ -985,20 +1065,20 @@ La novità difendibile, verificata contro la letteratura (dettagli in
 ai checkpoint (nessun vicino la fa); (3) safety/sandbox + budget dove OI-MAS e
 Trinity dichiarano i propri limiti.
 
-**Aggiunte dopo la rassegna di agosto 2026** — tre rivendicazioni nuove, tutte
-misurabili con l'infrastruttura che esiste già:
-- **(4) Il routing ha due dimensioni.** Quale modello *e attraverso quale percorso*.
-  Calcolato, da misurare in M2s.4: 2,25× di differenza sullo stesso modello (ipotesi
-  che l'aggregatore perda lo sconto di cache). La letteratura assume accesso
-  diretto alle API e non modella la seconda.
-- **(5) Token ≠ dollari.** Dove la cache è attiva le due metriche divergono di un
-  ordine di grandezza: il −17% di token di GoAgent vale −2,5% di spesa. È il divario
-  esattamente nel punto in cui la letteratura misura.
-- **(6) CPT-τ.** Costo e qualità come **un solo numero** vincolato, invece di due
-  numeri accostati.
+**Rassegna di agosto 2026, ridimensionata a ottobre** (dettagli e pagine in
+`TESI_master.md` §7.1-7.2). Letti per intero DeLM (v1 e v3), FlyRoute, AgentCARD,
+SWE-Router, Agentic Routing, Cost-of-Pass e Harness Tokenomics:
+- **(4) Il percorso.** *Anticipata*: l'effetto è documentato, ma solo calcolato sul
+  listino. Resta la **misura** per chiamata e in fattura (M2s.4).
+- **(5) Token ≠ dollari.** *Nota*: diventa una nota di metodo, non un contributo. Il
+  conto su GoAgent (−17% token ≈ −2,5% spesa) va verificato prima di usarlo.
+- **(6) CPT-τ.** *Anticipata nella forma*: è il Cost-of-Pass (ICLR 2026) con soglia
+  di qualità. Resta l'estensione a qualità graduata e soggettiva, col costo del
+  giudizio misurato.
 
-⚠️ Nessuna delle tre è ancora verificata contro tutta la letteratura: sono candidate,
-non risultati. Prima di rivendicarle vanno letti per intero DeLM e FlyRoute.
+Vicini per stadio: S1 → AgentCARD; S2 → SWE-Router; S3 e flywheel → Agentic Routing,
+FlyRoute; metrica → Cost-of-Pass; percorso → Harness Tokenomics. Nessuno combina
+artefatto condiviso, giudizio soggettivo e costo misurato in fattura.
 
 **Aggiunta di settembre 2026:**
 - **(7) Il vincolo e' il giudizio, non la generazione.** Nel lavoro soggettivo ogni

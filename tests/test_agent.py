@@ -24,6 +24,8 @@ Copertura attuale (limite noto):
     Docker.
 """
 
+import json
+
 import pytest
 
 import config
@@ -246,3 +248,93 @@ def test_il_rilevatore_di_loop_riparte_a_ogni_incarico():
     secondo = agent.run("secondo", max_iterations=config.LOOP_THRESHOLD - 1)
 
     assert primo.status == secondo.status == "max_iterations"
+
+
+# ── Storia persistente dopo un incarico finito male ───────────────────────
+
+class _ToolFinto:
+    """Tool che restituisce cio' che gli si dice, per provocare guasti mirati."""
+    schema: dict = {}
+
+    def __init__(self, nome, esito):
+        self.name, self.esito = nome, esito
+
+    def execute(self, args):
+        return self.esito
+
+
+class _GatewayRegistratore:
+    """Risponde a parole e conserva una copia della conversazione ricevuta."""
+
+    def __init__(self):
+        self.viste = []
+
+    def complete(self, messages, tools):
+        self.viste.append(list(messages))
+        return AssistantTurn(content="fatto")
+
+
+def _ruoli(messaggi):
+    return [m["role"] if isinstance(m, dict) else "assistant" for m in messaggi]
+
+
+def test_un_guasto_a_meta_dei_tool_non_lascia_richieste_senza_risposta():
+    """Se `json.dumps` fallisce sul secondo tool, resta una richiesta orfana.
+
+    Il fornitore rifiuta una conversazione in cui un `tool_call` non ha
+    risposta: senza riparazione, ogni incarico successivo fallirebbe.
+    """
+    class GatewayDueTool:
+        def complete(self, messages, tools):
+            return AssistantTurn(tool_calls=(
+                ToolCall(id="a", name="ok", arguments="{}"),
+                ToolCall(id="b", name="rotto", arguments="{}"),
+            ))
+
+    agent = Agent(GatewayDueTool(), [
+        _ToolFinto("ok", {"fatto": True}),
+        _ToolFinto("rotto", object()),     # non serializzabile in JSON
+    ])
+    with pytest.raises(AgentFailure):
+        agent.run("primo", max_iterations=3)
+    assert _ruoli(agent.messages) == ["system", "user", "assistant", "tool"]
+
+    gateway = _GatewayRegistratore()
+    agent.llm = gateway
+    agent.run("secondo")
+
+    inviata = gateway.viste[0]
+    risposte = {m["tool_call_id"]: m for m in inviata
+                if isinstance(m, dict) and m["role"] == "tool"}
+    assert set(risposte) == {"a", "b"}
+    assert json.loads(risposte["a"]["content"]) == {"fatto": True}
+    assert "interrotta" in json.loads(risposte["b"]["content"])["error"]
+    assert _ruoli(inviata)[-2:] == ["tool", "user"]
+
+
+def test_dopo_uno_stop_alla_prima_iterazione_non_ci_sono_due_utenti_di_fila():
+    """Budget esaurito prima della prima risposta: la storia finisce con l'utente."""
+    class GatewayAlLimite:
+        def complete(self, messages, tools):
+            raise BudgetExceeded("tetto")
+
+    agent = Agent(GatewayAlLimite(), [])
+    assert agent.run("primo").status == "budget_exhausted"
+
+    gateway = _GatewayRegistratore()
+    agent.llm = gateway
+    agent.run("secondo")
+
+    ruoli = _ruoli(gateway.viste[0])
+    assert ruoli == ["system", "user", "assistant", "user"]
+    assert all(a != b for a, b in zip(ruoli, ruoli[1:]))
+
+
+def test_una_storia_coerente_non_viene_toccata():
+    """Dopo un incarico concluso la riparazione non aggiunge nulla."""
+    gateway = _GatewayRegistratore()
+    agent = Agent(gateway, [])
+    agent.run("primo")
+    agent.run("secondo")
+
+    assert _ruoli(gateway.viste[1]) == ["system", "user", "assistant", "user"]

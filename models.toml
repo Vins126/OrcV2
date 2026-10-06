@@ -163,7 +163,9 @@ prices       = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens
 provider     = "minimax"
 api_model    = "MiniMax-M2.7"
 capabilities = ["reasoning", "code", "text"]
-prices       = { input_tokens = 0.24, output_tokens = 0.96, cached_input_tokens = 0.06 }
+# Prezzi dalla documentazione ufficiale MiniMax (pagina «Anthropic API
+# compatible cache», letta il 6 ott 2026); la cache dura 5 minuti.
+prices       = { input_tokens = 0.30, output_tokens = 1.20, cached_input_tokens = 0.06, cache_write_tokens = 0.375 }
 
 # --- Infrastruttura: embedding per RAG e per il router appreso (S3) ---
 
