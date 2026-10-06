@@ -238,3 +238,41 @@ def test_una_risposta_a_parole_non_porta_tool_calls():
 
     assert turno.content == "ok"
     assert turno.tool_calls == ()
+
+
+# ── api_model: cosa viaggia al fornitore e cosa resta nei conti ───────────
+
+class ClientRegistratore:
+    """Client che conserva i parametri dell'ultima richiesta."""
+
+    def __init__(self, response):
+        self.richieste = []
+        self.response = response
+        self.chat = NS(completions=NS(create=self.create))
+
+    def create(self, **kwargs):
+        self.richieste.append(kwargs)
+        return self.response
+
+
+def test_il_gateway_invia_il_nome_del_fornitore_e_contabilizza_la_chiave():
+    """La richiesta porta `api_model`; il record porta la chiave del progetto.
+
+    Se il fornitore rinominasse il modello, i record gia' archiviati non
+    devono cambiare attribuzione: per questo i due nomi non coincidono.
+    """
+    client, contabile = ClientRegistratore(_response()), ContabileFinto()
+    gateway = OpenAIChatGateway(client, "opus-5", contabile, retry_max=1,
+                                api_model="claude-opus-5")
+
+    gateway.complete([], [])
+
+    assert client.richieste[0]["model"] == "claude-opus-5"
+    assert contabile.records[0].model == "opus-5"
+
+
+def test_senza_api_model_il_gateway_usa_la_chiave():
+    client = ClientRegistratore(_response())
+    OpenAIChatGateway(client, "m", ContabileFinto(), retry_max=1).complete([], [])
+
+    assert client.richieste[0]["model"] == "m"

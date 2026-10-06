@@ -271,3 +271,28 @@ def test_lo_sforzo_viaggia_nella_richiesta():
     AnthropicChatGateway(client, "opus-5", Accountant(), effort="low").complete([], [])
 
     assert client.richieste[0]["output_config"] == {"effort": "low"}
+
+
+# ── api_model: l'alias del progetto non e' un nome che Anthropic conosca ──
+
+def test_anthropic_riceve_il_nome_del_fornitore_non_l_alias():
+    """Senza la traduzione la prima chiamata diretta fallirebbe.
+
+    `opus-5` e' la chiave del progetto; l'API vuole `claude-opus-5`. Un proxy
+    farebbe la traduzione da solo, chiamando direttamente non c'e' nessuno che
+    lo faccia.
+    """
+    client, contabile = Client(), Accountant()
+    gateway = AnthropicChatGateway(client, "opus-5", contabile, api_model="claude-opus-5")
+
+    gateway.complete([], [])
+
+    assert client.richieste[0]["model"] == "claude-opus-5"
+    assert contabile.records[0].model == "opus-5"
+
+
+def test_anthropic_senza_api_model_usa_la_chiave():
+    client = Client()
+    AnthropicChatGateway(client, "opus-5", Accountant()).complete([], [])
+
+    assert client.richieste[0]["model"] == "opus-5"

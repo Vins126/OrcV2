@@ -28,13 +28,13 @@ sempre il modello peggiore.
 |---|---|---|
 | **M1** | Agente ReAct, tool in sandbox Docker, resilienza agli errori | ✅ completata |
 | **M2a** | Infrastruttura di misura: listino, contabilità, ledger, budget, report | ✅ completata |
-| **M2s** | Instradamento statico per ruolo, percorso diretto ai fornitori | 🔜 in corso (2 task su 4) |
+| **M2s** | Instradamento statico per ruolo, percorso diretto ai fornitori | 🔜 in corso (3 task su 4) |
 | M3 | Parallelismo di N agenti | ⬜ |
 | M4 | Swarm: pianificatore, orchestratore, stato condiviso | ⬜ |
 | M2b | Intelligenza di instradamento: giudice, cascade, router appreso | ⬜ |
 | M7 | Campagna sperimentale e numeri della tesi | ⬜ |
 
-**138 test**, nessuno dei quali tocca la rete o consuma budget. CI su ogni push.
+**195 test**, nessuno dei quali tocca la rete o consuma budget. CI su ogni push.
 
 La logica dell'ordine: **prima si misura, poi si instrada.** Senza un apparato
 di misura riproducibile non esiste né una baseline né una prova, e un router
@@ -53,16 +53,21 @@ cp .env.example .env        # poi compila le chiavi che ti servono
 python main.py "crea un file ciao.txt con dentro hello, poi rileggilo"
 ```
 
+Senza altre opzioni l'agente ha il ruolo `worker`, quindi `models.toml` lo assegna a
+MiniMax e serve `ORC2_MINIMAX_KEY` nel `.env`. Il ruolo decide modello e fornitore:
+cambiarlo non richiede di toccare il codice.
+
 Serve **Docker in esecuzione**: il tool `bash` non esegue nulla sulla macchina
 host, solo dentro un container effimero senza rete, non-root, con filesystem in
 sola lettura tranne il workspace.
 
 ```bash
 python main.py --help                                  # opzioni, senza contattare nulla
-python main.py --model minimax-m2-7 --budget-usd 0.01 "..."
+python main.py --role planner --budget-usd 0.01 "..." # diretto, col ruolo planner e un tetto
+python main.py --via-proxy --role worker "..."        # stesso modello, ma via proxy (.env)
 python main.py --workspace /tmp/orc-work --runs-dir /tmp/orc-runs "..."
 
-pytest -q                                              # 138 test, offline, a costo zero
+pytest -q                                              # 195 test, offline, a costo zero
 ```
 
 ---
@@ -112,25 +117,26 @@ chiavi API.
 
 ## Architettura
 
-![Il percorso di una chiamata](Docs_Utili/architettura.svg)
+![Il percorso di una chiamata](docs/architettura.svg)
 
 Il diagramma segue una singola iterazione. Sotto, la composizione completa:
 
 ```text
-main.py                          unico punto che legge segreti e compone le dipendenze
+main.py                          unico punto che legge segreti e sceglie il percorso
   ├─ config                      costanti sperimentali, credenziali per fornitore
   ├─ ModelRegistry               listino, capacità, ruoli  ← models.toml
-  ├─ tools.build_default_tools   workspace + sandbox Docker
-  ├─ ChatGateway                 confine con il provider
-  │    ├─ OpenAIChatGateway        chat.completions
-  │    └─ AnthropicChatGateway     Messages API, con prompt cache
-  │         ├─ mapper              payload del provider → UsageRecord
-  │         ├─ Accountant          quantità × prezzo
-  │         └─ BudgetGuard         tetto di spesa, prima della rete
-  └─ RunSession
-       ├─ Agent                  ciclo ReAct: decide, invoca, osserva, ripete
+  └─ AgentFactory.build(ruolo)   costruisce un agente persistente per ruolo
+       ├─ ChatGateway            confine con il provider, scelto dal fornitore del ruolo
+       │    ├─ OpenAIChatGateway   chat.completions (OpenAI, Moonshot, MiniMax)
+       │    └─ AnthropicChatGateway Messages API, con prompt cache
+       │         ├─ mapper         payload del provider → UsageRecord
+       │         └─ BudgetGuard    tetto di spesa, prima della rete
+       ├─ Accountant              quantità × prezzo, somma la vita dell'agente
+       ├─ tools                   workspace proprio + sandbox Docker
+       └─ Agent                   ciclo ReAct con conversazione persistente
+  BuiltAgent.assign(task)        ogni incarico = una run con il proprio ledger
        ├─ RunLedger              JSONL append-only + summary atomico
-       └─ RunReporter            rapporto di fine esecuzione
+       └─ RunReporter            rapporto di fine incarico
 ```
 
 La regola che tiene insieme il tutto: **le dipendenze puntano tutte verso il
@@ -164,12 +170,12 @@ degli strumenti già costruiti. Ne discendono tre proprietà concrete:
 
 | File | Contenuto |
 |---|---|
-| `Docs_Utili/TESI_master.md` | il documento di riferimento della tesi: ipotesi, pilastri, stato dell'arte, §9 sulla contabilità e l'osservabilità |
-| `Docs_Utili/PIANO_completo.md` | piano di progetto, confronto con la letteratura, **registro delle 12 decisioni** architetturali con motivazione |
-| `Docs_Utili/ROADMAP.md` | piano operativo: cosa fare, in che ordine, come testarlo, quando considerarlo finito |
-| `Docs_Utili/M2_routing_design.md` | approfondimento tecnico sull'instradamento |
+| `docs/TESI_master.md` | il documento di riferimento della tesi: ipotesi, pilastri, stato dell'arte, §9 sulla contabilità e l'osservabilità |
+| `docs/PIANO_completo.md` | piano di progetto, confronto con la letteratura, **registro delle 12 decisioni** architetturali con motivazione |
+| `docs/ROADMAP.md` | piano operativo: cosa fare, in che ordine, come testarlo, quando considerarlo finito |
+| `docs/M2_routing_design.md` | approfondimento tecnico sull'instradamento |
 | `TESI_presentazione.md` | traccia divulgativa per l'esposizione orale |
-| `Docs_Utili/esempio_run/` | **due esecuzioni reali** con i loro log, commentate: una completata e una fermata dal tetto di spesa |
+| `docs/esempio_run/` | due esecuzioni di esempio con i loro log, commentate: una completata e una fermata dal tetto di spesa (le risposte del modello sono riprodotte da una registrazione, non chiamate nuove) |
 
 ---
 
@@ -180,7 +186,7 @@ dichiarati:
 
 | Intervento | Effetto stimato |
 |---|---|
-| Percorso diretto al fornitore invece che via aggregatore | −55,6% |
+| Percorso diretto al fornitore invece che via aggregatore (presuppone che l'aggregatore perda lo sconto di cache: ipotesi, da misurare in M2s.4) | −55,6% |
 | Worker su modello economico + contesti isolati | −86,7% (limite superiore) |
 | Con cascade ed escalation, 30% di fallimenti | **−74,9%** (scenario realistico) |
 
@@ -193,6 +199,12 @@ chiamata che evita.
 > esito*, e il vincolo `qualità ≥ τ` resta interamente da verificare
 > sperimentalmente in M2b e M7. Il valore di averle calcolate ora è che
 > l'infrastruttura per falsificarle esiste già.
+>
+> Il pareggio al 95,8% assume inoltre esiti **netti** — il codice passa i test o
+> no. Per la qualità soggettiva un output economico non fallisce: è peggiore *di
+> quanto*, e il calcolo va rifatto. È uno dei problemi aperti elencati in
+> `docs/ROADMAP.md`, insieme al fatto che nel lavoro soggettivo **il costo
+> del giudizio**, più di quello della generazione, decide la spesa complessiva.
 
 ---
 

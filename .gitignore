@@ -11,6 +11,10 @@ __pycache__/
 # forma con valori fittizi.
 .env
 
+# File che macOS crea da solo in ogni cartella aperta dal Finder (posizione
+# delle icone, ordinamento): non fanno parte del progetto.
+.DS_Store
+
 # Configurazione locale dell'editor
 .idea/
 .vscode/
@@ -25,4 +29,4 @@ workspace/
 runs/
 
 # Materiale di studio personale, non parte del lavoro consegnato
-Docs_Utili/STUDIO.md
+docs/STUDIO.md

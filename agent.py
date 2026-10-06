@@ -8,6 +8,7 @@ facile da testare e riutilizzare con provider o ruoli diversi.
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import config
 from alerts import Alerts
@@ -91,6 +92,16 @@ class Agent:
         tool_schemas: descrizioni dei tool nel formato atteso dall'API.
         tool_registry: mappa nome→tool, per ritrovare lo strumento richiesto
             dal modello in tempo costante.
+        messages: la conversazione dell'agente. **Persiste fra un incarico e
+            l'altro**: e' la sua finestra di contesto, che vive finche' l'agente
+            non viene eliminato da chi lo ha creato.
+
+    Limite noto:
+        La conversazione cresce senza limiti: ogni chiamata la rimanda per
+        intero, quindi il costo di un incarico aumenta con la vita dell'agente,
+        e prima o poi si arriva al limite di contesto del modello. Non esiste
+        ancora una politica di compattazione: per ora e' chi orchestra a
+        decidere quando un agente ha finito il suo ciclo (ROADMAP, M4.2b).
     """
 
     def __init__(self, llm: ChatGateway, tools):
@@ -107,9 +118,15 @@ class Agent:
         self.tools = tools
         self.tool_schemas = [t.schema for t in tools]
         self.tool_registry = {t.name: t for t in tools}
+        self.messages: list[Any] = []
 
     def run(self, task, max_iterations=config.MAX_ITERAZIONI):
-        """Esegue un task fino al completamento o all'esaurimento delle iterazioni.
+        """Esegue un incarico fino al completamento o all'esaurimento delle iterazioni.
+
+        La conversazione **non riparte da zero**: la prima volta si crea con il
+        prompt di sistema e il task, le volte successive il nuovo task si
+        accoda a quanto l'agente ha gia' detto e fatto. E' cio' che rende
+        l'agente persistente: ricorda gli incarichi precedenti.
 
         Il tetto di iterazioni è una garanzia di terminazione: un agente che non
         converge deve fermarsi comunque, perché ogni iterazione ha un costo in
@@ -123,7 +140,13 @@ class Agent:
             task: descrizione in linguaggio naturale del compito da svolgere.
             max_iterations: numero massimo di passi ReAct concessi.
         """
-        messages = self._messaggi_iniziali(task)
+        if self.messages:
+            self.messages.append({"role": "user", "content": task})
+        else:
+            self.messages = self._messaggi_iniziali(task)
+        # Stessa lista, non una copia: le iterazioni la modificano sul posto, ed
+        # e' cosi' che la storia sopravvive alla fine di questa chiamata.
+        messages = self.messages
         rilevatore = RilevatoreLoop(config.ALERT_THRESHOLD, config.LOOP_THRESHOLD)
         log.info("Task avviato: %s", task)
 
@@ -185,6 +208,9 @@ class Agent:
 
         # L'AI non chiede tool -> ha finito
         if not msg.tool_calls:
+            # La risposta finale entra nella storia: se l'agente riceve un altro
+            # incarico, deve ricordare cosa ha concluso per questo.
+            messages.append(msg)
             log.info("Task completato in %d iterazioni", iterazione)
             return "completed", msg.content
 

@@ -99,3 +99,31 @@ def test_un_unita_senza_listino_diventa_evento_con_le_quantita(tmp_path):
     assert dettagli["reason"] == "UnitNotFound"
     assert dettagli["quantities"] == {"input_tokens": 150, "cached_input_tokens": 200}
     assert not (ledger.run_dir / "usage.jsonl").exists()
+
+
+# ── Il ledger si collega, e si cambia, per ogni incarico ─────────────────
+
+def test_senza_ledger_collegato_un_consumo_non_si_perde_in_silenzio():
+    """Registrare senza un ledger vorrebbe dire una spesa che non compare da nessuna parte."""
+    interno = InMemoryAccountant(RegistroFinto())
+    accountant = LedgerAccountant(interno)
+
+    with pytest.raises(RuntimeError, match="nessun ledger collegato"):
+        accountant.register(UsageRecord(model="m", quantities={"input_tokens": 3}))
+
+    assert interno.call_count == 0
+
+
+def test_attach_cambia_il_ledger_ma_non_azzera_il_totale(tmp_path):
+    """Un agente persistente: un ledger per incarico, un contabile per la vita."""
+    primo = RunLedger(root=tmp_path, task="uno", run_id="run-1")
+    secondo = RunLedger(root=tmp_path, task="due", run_id="run-2")
+    accountant = LedgerAccountant(InMemoryAccountant(RegistroFinto()), primo)
+
+    accountant.register(UsageRecord(model="m", quantities={"input_tokens": 3}))
+    accountant.attach(secondo)
+    accountant.register(UsageRecord(model="m", quantities={"input_tokens": 3}))
+
+    assert len(_read_jsonl(primo.run_dir / "usage.jsonl")) == 1
+    assert len(_read_jsonl(secondo.run_dir / "usage.jsonl")) == 1
+    assert accountant.total_cost == 12   # 6 + 6: la vita intera, non l'ultimo incarico

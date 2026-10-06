@@ -69,7 +69,8 @@ class ChatGatewayBase:
                  api_provider: str | None = None,
                  billing_provider: str | None = None,
                  event_sink: RunEventSink | None = None,
-                 budget_guard: BudgetGuard | None = None):
+                 budget_guard: BudgetGuard | None = None,
+                 api_model: str | None = None):
         """Registra le dipendenze del gateway.
 
         Args:
@@ -86,6 +87,10 @@ class ChatGatewayBase:
                 sottoclasse.
             event_sink: dove annotare i fatti che non sono consumi.
             budget_guard: tetto di spesa della run, se previsto.
+            api_model: nome con cui il fornitore conosce il modello, da
+                `ModelRegistry.api_model_for`; `None` usa `model`. Va nella
+                richiesta, mentre record e ledger continuano a usare `model`:
+                la contabilita' non deve cambiare se il fornitore rinomina.
         """
         if retry_max < 1:
             raise ValueError(
@@ -94,6 +99,7 @@ class ChatGatewayBase:
             )
         self.client = client
         self.model = model
+        self.api_model = api_model or model
         self.accountant = accountant
         self.mapper = mapper or self.MAPPER
         self.retry_max = retry_max
@@ -242,7 +248,7 @@ class OpenAIChatGateway(ChatGatewayBase):
     def _invoke(self, messages: list[Any], tools: list[dict[str, Any]]) -> Any:
         """Esegue la chiamata remota e restituisce la risposta grezza."""
         return self.client.chat.completions.create(
-            model=self.model,
+            model=self.api_model,
             messages=self._to_wire(messages),
             tools=tools,
         )
@@ -298,9 +304,10 @@ class AnthropicChatGateway(ChatGatewayBase):
         come messaggi *utente* con blocchi `tool_result`, e quelle relative
         allo stesso turno vanno raggruppate in un messaggio solo.
 
-        `cache_control` viene dichiarato di default: e' la leva di costo piu'
-        grande misurata (-55.6% su un task da 12 iterazioni) ed e' la ragione
-        per cui questo gateway esiste invece di passare da un aggregatore.
+        `cache_control` viene dichiarato di default: e' la leva di costo che si
+        stima piu' grande (-55.6% su un task da 12 iterazioni: calcolo, non
+        ancora misurato) ed e' la ragione per cui questo gateway esiste invece
+        di passare da un aggregatore.
     """
 
     MAPPER = AnthropicMessagesUsageMapper
@@ -337,7 +344,7 @@ class AnthropicChatGateway(ChatGatewayBase):
         """Esegue la chiamata remota e restituisce la risposta grezza."""
         system, conversazione = self._to_wire(messages)
         richiesta: dict[str, Any] = {
-            "model": self.model,
+            "model": self.api_model,
             "max_tokens": self.max_tokens,
             "messages": conversazione,
             "output_config": {"effort": self.effort},

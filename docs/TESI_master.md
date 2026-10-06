@@ -124,7 +124,9 @@ frontiera di Pareto costo/qualità**. I tier al massimo come *prior morbido*.
 **Principio:** NON Map-Reduce con merge finale. Il software è un **artefatto condiviso interdipendente
 che cresce incrementalmente** → modello **"team su git"**:
 - **Planner/Tech-lead** (modello forte): decompone a **granularità ottimale** (validata), governa il
-  DAG delle dipendenze, indìce i review.
+  DAG delle dipendenze, indìce i review — e fissa il **sistema di stile** (palette, tipografia,
+  spaziature, tono) *prima* che i worker partano. È l'art director del team: la coerenza fra le
+  sezioni diventa un vincolo di specifica, non un effetto emergente (§5.9, D15).
 - **Router** (per sotto-task): assegna il modello.
 - **Worker** specializzati (= Agent M1 + modello + sandbox): scrivono/leggono **incrementalmente**
   nel **Workspace condiviso + Blackboard** (interfacce/convenzioni/contratti → prevengono collisioni).
@@ -218,6 +220,128 @@ Principio guida: **il Router gira per OGNI sotto-task → overhead trascurabile*
 - Conferma: **ELHSR** (reward head **lineare** su LLM congelato) → "testa leggera su rappresentazione
   pre-calcolata" è la via giusta per un reward/router economico.
 
+### 5.8 Due livelli di giudizio (settembre 2026, D14)
+
+Il problema di partenza è una tensione. La **valutazione** vorrebbe artefatti piccoli, giudicabili in
+pochi secondi e attribuibili a chi li ha prodotti. La **tesi** ha bisogno di task grandi e composti,
+che *richiedono* uno swarm: un componente isolato si genera con una chiamata sola, e senza niente da
+scomporre non c'è niente da instradare. Ridurre il task a componenti avrebbe risolto la valutazione
+svuotando la tesi (D16).
+
+La tensione si scioglie separando i **livelli**, non i task. Il task resta il sito intero; il
+giudizio si fa in due momenti, con due scopi diversi:
+
+| Livello | Quando | Cosa si giudica | A cosa serve |
+|---|---|---|---|
+| **Sezione** | durante il lavoro | una sezione prodotta da un sotto-task (hero, prezzi, testimonianze), da sola | **addestrare** il router |
+| **Pagina** | a lavoro finito | la pagina intera, contro quella della baseline | **dimostrare** la tesi |
+
+Due problemi si risolvono insieme:
+- **Attribuzione del merito.** Se si giudicasse solo la pagina, un buon risultato andrebbe ripartito
+  fra sei contributi senza modo di dire quale scelta di modello l'ha prodotto. Il giudizio di sezione
+  *è* l'etichetta del sotto-task che l'ha generata.
+- **Validazione circolare.** Se lo stesso giudice producesse le etichette di addestramento e misurasse
+  la campagna, il sistema risulterebbe buono secondo una metrica che è stato addestrato a soddisfare.
+  Qui il router impara dalle sezioni ed è verificato sulle pagine: due metriche diverse.
+
+### 5.9 La coerenza si specifica, non si impara (D15)
+
+Sei sezioni ognuna ben fatta possono comporre una pagina incoerente: palette, tipografie e stili che
+non c'entrano l'uno con l'altro. Il router, addestrato sezione per sezione, **non vede** questo
+difetto e non potrebbe impararlo.
+
+La coerenza va quindi imposta a monte, come fa un team di design reale:
+
+| Ruolo umano | Nel sistema | Decide |
+|---|---|---|
+| Art director | planner | il sistema di stile, prima di iniziare |
+| Designer | worker | le singole sezioni, dentro quel sistema |
+| Revisore | giudice di pagina | se l'insieme regge |
+
+Il planner restituisce **due uscite in una sola chiamata** — la scomposizione e il sistema di stile —
+invece di essere diviso in due agenti. Un art director separato aggiungerebbe una chiamata al modello
+forte nel punto già più caro del sistema, e i due ruoli sono accoppiati (il layout cambia la
+scomposizione e viceversa), quindi dovrebbero iterare. Separarli converrebbe solo se esistesse un
+modello più adatto *ed* economico per il design: a settembre 2026 nessuna classifica pubblica isola
+quella capacità, e in cima alle classifiche di sviluppo web ci sono solo modelli di fascia alta. Resta
+un esperimento misurabile, non un'assunzione.
+
+Nota: la divisione rafforza la tesi invece di complicarla. Senza scomposizione un modello solo fa
+tutto e non c'è niente da ottimizzare; con la scomposizione, le decisioni globali (poche e cruciali)
+vanno a un modello forte e le sezioni possono andare a modelli economici. È il contrasto di costo su
+cui si regge l'intero claim.
+
+### 5.10 Il giudice va verificato prima di usarlo
+
+Un lavoro di maggio 2026 — *Visual Aesthetic Benchmark: Can Frontier Models Judge Beauty?*
+(2605.12684) — ha testato venti modelli multimodali di punta sul giudizio estetico. Il migliore
+raggiunge il **26,5%** di accuratezza contro il **68,9%** degli esperti umani.
+
+Due cautele prima di trarne conclusioni: il dominio è arte, fotografia e illustrazione, non
+interfacce — che hanno regole più condivise (allineamenti, contrasto, gerarchia) e sono verosimilmente
+più facili; e la misura è severa, perché chiede di indovinare *sia* il migliore *sia* il peggiore in
+un gruppo, in tre ordini diversi, non di scegliere fra due. Ma la direzione è chiara: **chiedere a un
+modello forte «quale è più bello?» e fidarsi non basta.**
+
+La stessa ricerca contiene però la notizia che conta per questa tesi: addestrando un modello più
+piccolo sui giudizi degli esperti, le sue prestazioni si avvicinano a quelle di uno dieci volte più
+grande. **Il segnale estetico si insegna.** È esattamente il Layer 1 di §5.5: non usare un giudice
+pronto, ma addestrarne uno sulle preferenze.
+
+La procedura che ne discende:
+1. poche centinaia di confronti **umani**, fatti da due annotatori sulle stesse coppie;
+2. dal loro accordo si ricava il **kappa** — quanto concordano due persone, tolto il caso (con due sole
+   opzioni si è d'accordo metà delle volte per fortuna). Il kappa **richiede almeno due annotatori**:
+   con uno solo non c'è accordo da misurare;
+3. si misura quanto il giudice automatico concorda con loro;
+4. solo se l'accordo si avvicina a quello fra gli umani, il giudice si usa sul resto.
+
+E una leva che precede tutte le altre: **la precisione della domanda.** «Quale è più bello?» è la
+domanda peggiore possibile, per un modello come per un umano. Criteri espliciti alzano l'accordo di
+entrambi — cioè alzano il soffitto oltre il quale la tesi non può rivendicare nulla (§5.4).
+
+### 5.11 Il vero vincolo: il costo del giudizio
+
+**Un giudizio può costare più del lavoro che giudica.** Con un giudice di fascia alta un confronto
+costa circa $0.015; con quattro candidati per una sezione servono circa otto confronti, cioè $0.12 —
+mentre un task intero, nello scenario ottimizzato, costa $0.045. Il sistema risparmierebbe sulla
+generazione e restituirebbe il risparmio nel giudizio.
+
+**Nel soggettivo, il dataset di addestramento non è gratuito.** Per il codice deterministico la
+cascade etichetta da sola: i test passano, quindi il modello economico è bastato. Per l'estetica il
+gate deterministico dà solo un pavimento — una sezione può compilare ed essere brutta. Etichettare
+«il modello economico è bastato» richiede di generare anche la versione di confronto e di farle
+giudicare:
+
+| Etichetta | costo, calcolato sul listino |
+|---|---|
+| deterministica — cascade con 35% di escalation | $0.0225 |
+| soggettiva — modello economico + baseline + un giudizio economico | $0.0587 |
+
+**La baseline è il metro.** Bradley-Terry produce un punteggio relativo, come l'Elo: dice che A batte
+B, non quanto vale A in assoluto. «Qualità ≥ τ» ha senso solo rispetto a un riferimento, e l'unico
+disponibile è la baseline mono-modello. Per questo ogni etichetta richiede la baseline eseguita sullo
+stesso sotto-task — non come condizione da confrontare alla fine, ma come unità di misura.
+
+**Le etichette soggettive sono rumorose.** Servono all'incirca il triplo degli esempi per la stessa
+accuratezza, e c'è un soffitto: il router non può superare l'accordo fra gli umani.
+
+Ne seguono due scelte di metodo:
+- **Curva di apprendimento** — il numero di etichette necessarie non si stima a priori: si addestra
+  su un primo lotto, si misura l'accuratezza su dati tenuti fuori, si aggiunge e si ripete, fermandosi
+  quando la curva si appiattisce. È incrementale e interrompibile in ogni momento, ed è essa stessa un
+  risultato: risponde a «quanti dati servono per un router utile?», che i lavori censiti non riportano.
+- **Apprendimento attivo** — dopo il primo lotto, i nuovi esempi si generano dove il router è meno
+  sicuro, invece che uniformemente. Tipicamente riduce di 2-5 volte le etichette necessarie.
+
+Tutto questo pesa di più ora che il router appreso (S3) è riconosciuto come **essenziale** e non come
+traguardo facoltativo (D13): è lì che sta il contributo di ricerca, e il suo costo è dominato dal
+giudizio.
+
+> **Il principio che ne risulta:** la regola di fondo della tesi — mandare ogni compito al modello più
+> economico capace di svolgerlo — va applicata **anche al giudice**. È il punto in cui il costo della
+> tesi si decide davvero.
+
 ---
 
 ## 6. Pipeline completa (dal task al risultato + apprendimento)
@@ -263,14 +387,19 @@ OFFLINE (flywheel):
 | **Comunicazione latente** (2606.05711) | Gli agenti si scambiano embedding / hidden state / KV-cache invece di testo | **Non applicabile**: richiede accesso agli interni del modello, impossibile con API commerciali. Da citare come direzione futura |
 | **Survey protocolli** (2505.02279) | MCP, A2A, ACP, ANP: interoperabilità fra agenti di organizzazioni diverse | Non adottati: gli agenti sono tutti dello stesso sistema, nello stesso processo |
 | **Agentic plan caching** (2506.14852) | Riuso dei piani fra task simili; la fase di pianificazione è la maggior parte del costo di calcolo | Rilevante perché nel sistema instradato **l'orchestratore diventa la voce di costo dominante**: qualunque leva sul planner domina le altre |
+| **Visual Aesthetic Benchmark** (2605.12684, mag 2026) | 20 modelli multimodali di punta sul giudizio estetico comparativo: il migliore **26,5%** contro **68,9%** degli esperti umani; un modello più piccolo addestrato sui giudizi esperti si avvicina a uno dieci volte più grande | Il risultato più rilevante per il pilastro della valutazione: un giudice pronto non basta, uno addestrato sì. Dominio arte/fotografia, non interfacce (§5.10) |
+| **Jev** (TypeSafe AI, accesso anticipato dal 15 set 2026) | Modello non generativo: invece di produrre testo restituisce un valore tipizzato con una confidenza. $0.042 per milione in input, output gratuito | Inutile come worker, non conveniente come router (l'embedding costa meno), **candidato come giudice**: ~180× più economico di un giudizio frontier. Da verificare su estetica e immagini (§5.11) |
+| **WebDev Arena / Design Arena** (classifiche a preferenza umana cieca) | Classifiche Elo su interfacce generate, votate da umani senza sapere quale modello le ha prodotte | Confermano che il confronto a coppie cieco è lo standard del settore (§5.2). **Nessuna isola la capacità di art direction**: misurano lo stile e il codice insieme (§5.9) |
 
 ### 7.2 Tre rivendicazioni aggiuntive, emerse dalla rassegna
 
 Tutte e tre sono misurabili con l'infrastruttura già costruita in M2a.
 
 1. **Il routing ha due dimensioni.** Non solo *quale modello*, ma *attraverso quale
-   percorso*. Verificato: la prompt cache non sopravvive al passaggio da un
-   aggregatore, e lo **stesso modello** arriva a costare **2,25×**. La letteratura
+   percorso*. Ipotesi, da verificare in M2s.4: passando da un aggregatore la prompt
+   cache potrebbe non sopravvivere, e lo **stesso modello** arriverebbe a costare
+   **2,25×** (calcolo sul listino per opus-5, non una misura; nei log di minimax
+   via aggregatore la cache compare, con una run su tre senza). La letteratura
    sul cost-routing assume accesso diretto alle API e non modella la seconda
    dimensione; i campi `api_provider` e `billing_provider` dello `UsageRecord`
    permettono di misurarla.
@@ -312,7 +441,7 @@ metrica congiunta di costo e qualità.
   Resta scoperto solo l'agganciamento delle unita' non testuali
   (immagini/video/audio/3D), gia' previsto dallo schema ma non ancora esercitato
   su chiamate reali.
-- **M2s IN CORSO — instradamento statico per ruolo** (2 task su 4):
+- **M2s IN CORSO — instradamento statico per ruolo** (3 task su 4):
   - *M2s.1* ✅ ruoli in `models.toml` (`planner` → modello frontier, `worker` →
     modello economico) con le capacita' che ogni mestiere richiede; il registro
     **verifica al caricamento** che il modello assegnato le possieda, quindi
@@ -322,8 +451,15 @@ metrica congiunta di costo e qualità.
     stato reso esplicito: `Agent` lavora su tipi del progetto e il secondo
     fornitore e' entrato **senza toccarlo**. E' la verifica sul campo della
     proprieta' che rende possibile lo swarm.
-  - *M2s.3* ⬜ fabbrica di agenti · *M2s.4* ⬜ prima misura reale.
-- **138 test verdi**, nessuno dei quali tocca la rete o consuma budget; CI su ogni
+  - *M2s.3* ✅ fabbrica di agenti: dato un ruolo costruisce un agente **persistente**
+    col modello assegnato dal registro, raggiunto attraverso il suo fornitore, con
+    contabile, workspace e guardiano del budget propri. L'agente ha una finestra di
+    contesto che cresce incarico dopo incarico e vive finche' chi lo ha creato non lo
+    elimina; ogni incarico ha il suo ledger, il contabile somma tutta la vita. `main.py` la usa: `--role` sceglie il ruolo e il
+    modello arriva dal registro. Il percorso vecchio via proxy resta con `--via-proxy` fino alla
+    prima misura di M2s.4, che confronta i due percorsi.
+  - *M2s.4* ⬜ prima misura reale.
+- **195 test verdi**, nessuno dei quali tocca la rete o consuma budget; CI su ogni
   push. La roadmap esecutiva, inclusi i requisiti espliciti per
   immagini/video/audio/3D/RAG, vive in `M2_routing_design.md` §0 e in `ROADMAP.md`.
 
@@ -473,11 +609,17 @@ Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
 ## 10. Rischi & domande aperte (per il colloquio)
 1. **Valutazione open-ended**: il capitolo più rischioso (è ciò che OI-MAS evita con task verificabili).
 2. **Bias del giudice** (self-preference) → contamina valutazione *e* training. Mitigazioni: panel, pairwise, position-swap, giudice terzo.
-3. **Validità del soggettivo** → misurare l'accordo annotatori (kappa); rivendicare fino a quel soffitto.
-4. **Dati di training** → RLAIF + DPO a scala di tesi (supporto università per il set umano di calibrazione?).
+3. **Validità del soggettivo** → misurare l'accordo annotatori (kappa); rivendicare fino a quel soffitto. Il kappa richiede almeno due annotatori: **disponibili** (settembre 2026).
+4. **Dati di training** → RLAIF + DPO a scala di tesi. Aggravante: un'etichetta soggettiva costa ~2,6× una deterministica ed è rumorosa (§5.11). Mitigazione: curva di apprendimento e apprendimento attivo.
 5. **Obsolescenza modelli** → il flywheel (ri-valutazione ripetibile) + transfer dei router (RouteLLM).
 6. **Granularità di decomposizione** → ottimo a U; come la stima il Planner?
 7. **Rappresentatività del benchmark** → pochi task non generalizzano; metodologia > scala.
+8. **Il giudice automatico non è affidabile sull'estetica se usato così com'è** (§5.10) → verifica contro gli umani prima dell'uso, criteri espliciti, addestramento sulle preferenze.
+9. **Il costo del giudizio può superare il risparmio** (§5.11) → giudice economico, pochi candidati per slot, gate deterministico a monte.
+10. **«Migliore» non è ancora definito** — bellezza, chiarezza o efficacia sono domande diverse con risposte diverse. È il primo problema aperto della ROADMAP, e condiziona tutti gli altri.
+11. **τ ha due significati** — soglia sul singolo output (§5.6.4) e non-inferiorità di campagna. Va ancorata alla baseline (§5.11).
+12. **Punti ciechi dello screenshot** — mobile, interazione, animazioni non compaiono in un'immagine ferma.
+13. **Varianza fra esecuzioni** — lo stesso modello produce pagine diverse: decide quante ripetizioni servono.
 
 ---
 
@@ -490,7 +632,7 @@ Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
 - **LLM-as-a-judge**: modello forte che valuta output (pairwise / single / G-Eval).
 - **Blackboard**: spazio condiviso da cui gli agenti leggono/scrivono (anti-mesh).
 - **Pareto costo/qualità**: a parità di qualità, scegli il più economico (e viceversa).
-- **kappa (Cohen/Fleiss)**: misura dell'accordo tra annotatori → soffitto di validità del soggettivo.
+- **kappa (Cohen/Fleiss)**: misura dell'accordo tra annotatori, **tolto quello dovuto al caso** (con due opzioni si concorda metà delle volte per fortuna) → soffitto di validità del soggettivo. Richiede almeno due annotatori.
 - **Pilastro C**: resilienza/auto-correzione (errore → osservazione → riprova).
 - **Ricomputabilità**: proprietà dei log che conservano le *quantità* e non solo i dollari → i
   costi si ricalcolano su dati storici quando cambia un listino, senza rieseguire nulla (§9.1).
@@ -501,3 +643,9 @@ Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
   + `summary.json`); è lo schema iniziale del dataset del flywheel (§9.5).
 - **Sforamento residuo**: quanto una run può superare il tetto di budget — al massimo il costo di
   una singola chiamata, perché il costo si conosce solo a chiamata avvenuta (§9.6).
+- **Giudizio a coppie**: si mostrano due output dello stesso task senza dire chi li ha prodotti e si
+  chiede quale sia migliore. Un giudizio = un confronto = una risposta, A oppure B (§5.2).
+- **Curva di apprendimento**: accuratezza del router in funzione del numero di etichette. Dice quando
+  aggiungere dati smette di servire (§5.11).
+- **Apprendimento attivo**: generare nuovi esempi dove il modello è più incerto, invece che a caso.
+  Riduce le etichette necessarie (§5.11).

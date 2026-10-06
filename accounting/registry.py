@@ -58,7 +58,8 @@ class ModelRegistry:
         units: mappa unita' -> base di prezzo (a quante unita' si riferisce il
             prezzo dichiarato: 1_000_000 per i token, 1 per le immagini).
         providers: mappa fornitore -> dati del fornitore (costi di accesso).
-        models: mappa modello -> dati del modello (provider, capacita', prezzi).
+        models: mappa modello -> dati del modello (provider, capacita', prezzi
+            e, facoltativo, `api_model`: il nome usato dal fornitore).
         roles: mappa ruolo -> {model, requires}, cioe' l'assegnazione statica
             di stadio S1. Vive in configurazione e non nel codice: cambiare
             quale modello svolge un mestiere non richiede di toccare Python.
@@ -213,6 +214,27 @@ class ModelRegistry:
             )
         return self.roles[role]["model"]
 
+    def api_model_for(self, model: str) -> str:
+        """Il nome con cui il fornitore conosce il modello.
+
+        Nota di design (tesi):
+            Il progetto identifica i modelli con una chiave propria (`opus-5`)
+            che compare in ruoli, contabilita' e ledger. Il fornitore ne ha un
+            altro (`claude-opus-5`). Tenerli distinti impedisce che un cambio
+            di nome sul lato del fornitore tocchi i dati gia' archiviati: i
+            record storici restano attribuiti alla chiave, che non cambia.
+
+        Args:
+            model: chiave del modello, come compare in `[models.*]`.
+
+        Returns:
+            Il campo `api_model` se dichiarato, altrimenti la chiave stessa.
+
+        Raises:
+            ModelNotFound: se il modello non e' a registro.
+        """
+        return self._modello(model).get("api_model", model)
+
     def require_capability(self, capability: str) -> list[str]:
         """Come `models_with`, ma pretende che almeno un modello la offra.
 
@@ -302,6 +324,16 @@ class ModelRegistry:
                         f"modello '{nome}': capacita' '{capacita}' sconosciuta; "
                         f"riconosciute: {self._elenca(CAPACITA_NOTE)}"
                     )
+
+            api_model = dati.get("api_model")
+            if api_model is not None and (
+                not isinstance(api_model, str) or not api_model.strip()
+            ):
+                raise MalformedRegistry(
+                    f"modello '{nome}': api_model dev'essere una stringa non vuota "
+                    f"(il nome con cui il fornitore conosce il modello), trovato "
+                    f"{api_model!r}. Per usare la chiave stessa, ometti il campo"
+                )
 
             prezzi = dati.get("prices", {})
             if not prezzi:

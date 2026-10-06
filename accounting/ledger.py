@@ -104,7 +104,7 @@ class RunLedger:
         """
         usage_entries = self._read_jsonl(self.run_dir / "usage.jsonl")
         events = self._read_jsonl(self.run_dir / "events.jsonl")
-
+        
         cost_by_model: dict[str, float] = {}
         cost_by_operation: dict[str, float] = {}
         quantities_by_unit: dict[str, float] = {}

@@ -39,8 +39,8 @@ Fase introdotta dopo la stesura originale, fra la misura e l'intelligenza.
    che ciascun mestiere richiede; il registro verifica **al caricamento** che il
    modello assegnato le possieda tutte.
 2. Un gateway per fornitore, con percorso **diretto** alle API: passando da un
-   aggregatore la prompt cache non sopravvive, e lo stesso modello arriva a costare
-   più del doppio.
+   aggregatore la prompt cache potrebbe non sopravvivere, con un costo calcolato
+   fino a più del doppio (ipotesi, da misurare in M2s.4).
 3. Fabbrica di agenti: dato un ruolo costruisce l'agente col suo modello, il suo
    contabile, il suo ledger e il suo workspace.
 4. Prima misura reale: tassa dell'aggregatore, tasso di fallimento del modello
@@ -236,7 +236,7 @@ overfitting** (pochi task non generalizzano); **modelli che cambiano** → pipel
 
    ModelRegistry (models.toml): prezzi, capacità, ruoli — nessun codice da toccare
    RunLedger: usage.jsonl · events.jsonl · summary.json — il dataset del flywheel
-   138 test offline · CI su ogni push · configurazione centralizzata
+   195 test offline · CI su ogni push · configurazione centralizzata
 ```
 
 **Il confine che conta:** `Agent` non conosce SDK, prezzi né filesystem. È la

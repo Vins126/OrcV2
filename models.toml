@@ -71,10 +71,11 @@ audio_minute        = 1           # trascrizione (STT)
 #  prospettiva serializzato nei log: una chiave qui dentro uscirebbe da
 #  qualche parte, prima o poi.
 #
-#  ⚠️ Il percorso conta quanto il modello. Verificato ago 2026: passando da un
-#  aggregatore la prompt cache non sopravvive (cache_control respinto, sconti
-#  di Moonshot/Kimi/MiniMax non trasferiti), e lo stesso modello arriva a
-#  costare 2.25x. Per le misure della campagna si chiama sempre diretto.
+#  ⚠️ Il percorso potrebbe contare quanto il modello (ipotesi, da misurare in
+#  M2s.4). Nei log (ago-set 2026, minimax-m2-7 via LiteLLM -> OpenRouter) la
+#  cache compare in una run e manca in un'altra; lo sconto in fattura non e'
+#  verificabile dal ledger, che calcola sul listino. Il 2.25x e' un calcolo su
+#  opus-5, mai eseguito. Per le misure della campagna si chiama sempre diretto.
 
 [providers.anthropic]
 monthly_fee = 0.0
@@ -120,6 +121,14 @@ api_key_env = "ORC2_TRIPO_KEY"
 #  Il filtro per capacita' PRECEDE quello sul costo: un modello privo della
 #  capacita' richiesta non e' confrontabile sul prezzo, per quanto economico.
 #
+#  api_model — FACOLTATIVO. Il nome con cui il FORNITORE conosce il modello,
+#  quando differisce dal nome che il progetto usa come chiave (la chiave resta
+#  quella di contabilita', ledger e ruoli). Se manca si usa la chiave stessa.
+#  Serve nel percorso diretto: un aggregatore o un proxy traducono l'alias da
+#  soli, chiamando il fornitore nessuno lo fa. Dichiarato solo dove il nome
+#  differisce dalla chiave e l'abbiamo letto sulla documentazione del fornitore
+#  (opus-5, minimax-m2-7). Dove coincide (kimi-k3) si omette.
+#
 #  prices — solo le unita' pertinenti al modello. Un'unita' assente significa
 #  che il modello non offre quel tipo di consumo.
 # ───────────────────────────────────────────────────────────────────────────
@@ -133,6 +142,7 @@ api_key_env = "ORC2_TRIPO_KEY"
 # contabilizzabile (vedi la nota sulle unita' assenti piu' sopra).
 [models.opus-5]
 provider     = "anthropic"
+api_model    = "claude-opus-5"
 capabilities = ["reasoning", "code", "text", "vision_input"]
 prices       = { input_tokens = 5.00, output_tokens = 25.00, cached_input_tokens = 0.50, cache_write_tokens = 6.25 }
 
@@ -151,6 +161,7 @@ prices       = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens
 
 [models.minimax-m2-7]
 provider     = "minimax"
+api_model    = "MiniMax-M2.7"
 capabilities = ["reasoning", "code", "text"]
 prices       = { input_tokens = 0.24, output_tokens = 0.96, cached_input_tokens = 0.06 }
 

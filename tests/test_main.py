@@ -1,8 +1,14 @@
 """Il bootstrap resta importabile e configurabile senza contattare servizi esterni."""
 
+import json
+import os
+from types import SimpleNamespace as NS
+
 import pytest
 
 import config
+import main as modulo_main
+from agent import RunResult
 from main import build_parser, main
 
 
@@ -118,3 +124,209 @@ def test_i_fornitori_reali_dichiarano_dove_sta_la_loro_chiave():
     senza = [p for p, dati in registro.providers.items() if not dati.get("api_key_env")]
 
     assert senza == [], f"fornitori senza api_key_env: {senza}"
+
+
+
+# ── CLI: due percorsi, scelti dalla riga di comando ───────────────────────
+
+def test_il_parser_conosce_il_ruolo_e_il_percorso_via_proxy():
+    args = build_parser().parse_args(["--role", "planner", "--via-proxy", "task"])
+
+    assert args.role == "planner"
+    assert args.via_proxy is True
+
+
+def test_per_default_il_percorso_e_diretto_e_il_ruolo_non_e_imposto():
+    args = build_parser().parse_args(["task"])
+
+    assert args.via_proxy is False
+    assert args.role is None   # il predefinito (worker) lo applica main, non il parser
+
+
+def test_model_senza_via_proxy_e_un_errore_che_spiega_cosa_fare(capsys, tmp_path):
+    """Nel percorso diretto il modello lo decide il ruolo: `--model` sarebbe ignorato.
+
+    Ignorarlo in silenzio farebbe credere di aver scelto un modello che in realta'
+    non si sta usando, e il costo misurato sarebbe di un altro.
+    """
+    with pytest.raises(SystemExit) as uscita:
+        main(["--model", "opus-5", "task"], dotenv_path=tmp_path / ".env")
+
+    assert uscita.value.code == 2
+    assert "--via-proxy" in capsys.readouterr().err
+
+
+# ── Percorso diretto: main parla con la fabbrica ──────────────────────────
+
+class FabbricaFinta:
+    """Sostituisce `AgentFactory`: registra come la usa `main`, senza rete ne' Docker."""
+
+    esito = "completed"
+    istanze: list = []
+
+    def __init__(self, registry, runs_root, workspaces_root, *, budget_usd=None):
+        self.runs_root, self.workspaces_root = runs_root, workspaces_root
+        self.budget_usd = budget_usd
+        self.ruolo = None
+        self.incarichi = []
+        FabbricaFinta.istanze.append(self)
+
+    def build(self, role):
+        self.ruolo = role
+        return self
+
+    def assign(self, task, max_iterations=None):
+        self.incarichi.append((task, max_iterations))
+        return RunResult(status=FabbricaFinta.esito, iterations=1)
+
+
+@pytest.fixture
+def fabbrica_finta(monkeypatch):
+    FabbricaFinta.istanze = []
+    FabbricaFinta.esito = "completed"
+    monkeypatch.setattr(modulo_main, "AgentFactory", FabbricaFinta)
+    return FabbricaFinta
+
+
+def test_il_percorso_diretto_costruisce_l_agente_del_ruolo_predefinito(
+        fabbrica_finta, tmp_path):
+    codice = main(
+        ["--budget-usd", "0.5", "--max-iterations", "7",
+         "--runs-dir", str(tmp_path / "runs"), "--workspace", str(tmp_path / "ws"),
+         "fai una cosa"],
+        dotenv_path=tmp_path / ".env",
+    )
+
+    fabbrica = fabbrica_finta.istanze[0]
+    assert codice == 0
+    assert fabbrica.ruolo == "worker"
+    assert fabbrica.incarichi == [("fai una cosa", 7)]
+    assert fabbrica.budget_usd == 0.5
+    assert str(fabbrica.runs_root) == str(tmp_path / "runs")
+    assert str(fabbrica.workspaces_root) == str(tmp_path / "ws")
+
+
+def test_il_ruolo_indicato_arriva_alla_fabbrica(fabbrica_finta, tmp_path):
+    main(["--role", "planner", "task"], dotenv_path=tmp_path / ".env")
+
+    assert fabbrica_finta.istanze[0].ruolo == "planner"
+
+
+def test_l_exit_code_dice_se_l_incarico_e_riuscito(fabbrica_finta, tmp_path):
+    fabbrica_finta.esito = "budget_exhausted"
+
+    assert main(["task"], dotenv_path=tmp_path / ".env") == 1
+
+
+def test_il_percorso_diretto_legge_le_chiavi_dal_file_env_indicato(
+        fabbrica_finta, monkeypatch, tmp_path):
+    """Le chiavi per fornitore stanno in `.env`: va caricato anche qui.
+
+    Prima di M2s l'unico a leggere `.env` era `load_llm_settings`, che chiede la
+    terna del proxy. Il percorso diretto non la usa, quindi serve un caricamento
+    a se' che non pretenda nessuna variabile.
+    """
+    monkeypatch.setenv("ORC2_MINIMAX_KEY", "provvisoria")
+    monkeypatch.delenv("ORC2_MINIMAX_KEY")        # cosi' a fine test torna com'era
+    env = tmp_path / ".env"
+    env.write_text("ORC2_MINIMAX_KEY=dal-file\n", encoding="utf-8")
+
+    main(["task"], dotenv_path=env)
+
+    assert os.environ["ORC2_MINIMAX_KEY"] == "dal-file"
+
+
+# ── Percorso diretto: gli errori di configurazione non lasciano tracce ────
+
+def test_ruolo_ignoto_esce_con_un_messaggio_e_non_crea_cartelle(capsys, tmp_path):
+    with pytest.raises(SystemExit) as uscita:
+        main(["--role", "giudice", "--runs-dir", str(tmp_path / "runs"),
+              "--workspace", str(tmp_path / "ws"), "task"],
+             dotenv_path=tmp_path / ".env")
+
+    assert uscita.value.code == 2
+    assert "giudice" in capsys.readouterr().err
+    assert not (tmp_path / "runs").exists() and not (tmp_path / "ws").exists()
+
+
+def test_chiave_mancante_nomina_la_variabile_e_non_crea_cartelle(
+        monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("ORC2_MINIMAX_KEY", "provvisoria")
+    monkeypatch.delenv("ORC2_MINIMAX_KEY")
+
+    with pytest.raises(SystemExit) as uscita:
+        main(["--role", "worker", "--runs-dir", str(tmp_path / "runs"),
+              "--workspace", str(tmp_path / "ws"), "task"],
+             dotenv_path=tmp_path / ".env")
+
+    assert uscita.value.code == 2
+    assert "ORC2_MINIMAX_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "runs").exists() and not (tmp_path / "ws").exists()
+
+
+# ── Percorso via proxy: com'era prima, perche' serve al confronto di M2s.4 ─
+
+class ClientProxyFinto:
+    """Client compatibile OpenAI che registra le richieste ricevute."""
+
+    def __init__(self):
+        self.richieste = []
+        self.chat = NS(completions=NS(create=self._crea))
+
+    def _crea(self, **kwargs):
+        self.richieste.append(kwargs)
+        return NS(
+            id="chat_1",
+            usage=NS(prompt_tokens=100, completion_tokens=50,
+                     prompt_tokens_details=None, completion_tokens_details=None),
+            choices=[NS(finish_reason="stop",
+                        message=NS(content="fatto", tool_calls=None))],
+        )
+
+
+@pytest.fixture
+def proxy_finto(monkeypatch):
+    """Sostituisce client OpenAI e strumenti, e fornisce la terna del proxy."""
+    client = ClientProxyFinto()
+    monkeypatch.setattr(modulo_main, "OpenAI", lambda **kwargs: client)
+    monkeypatch.setattr(modulo_main, "build_default_tools", lambda percorso: [])
+    monkeypatch.setenv("ORC2_BASE_URL", "http://proxy.test")
+    monkeypatch.setenv("ORC2_API_KEY", "chiave-fittizia")
+    monkeypatch.setenv("ORC2_MODEL", "minimax-m2-7")
+    return client
+
+
+def test_via_proxy_il_modello_di_models_toml_arriva_al_proxy(
+        proxy_finto, tmp_path, capsys):
+    codice = main(
+        ["--via-proxy", "--model", "minimax-m2-7",
+         "--runs-dir", str(tmp_path / "runs"), "--workspace", str(tmp_path / "ws"), "task"],
+        dotenv_path=tmp_path / ".env",
+    )
+
+    assert codice == 0
+    assert proxy_finto.richieste[0]["model"] == "minimax-m2-7"
+    (run,) = (tmp_path / "runs").iterdir()
+    sommario = json.loads((run / "summary.json").read_text())
+    assert sommario["status"] == "completed"
+    assert list(sommario["cost_by_model"]) == ["minimax-m2-7"]
+
+
+def test_via_proxy_il_ruolo_sceglie_il_modello_da_inviare(proxy_finto, tmp_path, capsys):
+    """Per confrontare lo stesso modello nei due percorsi serve poterlo indicare per ruolo."""
+    main(["--via-proxy", "--role", "planner",
+          "--runs-dir", str(tmp_path / "runs"), "--workspace", str(tmp_path / "ws"), "task"],
+         dotenv_path=tmp_path / ".env")
+
+    assert proxy_finto.richieste[0]["model"] == "opus-5"
+
+
+def test_via_proxy_ruolo_ignoto_esce_senza_creare_il_ledger(
+        proxy_finto, tmp_path, capsys):
+    with pytest.raises(SystemExit) as uscita:
+        main(["--via-proxy", "--role", "giudice",
+              "--runs-dir", str(tmp_path / "runs"), "task"],
+             dotenv_path=tmp_path / ".env")
+
+    assert uscita.value.code == 2
+    assert not (tmp_path / "runs").exists()

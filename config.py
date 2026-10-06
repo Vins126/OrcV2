@@ -65,6 +65,24 @@ def load_llm_settings(
     )
 
 
+def load_environment(dotenv_path: str | Path | None = None) -> None:
+    """Carica il file `.env` nell'ambiente, senza pretendere nessuna variabile.
+
+    Serve al percorso diretto, che legge le chiavi **per fornitore**
+    (`credenziali_fornitore`) e non la terna globale di `load_llm_settings`.
+    Come quella, si chiama solo dal punto d'ingresso e mai all'import: i moduli
+    restano importabili e testabili senza un `.env`.
+
+    Le variabili gia' presenti nell'ambiente **non** vengono sovrascritte: un
+    valore esportato nella shell vince su quello del file.
+
+    Args:
+        dotenv_path: percorso del file; `None` cerca un `.env` risalendo dalla
+            cartella corrente. Un file inesistente non e' un errore.
+    """
+    load_dotenv(dotenv_path=dotenv_path)
+
+
 @dataclass(frozen=True)
 class ProviderCredentials:
     """Come raggiungere un fornitore specifico.

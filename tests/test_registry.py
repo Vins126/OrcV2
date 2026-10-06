@@ -339,3 +339,54 @@ def test_i_ruoli_di_models_toml_sono_coerenti():
     # non ha alcun senso economico.
     costo = lambda m: r.cost(m, "output_tokens", 1_000_000)
     assert costo(r.model_for("worker")) < costo(r.model_for("planner"))
+
+
+# ── api_model: il nome con cui il fornitore conosce il modello ────────────
+
+def test_api_model_dichiarato_viene_restituito():
+    """Il fornitore ha un nome suo; la chiave del progetto resta un'altra.
+
+    Chiamando il fornitore direttamente nessun proxy traduce l'alias, quindi la
+    traduzione va dichiarata in configurazione.
+    """
+    modelli = {**CONFIG["models"], "grosso": {**CONFIG["models"]["grosso"], "api_model": "acme-grosso-2"}}
+    r = _registro(models=modelli)
+
+    assert r.api_model_for("grosso") == "acme-grosso-2"
+
+
+def test_api_model_assente_ricade_sulla_chiave():
+    """Il campo e' facoltativo: un registro di soli prezzi resta valido."""
+    assert _registro().api_model_for("grosso") == "grosso"
+
+
+def test_api_model_non_cambia_la_chiave_di_contabilita():
+    """Ruoli e costi restano agganciati alla chiave, non al nome del fornitore."""
+    modelli = {**CONFIG["models"], "grosso": {**CONFIG["models"]["grosso"], "api_model": "acme-grosso-2"}}
+    r = _registro(models=modelli, roles={"planner": {"model": "grosso", "requires": ["reasoning"]}})
+
+    assert r.model_for("planner") == "grosso"
+    assert r.cost("grosso", "input_tokens", 1_000_000) == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("valore", ["", "   ", 42, ["x"]], ids=["vuoto", "spazi", "numero", "lista"])
+def test_api_model_non_valido_e_rifiutato(valore):
+    modelli = {**CONFIG["models"], "grosso": {**CONFIG["models"]["grosso"], "api_model": valore}}
+
+    with pytest.raises(MalformedRegistry) as errore:
+        _registro(models=modelli)
+
+    assert "grosso" in str(errore.value) and "api_model" in str(errore.value)
+
+
+def test_api_model_di_un_modello_ignoto_e_un_errore_parlante():
+    with pytest.raises(ModelNotFound):
+        _registro().api_model_for("fantasma")
+
+
+def test_opus_5_del_progetto_dichiara_il_nome_del_fornitore():
+    """Il percorso diretto verso Anthropic non funzionerebbe con l'alias."""
+    r = ModelRegistry.from_file("models.toml")
+
+    assert r.api_model_for("opus-5") == "claude-opus-5"
+    assert r.api_model_for("opus-5") != "opus-5"

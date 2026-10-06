@@ -161,3 +161,88 @@ def test_gli_esiti_previsti_non_diventano_guasti():
 
     assert result.status == "service_unavailable"
     assert result.iterations == 1
+
+
+# ── Persistenza: l'agente ricorda gli incarichi precedenti ────────────────
+
+class GatewayRegistratore:
+    """Gateway che risponde a parole e conserva una COPIA di cio' che riceve.
+
+    Serve la copia: `Agent` modifica la conversazione sul posto, quindi una
+    semplice referenza mostrerebbe, dopo, uno stato diverso da quello visto
+    dal gateway al momento della chiamata.
+    """
+
+    def __init__(self):
+        self.viste = []
+
+    def complete(self, messages, tools):
+        self.viste.append(list(messages))
+        return AssistantTurn(content=f"risposta {len(self.viste)}")
+
+
+def test_la_conversazione_non_riparte_da_zero_a_ogni_incarico():
+    """Il secondo task si accoda a cio' che l'agente ha gia' detto e fatto."""
+    gateway = GatewayRegistratore()
+    agent = Agent(gateway, [])
+
+    agent.run("primo task")
+    agent.run("secondo task")
+
+    ruoli_e_testi = [(m["role"] if isinstance(m, dict) else "assistant",
+                      m["content"] if isinstance(m, dict) else m.content)
+                     for m in gateway.viste[1]]
+    assert ruoli_e_testi[1:] == [
+        ("user", "primo task"),
+        ("assistant", "risposta 1"),
+        ("user", "secondo task"),
+    ]
+
+
+def test_il_prompt_di_sistema_compare_una_volta_sola():
+    gateway = GatewayRegistratore()
+    agent = Agent(gateway, [])
+
+    agent.run("primo")
+    agent.run("secondo")
+    agent.run("terzo")
+
+    sistema = [m for m in agent.messages if isinstance(m, dict) and m["role"] == "system"]
+    assert len(sistema) == 1
+
+
+def test_la_risposta_finale_entra_nella_storia():
+    """Senza, l'agente non ricorderebbe cosa ha concluso per l'incarico."""
+    agent = Agent(GatewayRegistratore(), [])
+
+    agent.run("task")
+
+    assert agent.messages[-1].content == "risposta 1"
+
+
+def test_un_agente_nuovo_non_ha_storia():
+    assert Agent(GatewayRegistratore(), []).messages == []
+
+
+def test_il_rilevatore_di_loop_riparte_a_ogni_incarico():
+    """Il suo stato e' dell'esecuzione corrente, non della vita dell'agente.
+
+    Se sopravvivesse, le ripetizioni di un incarico si sommerebbero a quelle
+    del successivo e fermerebbero un agente che sta facendo cose diverse.
+    """
+    chiamata = ToolCall(id="1", name="bash", arguments="{}")
+
+    class Gateway:
+        def __init__(self):
+            self.n = 0
+
+        def complete(self, messages, tools):
+            self.n += 1
+            return AssistantTurn(tool_calls=(chiamata,))
+
+    agent = Agent(Gateway(), [])
+
+    primo = agent.run("primo", max_iterations=config.LOOP_THRESHOLD - 1)
+    secondo = agent.run("secondo", max_iterations=config.LOOP_THRESHOLD - 1)
+
+    assert primo.status == secondo.status == "max_iterations"

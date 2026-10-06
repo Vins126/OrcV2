@@ -5,7 +5,7 @@
 >
 > **Natura del documento.** È la traccia parlata con cui la tesi è stata *proposta*.
 > Lo stato dell'implementazione è andato avanti da allora: per quello fanno fede
-> `README.md` (sintesi) e `Docs_Utili/ROADMAP.md` (dettaglio). Le slide 11 e 12
+> `README.md` (sintesi) e `docs/ROADMAP.md` (dettaglio). Le slide 11 e 12
 > sono aggiornate; il resto conserva l'impostazione originale della proposta.
 
 ---
@@ -14,7 +14,7 @@
 **ORC — Orchestrazione e Cost-Routing di LLM per lo sviluppo software**
 *Un sistema multi-agente che instrada ogni task al modello più economico capace di svolgerlo, a parità di qualità.*
 
-- Vincenzo Mattioli — matricola 123014
+- Vincenzo Mattioli
 - Relatore: Prof. Corradini
 - Proposta di tesi di Laurea
 
@@ -120,7 +120,7 @@ La tesi sta o cade su **tre parti inseparabili**:
 ---
 
 ## Slide 11 — Cosa ho già costruito (non è solo teoria)
-Due fasi complete e una in corso, con **138 test automatici** verdi e integrazione continua.
+Due fasi complete e una in corso, con **195 test automatici** verdi e integrazione continua.
 
 **Agente singolo (M1, completata)**
 - ciclo **ReAct**, **auto-correzione** dagli errori, rilevamento dei loop;
