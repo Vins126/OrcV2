@@ -26,7 +26,7 @@
 |---|---|---|
 | M1 | Agente singolo | ✅ completata |
 | M2a | Infrastruttura di misura | ✅ completata |
-| **M2s** | **Routing statico role-based (stadio S1)** | 🔜 **corrente** |
+| **M2s** | **Routing statico role-based (stadio S1)** | 🟡 **aperta**: manca `f` su task difficili (misurato solo su un insieme facile per `minimax-m3`) e la CI verde |
 | UX1 | Sessione chat persistente | ⬜ (backlog prodotto) |
 | M3 | Parallelismo | ⬜ |
 | M4 | Swarm (Planner, Orchestratore, stato condiviso, Gate L1) | ⬜ |
@@ -34,6 +34,11 @@
 | M7 | Campagna sperimentale | ⬜ |
 
 **Percorso critico:** M2a → M2s → M3 → M4 → M2b(S2) → M7.
+
+> **M2s con una casella aperta (13 ottobre 2026).** La prima misura di `f` (Polyglot Python, `minimax-m3`,
+> 3 fallite su 102) mostra che l'insieme non e' difficile per il modello economico, quindi `f` su task difficili
+> resta da misurare, insieme a Opus e Kimi. Si riprende quando ci sono task piu' duri (altri esercizi o task del
+> progetto). M3 non dipende da questa misura (riguarda la concorrenza) e puo' partire.
 **Dove sta il contributo:** nel router appreso (S3). S0, S1 e S2 sono l'apparato che lo
 rende misurabile e difendibile, non un obiettivo alternativo (D13, settembre 2026 — prima
 S3 era marcato opzionale). Se S3 non desse risultati, S0-S2 resterebbero un risultato di
@@ -497,15 +502,174 @@ progetto (richiede proxy/API attivi e Docker acceso).
   devono essere risolvibili con la shell; il proxy espone `minimax-m2-7` ma **non
   `opus-5`** (espone `opus`, forse un altro modello), quindi `opus-5` via proxy richiede un
   alias nella configurazione di LiteLLM.
-- **M2s.4b — il resto, dopo** ⬜: richiede **account con credito presso MiniMax e Anthropic**
+  **Strumenti pronti (6 ottobre 2026), da lanciare:** `campaign.py run` esegue i task di
+  `campaigns/m2s4a.toml` (10 task solo shell, ciascuno con un comando di verifica) in serie,
+  un agente nuovo per ogni run, e scrive un manifesto in `runs/campaigns/`; `campaign.py
+  report <id>` calcola `f` e la quota di output. Il percorso via proxy passa dalla fabbrica
+  (`AgentFactory(proxy=...)`), cosi' in 4b diretto e proxy differiranno solo per l'endpoint.
+  Definizioni fissate: **successo = `completed` e verifica superata** (un `completed` senza il
+  file giusto non conta); **quota di output** = costo dei token di output su costo totale,
+  con la quota in token a fianco; i guasti della campagna (setup, costruzione dell'agente)
+  restano fuori da `f` e si contano a parte. Il costo del report e' **calcolato** sul
+  listino di `models.toml`, non addebitato. Campagna prevista: 10 task × 3 ripetizioni.
+  **Stato della misura (9 ottobre 2026):** il controllo del 6 ottobre (10 task × 1, 10 riusciti su 10)
+  prova che lo strumento funziona, ma **non e' una misura**: i task sono troppo facili perche' `f` sia
+  informativo. Decisione: test pesanti in due fasi. (1) Task di codice con verifica automatica pass/fail,
+  piu' difficili, per chiudere M2s.4 (richiede un'immagine di sandbox con Python, ancora da scegliere);
+  (2) task di generazione di pagine web (Design2Code) quando il giudice di qualita' sara' validato: appartiene
+  a M2b, non a M2s.
+  **Accesso a internet degli agenti (decisione del 9 ottobre 2026):** sara' una **condizione sperimentale**,
+  non un'impostazione fissa. La sandbox resta senza rete per le misure di base; la rete diventa un parametro
+  del `DockerExecutor` e si misura la stessa cosa con e senza. Motivo: l'ipotesi da mostrare e' che un worker
+  economico con internet possa avvicinarsi a uno costoso, e per dirlo serve la misura senza rete come
+  riferimento, con il confronto equo (entrambi i modelli con e senza rete). Rischi da tenere presenti: pagine
+  web con istruzioni rivolte all'agente, versioni dei pacchetti che cambiano nel tempo, soluzioni di dataset
+  pubblici reperibili online, token in piu' per le pagine lette. Non e' lavoro di M2s.4: va in M7 (matrice
+  delle condizioni).
+  **Fatto (9 ottobre 2026):** la sandbox usa ora l'immagine `orc-sandbox:m2s4`, costruita da
+  `docker/sandbox.Dockerfile` (Python 3.14, pytest 9.1.1, Node 24 LTS, basi bloccate da digest);
+  `DockerExecutor` ha il parametro `network` (`none` predefinito, `bridge` ammesso, altro = errore) e
+  `campaign.py run --network` lo sceglie per gli agenti, mentre setup e verifica restano sempre senza
+  rete. Il manifesto porta in testa immagine, identificativo e rete. Verificato a mano: `none` blocca la
+  rete, `bridge` raggiunge internet, un task con pytest gira offline. Le run precedenti usavano
+  `debian:bookworm-slim` e non sono confrontabili con le nuove.
+  **Isolamento sotto `bridge` (9 ottobre 2026):** misurato che un container in `bridge` raggiungeva
+  il proxy LiteLLM sulla macchina, un servizio in ascolto solo sul loopback, la macchina in LAN e il
+  router. L'entrypoint dell'immagine (`docker/sandbox-entrypoint.sh`) ora applica un firewall (reti
+  private, link-local e CGNAT chiuse; unica eccezione il DNS del container, porta 53) e scende a utente
+  1000 con tutti i permessi azzerati; se il firewall non si puo' applicare il comando non parte.
+  Provato con Docker (`ORC_INTEGRATION=1 pytest tests/test_sandbox_integration.py`, 4 test): la porta
+  aperta sul Mac non e' piu' raggiungibile, internet si', l'utente finale ha `CapEff` a zero e non puo'
+  togliere le regole, `pip install` e `npm install` funzionano. Limiti noti: il ramo IPv6 non e' stato
+  provato (la rete predefinita di Docker non ha IPv6); `iptables` viene da `apt` e quindi la sua
+  versione dipende dal giorno della costruzione; il DNS del container resta raggiungibile. Strada
+  futura per un controllo per dominio e registro delle richieste: contenitore di uscita dedicato (M7).
+  **Task difficili con pytest (fase 1, 10 ottobre 2026) — strumenti pronti, misura da lanciare:** i
+  34 esercizi Python del benchmark polyglot di Aider (esercizi Exercism, licenza MIT) si scaricano con
+  `python campaign.py fetch-polyglot` al commit `7e0611e`, con verifica di un hash del contenuto, in
+  `campaigns/data/` (ignorata da git). La campagna li lancia con `--tasks campaigns/data/polyglot-python`
+  (`--only` per le prove). Nel workspace vanno scheletro, test e istruzioni; la soluzione di riferimento
+  mai. La verifica gira in una cartella pulita del container con solo soluzione e test originali, senza
+  rete, e ignora `conftest.py` e configurazioni; provato con Docker per tutti e 34 (lo scheletro fallisce,
+  la soluzione passa) e contro i trucchi `conftest.py` e `pytest.py`. Per le campagne via proxy il gateway
+  chiede risposte fresche (`--proxy-cache bypass`, predefinito) senza spegnere la cache del proxy.
+  **Limiti noti:** il codice della soluzione gira nello stesso processo dei test, quindi non si puo'
+  escludere che lo manipoli; gli esercizi e le loro soluzioni sono **pubblici**: nella condizione
+  «con internet» (`--network bridge`) l'agente puo' scaricarle, e per quella condizione servono task non
+  pubblici (M7); i modelli possono averli visti in addestramento.
+- **M2s.4b — RIPRESA il 10 ottobre 2026, con il percorso cambiato** ⬜ (la formulazione originale segue): richiede **account con credito presso MiniMax e Anthropic**
   (indicativamente $5 ciascuno) e le chiavi `ORC2_MINIMAX_KEY` e `ORC2_ANTHROPIC_KEY` nel
   `.env`. Comprende la **tassa dell'aggregatore** (stesso modello, percorso diretto contro
   proxy), la **prima chiamata reale del gateway Anthropic** (finora provato solo con client
   finti: da verificare `cache_control`, `output_config` e `api_model`), la conferma del nome
   `MiniMax-M2.7` e dei campi di usage, e `f` su `opus-5`. Ogni lancio col preventivo in
   dollari mostrato prima.
-- Per chiudere la **Definition of Done di M2s** servono entrambe: senza la 4b restano aperte
-  le caselle sul fornitore e sulla tassa.
+- **Decisione del 10 ottobre 2026: la 4b si fa subito e poi si committa tutto.** Le caselle della
+  Definition of Done che ne dipendono restano aperte finche' non e' fatta.
+- **Cambio di rotta del 12 ottobre 2026: una sola infrastruttura, OpenRouter.** Con una sola chiave
+  (`ORC2_OPENROUTER_KEY`) passano tutti i modelli; Anthropic, Moonshot, MiniMax e OpenAI diretti e il proxy
+  locale sono **scollegati** (motivi, file toccati e modo di ricollegarli: `docs/INFRASTRUTTURE_SCOLLEGATE.md`).
+  Il codice del gateway nativo Anthropic resta nel repository, non collegato. Questo sostituisce, per
+  fornitori e tassa dell'aggregatore, quanto scritto sotto il 10 ottobre.
+  - **Implementato e provato con test (341 verdi, pyright 0):** pool `opus-5-5` (`planner`), `kimi-k3` (`worker`),
+    `minimax-m3` (`worker_cheap`); `opus-5` e `minimax-m2-7` tolti dal registro (`campaign.py report` non ricalcola
+    piu' le campagne vecchie e le conta fra i record senza prezzo; i dati grezzi restano). Un solo fornitore a
+    registro, con `provider_order` per modello (fornitore fissato dietro OpenRouter, senza ripiego) per `kimi-k3`
+    (`moonshotai/mxfp4`), `opus-5-5` (`anthropic`) e `minimax-m3` (`minimax/fp8`, dal 12 ottobre dopo la prima run vera). Record di consumo, schema 3:
+    `reported_cost`, `served_by`, `cache_write_tokens` letti dal mapper chat; il costo del ledger resta calcolato e il
+    report mostra il costo riportato accanto a quello calcolato. L'embedding passa a `openai/text-embedding-3-small`
+    su OpenRouter. Le «strade per modello» scritte il 12 ottobre sono state rimosse (con un solo fornitore non servono).
+  - **Verificato su fonte primaria (10 ottobre):** Opus 5.5 4/20 dollari, lettura cache 0,20; `kimi-k3` 3,00/15,00/0,30;
+    su OpenRouter lo 0,50 di `kimi-k3` e' di un altro fornitore (fp4), l'endpoint Moonshot costa come il diretto; lo
+    0,60/2,40 di M3 e' la fascia oltre 512k token. `kimi-k3` e' **nativamente MXFP4** (scheda ufficiale, Hugging Face): l'endpoint
+    `moonshotai/mxfp4` serve la precisione nativa.
+  - **Conseguenze dichiarate:** (a) la «tassa dell'aggregatore» (stesso modello diretto contro OpenRouter) non e' piu'
+    misurabile; restano costo riportato contro costo calcolato e la commissione sull'acquisto dei crediti; (b) Opus passa
+    dal gateway in formato OpenAI, che non invia `cache_control` ne' `effort`: niente cache esplicita di Anthropic, costo
+    da misurare; (c) il fornitore diretto Moonshot non e' piu' usato; l'endpoint fissato su OpenRouter serve la precisione nativa del modello (MXFP4).
+  - **Provato con tre chiamate vere il 12 ottobre 2026** (task predefinito di `main.py`, 3 iterazioni ciascuna, tutte
+    completate; costo totale calcolato $0,0242, riportato $0,0237):
+    | ruolo / modello | fornitore (`served_by`) | calcolato | riportato |
+    |---|---|---|---|
+    | `worker_cheap` / `minimax-m3` (non fissato, prima della correzione) | CoreWeave | $0,000665 | $0,000523 |
+    | `worker` / `kimi-k3` (fissato `moonshotai/mxfp4`) | Moonshot AI | $0,009509 | $0,009509 |
+    | `planner` / `opus-5-5` (fissato `anthropic`) | Anthropic | $0,014064 | $0,014064 |
+    **Verificato:** il campo `provider` della risposta esiste e `usage.cost` c'e' in ogni risposta; `prompt_tokens` include i
+    token letti dalla cache; il tool calling di Opus via OpenRouter funziona; con il fornitore fissato costo riportato e
+    calcolato coincidono. **Trovato:** per `minimax-m3`, non fissato, OpenRouter ha instradato al fornitore piu' economico
+    (CoreWeave `fp4`, quantizzato, 0,23 / 0,96 / 0,05 $/M) e il costo riportato era il 21% sotto quello calcolato sul listino
+    (0,30 / 1,20 / 0,06). **Corretto fissando `minimax/fp8`** (l'endpoint di MiniMax, stesso listino) e riprovato con una
+    run vera: costo calcolato = riportato = $0,000749, `served_by` = Minimax (quarta chiamata; totale delle quattro run $0,0250).
+    **Opus: 0 token in cache** (nessun
+    `cache_control`), mentre Kimi e M3 ne leggono. **Token scritti in cache: verificati il 12 ottobre con una
+    prova isolata su Opus** (`cache_control` top-level): 2933 token scritti alla prima richiesta, 2933 letti alla seconda, e
+    `prompt_tokens` include i token scritti; costo riportato = calcolato su entrambe.
+  - **Prima misura di `f` su Polyglot Python (13 ottobre 2026), `worker_cheap` / `minimax-m3`.** Campagna
+    `m2s-m3-completa`: 34 esercizi x 3 ripetizioni = 102 run, sandbox senza rete, tetto di 30 iterazioni, tetto $0,15
+    per agente. Preceduta dalla run pilota `m2s-pilota-m3` (5 esercizi x 1: 4 riuscite, `book-store` fallito per verifica;
+    $0,026).
+    | voce | valore |
+    |---|---|
+    | `f` | **3 fallite su 102 = 2,9%** (intervallo di Wilson al 95%: 1,0% - 8,3%) |
+    | fallimenti per causa | `verification_failed` 2 (`bowling`, `tree-building`), `max_iterations` 1 (`sgf-parsing`) |
+    | esercizi risolti 3 volte su 3 | 31 su 34; nessun esercizio fallito 3 volte su 3 |
+    | costo calcolato / riportato | $1,62989 / $1,62989 (850 record), circa $0,016 per run risolta |
+    | quota di output | 75,8% del costo, 19,8% dei token (sopra la soglia del 50%) |
+    | `request_id` duplicati / chiamate non prezzabili | 0 / 0 |
+    **Limiti:** gli esercizi sono pubblici (possibile contaminazione dell'addestramento); la soluzione gira nello stesso
+    processo dei test; un fallimento per verifica puo' essere un'uscita anticipata (`tree-building`: una sola chiamata,
+    $0,0005, stato `completed`). **Conclusione:** per `minimax-m3` questo insieme **non e' difficile**; la misura di `f` su
+    task difficili, richiesta dalla Definition of Done, resta da fare. Opus e Kimi non sono stati misurati: con la regola
+    di selezione scritta prima (fasce per riuscita di M3) la fascia 0/3 e' vuota e il confronto non distinguerebbe i modelli.
+    Possibile richiesta HTTP rimasta appesa per circa 10 minuti durante la campagna (client senza timeout esplicito):
+    da confrontare con la spesa sul pannello di OpenRouter.
+- **Nuovo percorso verso i modelli (10 ottobre 2026), che sostituisce quello della 4b originale:**
+  - **LiteLLM esce dalla tesi.** Era un sistema personale fuori dal repository, con una cache di
+    risposte locale che replicava le richieste identiche (stesso `request_id`, 0,02 s) e falsava
+    ripetizioni e costi. Si tolgono `--via-proxy`, `proxy`, `proxy_cache`, `LLMSettings` e le variabili
+    `ORC2_BASE_URL/API_KEY/MODEL`; la voce sulle repliche del proxy cade con loro.
+  - **Fornitori:** Anthropic **diretto** (`opus-5`, credito di circa 10 euro), Moonshot **diretto**
+    (`kimi-k3`, 10 euro gia' caricati), MiniMax via **OpenRouter** (credito gia' presente; OpenRouter passa
+    i prezzi dei fornitori senza maggiorazione e applica il 5,5%, minimo 0,80 dollari, all'acquisto dei
+    crediti, secondo le sue FAQ). Chiavi: `ORC2_ANTHROPIC_KEY`, `ORC2_MOONSHOT_KEY`, `ORC2_OPENROUTER_KEY`.
+  - **Tassa dell'aggregatore:** misurata su `kimi-k3` dalle due strade (Moonshot diretto contro
+    `moonshotai/kimi-k3` su OpenRouter). Richiede che il registro dia a un modello **piu' strade**, ciascuna
+    con nome e listino propri; la strada di una run si legge dal `billing_provider` del record.
+  - **Campo nuovo nel record di consumo:** il costo che OpenRouter riporta (`usage.cost`) e il fornitore
+    che ha risposto, con versione dello schema. Serve anche a risolvere la differenza fra il listino
+    pubblico di OpenRouter per `minimax-m2.7` (0,21 / 0,84 / 0,04 $ per milione, letto il 10 ottobre) e
+    quanto addebitato il 6 ottobre (0,30 / 1,20 / 0,06).
+  - **Da verificare su fonte primaria prima di fidarsi dei confronti di costo:** il listino di `kimi-k3` in
+    `models.toml` (input 3,00 dollari) contro quello di OpenRouter (0,50); l'esistenza e il prezzo di
+    `claude-opus-5.5` (4 / 20 dollari) e di `minimax-m3`, che OpenRouter elenca; se si puo' fissare il
+    fornitore dietro OpenRouter (lo stesso modello e' servito da MiniMax, AtlasCloud e NovitaAI).
+  - **Il gateway nativo di Anthropic** si prova con la chiave diretta (`cache_control`, `output_config`,
+    `api_model`).
+- **Pool di modelli (decisione del 10 ottobre 2026, rivista lo stesso giorno)** — rivisto rispetto a quello
+  di partenza (`opus-5`, `kimi-k3`, `minimax-m2-7`) perche' nel frattempo sono usciti modelli piu' nuovi.
+  Listini letti dall'elenco pubblico di OpenRouter il 10 ottobre 2026 (dollari per milione, input / output):
+  - **Pianificatore: `claude-opus-5.5`** (4 / 20, uscito il 22 settembre 2026; Anthropic diretto, nome
+    ufficiale `claude-opus-5-5`). Sostituisce `opus-5` (5 / 25).
+  - **Intermedio: resta `kimi-k3`** (0,50 / 13,50 su OpenRouter; da verificare il listino in `models.toml`).
+  - **Economico: `minimax-m3`** al posto di `minimax-m2.7` (0,30 / 1,20 su OpenRouter). **E' una scelta fatta
+    senza una misura di confronto**: l'unico indizio e' un confronto di siti aggregatori (SWE-Bench Pro 59,0
+    contro 56,2 per M2.7), non la scheda ufficiale. Per non spendere in questa fase si rimanda la selezione.
+  - **Selezione fra modelli rimandata** (Vincenzo, 10 ottobre 2026: «non voglio spendere soldi cosi per il
+    momento»). Candidati da misurare in seguito, per il router in M2b: intermedi `gemini-3.8-flash`
+    (0,75 / 3,75) e `deepseek-v4-pro` (0,66 / 1,98); economici `deepseek-v4.1-flash` (0,30 / 1,20),
+    `glm-5.3-flash` (0,15 / 0,50), `qwen3.8-flash` (0,15 / 0,47). `claude-sonnet-5.5` (2 / 10) escluso: stessa
+    famiglia di Opus e solo due volte piu' economico. Metodo previsto: costo per esercizio risolto, stessi
+    esercizi per tutti, insieme ridotto fissato **prima** dei risultati.
+  - **Evidenza di qualita' disponibile: quasi nessuna.** SWE-Bench Pro (Scale), Terminal-Bench 4.0, la
+    classifica di Aider e Artificial Analysis non contengono i modelli nuovi (Aider e' ferma al 20 novembre
+    2025).
+  - **Costi attesi nella 4b ridotta (calcolati, run tipica da 15 iterazioni; al limite delle 30 iterazioni
+    4-5 volte di piu'):** prima chiamata reale di Opus 5.5 su un esercizio facile ~0,03-0,40 dollari; tassa su
+    Kimi, 3 esercizi per due strade, ~0,6-2; `f` su M3 per 34 esercizi ~1-4; `f` su Opus 5.5 solo su un
+    sottoinsieme di circa 5 esercizi, ~2-8 (una run tipica vale circa 0,38 dollari e al limite 1,70).
+  - **Da verificare su fonte primaria prima di usare i listini nei conti:** i prezzi di M3 (0,30 / 1,20 su
+    OpenRouter, 0,60 / 2,40 secondo un aggregatore), di `kimi-k3` (3,00 / 15,00 in `models.toml`, 0,50 /
+    13,50 su OpenRouter) e di M2.7 (0,21 / 0,84 su OpenRouter oggi, addebitato 0,30 / 1,20 il 6 ottobre).
 
 **Da fare, emerso dal controllo dei log di `runs/` (ottobre 2026):**
 - [ ] **Misurare il costo addebitato, non solo quello calcolato.** Il ledger prezza i
@@ -530,6 +694,37 @@ progetto (richiede proxy/API attivi e Docker acceso).
   il rapporto con opus-5 passa da ~21×/~26× a ~17×/~21×. Da confermare alla prima
   chiamata reale (M2s.4b) che i campi di usage riportino i token scritti in cache.
   Le stime calcolate prima del 6 ott (curva a U, preventivi) usano i prezzi vecchi.
+- [x] ~~**Il ledger non distingue una chiamata vera da una risposta replicata dal proxy**~~ (6 ott 2026). **Cade con l'eliminazione di LiteLLM (10 ottobre 2026).** Resta come storia della decisione.
+  Il proxy LiteLLM in uso ha la cache di risposte attiva (`cache: true`, locale, 3600 s): una
+  richiesta identica entro un'ora riceve la risposta salvata, senza chiamare il modello, ma il
+  ledger la prezza come consumo reale. Evidenze: lo stesso `request_id` di OpenRouter compare
+  in 6 run di agosto (prima chiamata 6,2 s, le altre 0,015 s); una prova di 4 chiamate
+  identiche ha dato 3,6 s per la prima e 0,02-0,03 s per le altre tre. Questo spiega anche la
+  «riproduzione» delle run di `docs/esempio_run/` (voce sopra). Conseguenze: ripetizioni dello
+  stesso task via proxy non indipendenti (stima di `f` falsata) e costo calcolato superiore al
+  vero. **Decisione di Vincenzo: la cache del proxy non si spegne** (sarebbe una soluzione
+  temporanea); il ledger va corretto in modo che riconosca e registri la replica. Come, da
+  progettare. Le campagne con ripetizioni identiche via proxy restano sospese finche' non e'
+  deciso.
+  **Confermato dalla pagina «Generations» di OpenRouter (9 ott 2026):** per la prova delle 17:15 del
+  6 ottobre (4 chiamate identiche) compare **una sola** voce (2.180 token, $0,000678): le altre tre le ha
+  servite il proxy. La campagna di controllo (23 chiamate) compare per intero, con gli stessi token.
+- [ ] **Osservazioni dalla pagina «Generations» (9 ott 2026), campione di 23 chiamate, un solo modello:**
+  (a) lo stesso modello e' servito da **fornitori diversi** (MiniMax, AtlasCloud, NovitaAI): la cache
+  compare in 4 chiamate (3 MiniMax, 1 AtlasCloud, nessuna NovitaAI), ipotesi da verificare che la cache
+  sia per fornitore; (b) il costo addebitato coincide con il calcolo sul listino, cache compresa, in tutte
+  le righe controllate (tre a mano): nessuna maggiorazione sul prezzo dei token e sconto della cache applicato.
+  Non copre la commissione sulla ricarica del credito, da verificare. Da ripetere su piu' campioni (4b).
+- [ ] **Registrare il costo riportato da OpenRouter e il fornitore che ha risposto.** La risposta
+  del proxy contiene `usage.cost` (in una prova: 0,000678, uguale al calcolo sul listino) e il
+  campo `provider`. Il lettore dei consumi (`accounting/mappers/openai.py:73`) legge solo
+  `prompt_tokens_details.cached_tokens`: scarta il costo, il fornitore e `cache_write_tokens`.
+  Serve alla misura della tassa dell'aggregatore (voce sopra).
+- [ ] **Cache di MiniMax: parte solo da 512 token di input** (documentazione MiniMax, «Prompt
+  caching»; automatica, senza `cache_control`). Le chiamate dei task brevi stanno a 440-560
+  token, a cavallo della soglia: la cache compare a intermittenza (nel controllo del 6 ott
+  sempre 443 token, solo in 4 run su 10). Non spiega la run dell'1 settembre (2333 token, zero
+  cache), che resta aperta.
 - [ ] **Capire perche' la run dell'1 settembre ha zero token in cache.** Stesso
   percorso e stesso modello della run 24255293, che li ha. Va ripetuta in condizioni
   controllate (stesso prompt, chiamate ravvicinate) prima di scrivere qualunque
@@ -537,9 +732,9 @@ progetto (richiede proxy/API attivi e Docker acceso).
 
 ### Definition of Done — M2s
 - [x] Cambiare l'assegnazione ruolo→modello non tocca codice (`main.py` interroga i ruoli del registro).
-- [ ] Cambiare fornitore per un ruolo non tocca codice.
-- [ ] Due agenti con modelli diversi completano task con costi tracciati separati.
-- [ ] Tassa dell'aggregatore, `f` e quota di output misurati e annotati.
+- [ ] ~~Cambiare fornitore per un ruolo non tocca codice.~~ *(non piu' applicabile dal 12 ottobre 2026: un solo fornitore, OpenRouter; l'assegnazione ruolo -> modello resta in configurazione, prima casella)*
+- [x] Due agenti con modelli diversi completano task con costi tracciati separati. *(12 ottobre 2026: tre modelli, tre run completate, un ledger e un `summary.json` per ciascuna; costo totale calcolato $0,0242)*
+- [ ] ~~Tassa dell'aggregatore~~ *(non piu' misurabile dal 12 ottobre 2026; sostituita dal confronto costo riportato contro costo calcolato su OpenRouter)*, `f` e quota di output misurati e annotati *(questi due: M2s.4a, task difficili)*. *(13 ottobre 2026: misurati e annotati per `minimax-m3` su Polyglot Python, f = 2,9%, quota di output 75,8% del costo; l'insieme non e' difficile per questo modello, quindi la parte «task difficili» resta aperta)*
 - [ ] Test e CI verdi.
 
 ---

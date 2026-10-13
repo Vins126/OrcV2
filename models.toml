@@ -71,35 +71,20 @@ audio_minute        = 1           # trascrizione (STT)
 #  prospettiva serializzato nei log: una chiave qui dentro uscirebbe da
 #  qualche parte, prima o poi.
 #
-#  ⚠️ Il percorso potrebbe contare quanto il modello (ipotesi, da misurare in
-#  M2s.4). Nei log (ago-set 2026, minimax-m2-7 via LiteLLM -> OpenRouter) la
-#  cache compare in una run e manca in un'altra; lo sconto in fattura non e'
-#  verificabile dal ledger, che calcola sul listino. Il 2.25x e' un calcolo su
-#  opus-5, mai eseguito. Per le misure della campagna si chiama sempre diretto.
+#  Dal 12 ottobre 2026 l'infrastruttura e' UNA: OpenRouter, con una sola chiave
+#  (`ORC2_OPENROUTER_KEY`). Gli altri fornitori (Anthropic, Moonshot, MiniMax,
+#  OpenAI, Tripo) e il proxy locale delle richieste sono stati scollegati: che cosa, perche' e come
+#  ricollegarli sta in `docs/INFRASTRUTTURE_SCOLLEGATE.md`.
+#
+#  Dietro un aggregatore lo stesso modello puo' essere servito da fornitori
+#  diversi, anche quantizzati: per questo un modello puo' fissare il fornitore con
+#  `provider_order` (vedi MODELLI). Il record di consumo porta il costo che
+#  OpenRouter dichiara (`reported_cost`) e chi ha risposto (`served_by`).
 
-[providers.anthropic]
+[providers.openrouter]
 monthly_fee = 0.0
-base_url    = "https://api.anthropic.com"
-api_key_env = "ORC2_ANTHROPIC_KEY"
-
-[providers.moonshot]
-monthly_fee = 0.0
-base_url    = "https://api.moonshot.ai/v1"
-api_key_env = "ORC2_MOONSHOT_KEY"
-
-[providers.minimax]
-monthly_fee = 0.0
-base_url    = "https://api.minimax.io/v1"   # rotta OpenAI-compatible, verificata
-api_key_env = "ORC2_MINIMAX_KEY"
-
-[providers.openai]
-monthly_fee = 0.0
-base_url    = "https://api.openai.com/v1"
-api_key_env = "ORC2_OPENAI_KEY"
-
-[providers.tripo]
-monthly_fee = 0.0   # pay-as-you-go: nessun abbonamento richiesto
-api_key_env = "ORC2_TRIPO_KEY"
+base_url    = "https://openrouter.ai/api/v1"
+api_key_env = "ORC2_OPENROUTER_KEY"
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -121,13 +106,16 @@ api_key_env = "ORC2_TRIPO_KEY"
 #  Il filtro per capacita' PRECEDE quello sul costo: un modello privo della
 #  capacita' richiesta non e' confrontabile sul prezzo, per quanto economico.
 #
-#  api_model — FACOLTATIVO. Il nome con cui il FORNITORE conosce il modello,
-#  quando differisce dal nome che il progetto usa come chiave (la chiave resta
-#  quella di contabilita', ledger e ruoli). Se manca si usa la chiave stessa.
-#  Serve nel percorso diretto: un aggregatore o un proxy traducono l'alias da
-#  soli, chiamando il fornitore nessuno lo fa. Dichiarato solo dove il nome
-#  differisce dalla chiave e l'abbiamo letto sulla documentazione del fornitore
-#  (opus-5, minimax-m2-7). Dove coincide (kimi-k3) si omette.
+#  api_model — FACOLTATIVO. Il nome con cui OpenRouter conosce il modello
+#  (`casa/modello`), che differisce dalla chiave del progetto: la chiave resta
+#  quella di contabilita', ledger e ruoli. Se manca si usa la chiave stessa.
+#  Letto dall'elenco pubblico di OpenRouter.
+#
+#  provider_order — FACOLTATIVO. Lista di slug dei fornitori a cui OpenRouter deve
+#  limitare la richiesta, senza ripiego su altri (`allow_fallbacks = false`).
+#  Senza, due run dello stesso modello possono essere servite da fornitori
+#  diversi, anche quantizzati, e non sono confrontabili. Lo slug si legge
+#  dall'elenco degli endpoint del modello su OpenRouter.
 #
 #  prices — solo le unita' pertinenti al modello. Un'unita' assente significa
 #  che il modello non offre quel tipo di consumo.
@@ -135,42 +123,58 @@ api_key_env = "ORC2_TRIPO_KEY"
 
 # --- Fascia frontier: planner, escalation finale, giudice ---
 
-# I prezzi della prompt cache seguono i rapporti standard del fornitore:
-# lettura dalla cache 0.1x il prezzo di input, scrittura 1.25x. Vanno
-# dichiarati anche quando non si usa la cache di proposito: il provider puo'
-# attivarla da solo, e un'unita' senza prezzo rende la chiamata non
-# contabilizzabile (vedi la nota sulle unita' assenti piu' sopra).
-[models.opus-5]
-provider     = "anthropic"
-api_model    = "claude-opus-5"
-capabilities = ["reasoning", "code", "text", "vision_input"]
-prices       = { input_tokens = 5.00, output_tokens = 25.00, cached_input_tokens = 0.50, cache_write_tokens = 6.25 }
+# Listino dell'endpoint `anthropic` di OpenRouter (letto il 10 ott 2026, uguale a quello
+# ufficiale Anthropic): input 4, output 20, scrittura cache 5 minuti 5, lettura 0.20.
+# Anthropic non mette in cache da solo: la richiesta deve contenere `cache_control`. Lo si
+# dichiara qui con `extra_body` (cache automatica, 5 minuti: il punto di taglio si sposta
+# sull'ultimo blocco ad ogni richiesta). Verificato il 12 ott 2026 con una prova isolata:
+# 2933 token scritti alla prima richiesta e letti alla seconda. Minimo cacheable di Opus 5.5:
+# 512 token. Kimi e MiniMax non lo richiedono (cache automatica). Il gateway non invia
+# `effort`.
+[models.opus-5-5]
+provider       = "openrouter"
+api_model      = "anthropic/claude-opus-5.5"
+provider_order = ["anthropic"]
+extra_body     = { cache_control = { type = "ephemeral" } }
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 4.00, output_tokens = 20.00, cached_input_tokens = 0.20, cache_write_tokens = 5.00 }
 
 # --- Fascia media: worker su sotto-task complessi ---
 
+# Endpoint `moonshotai/mxfp4` di OpenRouter (letto il 10 ott 2026): 3.00 / 15.00 / lettura
+# cache 0.30, come il listino ufficiale Moonshot. Il fornitore e' fissato: l'elenco di
+# OpenRouter mostra 0.50 per un altro fornitore (fp4), di cui non si sa se serva i pesi
+# originali o una nuova compressione. Su questo endpoint la quantizzazione e' mxfp4, che e'
+# la precisione NATIVA di Kimi K3 (scheda ufficiale: pesi MXFP4 e attivazioni MXFP8, con
+# addestramento consapevole della quantizzazione): non e' una versione peggiorata. Nessun
+# prezzo di scrittura in cache: se OpenRouter ne riportasse, il consumo risulterebbe non
+# prezzato, non coperto da un numero non verificato.
 [models.kimi-k3]
-provider     = "moonshot"
-capabilities = ["reasoning", "code", "text"]
-prices       = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens = 0.30 }
+provider       = "openrouter"
+api_model      = "moonshotai/kimi-k3"
+provider_order = ["moonshotai/mxfp4"]
+capabilities   = ["reasoning", "code", "text"]
+prices         = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens = 0.30 }
 
 # --- Fascia economica: worker standard ---
-# SWE-Pro 56.2%, Terminal Bench 2 57.0%. Scelto al posto di alternative piu'
-# economiche ma deboli sul coding: un modello che fallisce costa piu' di uno
-# mediocre che completa, perche' si pagano le iterazioni sprecate e la
-# successiva escalation.
-
-[models.minimax-m2-7]
-provider     = "minimax"
-api_model    = "MiniMax-M2.7"
-capabilities = ["reasoning", "code", "text"]
-# Prezzi dalla documentazione ufficiale MiniMax (pagina «Anthropic API
-# compatible cache», letta il 6 ott 2026); la cache dura 5 minuti.
-prices       = { input_tokens = 0.30, output_tokens = 1.20, cached_input_tokens = 0.06, cache_write_tokens = 0.375 }
+# Fornitore fissato su `minimax/fp8`, l'endpoint di MiniMax stesso (12 ott 2026): listino
+# 0.30 / 1.20 / 0.06 fino a 512k token di input (oltre, 0.60 / 2.40 / 0.12: non dichiarato, i
+# task non ci arrivano). Senza fissarlo OpenRouter instrada al piu' economico, CoreWeave
+# `fp4` (quantizzato, 0.23 / 0.96 / 0.05): in una run vera il costo riportato era il 21% sotto
+# il listino, cioe' il listino non descriveva piu' quello che si pagava. Scelto senza una
+# misura di confronto: l'unico indizio e' un confronto di siti aggregatori.
+[models.minimax-m3]
+provider       = "openrouter"
+api_model      = "minimax/minimax-m3"
+provider_order = ["minimax/fp8"]
+capabilities   = ["reasoning", "code", "text"]
+prices         = { input_tokens = 0.30, output_tokens = 1.20, cached_input_tokens = 0.06 }
 
 # --- Infrastruttura: embedding per RAG e per il router appreso (S3) ---
 
 [models.text-embedding-3-small]
-provider     = "openai"
+provider     = "openrouter"
+api_model    = "openai/text-embedding-3-small"
 capabilities = ["embedding"]
 prices       = { input_tokens = 0.02 }
 
@@ -184,11 +188,15 @@ prices       = { input_tokens = 0.02 }
 # ───────────────────────────────────────────────────────────────────────────
 
 [roles.planner]
-model    = "opus-5"
+model    = "opus-5-5"
 requires = ["reasoning", "code"]
 
 [roles.worker]
-model    = "minimax-m2-7"
+model    = "kimi-k3"
+requires = ["code"]
+
+[roles.worker_cheap]
+model    = "minimax-m3"
 requires = ["code"]
 
 

@@ -12,7 +12,7 @@ from accounting.record import UsageRecord
 
 
 class RegistroFinto:
-    def cost(self, _model, _unit, quantity):
+    def cost(self, _model, _unit, quantity, route=None):
         return quantity * 2
 
 
@@ -53,7 +53,7 @@ def test_usage_non_prezzabile_diventa_evento_ma_non_consumo(tmp_path):
     assert inner.call_count == 0
     assert not (ledger.run_dir / "usage.jsonl").exists()
     assert _read_jsonl(ledger.run_dir / "events.jsonl") == [{
-        "schema_version": 2,
+        "schema_version": 3,
         "event_type": "unpriced_usage",
         "run_id": "run-1",
         "sequence": 1,
@@ -64,6 +64,8 @@ def test_usage_non_prezzabile_diventa_evento_ma_non_consumo(tmp_path):
             "measurement_source": "missing",
             "reason": "UnpricedUsage",
             "quantities": {},
+            "reported_cost": None,
+            "served_by": None,
         },
     }]
 
@@ -78,7 +80,7 @@ def test_un_unita_senza_listino_diventa_evento_con_le_quantita(tmp_path):
     sperimentale risulterebbero sottostimati.
     """
     class RegistroSenzaPrezzoCache:
-        def cost(self, _model, unit, quantity):
+        def cost(self, _model, unit, quantity, route=None):
             if unit == "cached_input_tokens":
                 raise UnitNotFound("nessun prezzo per 'cached_input_tokens'")
             return quantity * 2
@@ -127,3 +129,23 @@ def test_attach_cambia_il_ledger_ma_non_azzera_il_totale(tmp_path):
     assert len(_read_jsonl(primo.run_dir / "usage.jsonl")) == 1
     assert len(_read_jsonl(secondo.run_dir / "usage.jsonl")) == 1
     assert accountant.total_cost == 12   # 6 + 6: la vita intera, non l'ultimo incarico
+
+
+def test_l_evento_non_prezzabile_conserva_costo_riportato_e_fornitore(tmp_path):
+    """Il costo che il fornitore dichiara e' l'unico numero vero di una chiamata che il listino
+    non sa prezzare: va nell'evento, cosi' il report puo' contarlo."""
+    class RegistroSenzaPrezzo:
+        def cost(self, _model, _unit, quantity, route=None):
+            raise UnitNotFound("nessun prezzo per 'cache_write_tokens'")
+
+    ledger = RunLedger(root=tmp_path, task="task", run_id="run-1")
+    accountant = LedgerAccountant(InMemoryAccountant(RegistroSenzaPrezzo()), ledger)
+    record = UsageRecord(model="kimi-k3", quantities={"cache_write_tokens": 100}, request_id="req_9",
+                         reported_cost=0.42, served_by="Moonshot AI")
+
+    with pytest.raises(UnitNotFound):
+        accountant.register(record)
+
+    dettagli = _read_jsonl(ledger.run_dir / "events.jsonl")[0]["details"]
+    assert dettagli["reported_cost"] == 0.42
+    assert dettagli["served_by"] == "Moonshot AI"

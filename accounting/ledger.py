@@ -25,8 +25,10 @@ class RunLedger:
     """
 
     # La v2 separa i provider API e billing nei UsageRecord e aggiunge i
-    # breakdown per modello/durata nel summary. I ledger v1 restano immutati.
-    SCHEMA_VERSION = 2
+    # breakdown per modello/durata nel summary. La v3 aggiunge al record il costo
+    # dichiarato dal fornitore (`reported_cost`) e chi ha risposto (`served_by`).
+    # I ledger delle versioni precedenti restano immutati.
+    SCHEMA_VERSION = 3
 
     def __init__(
         self,

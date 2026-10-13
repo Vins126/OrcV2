@@ -98,13 +98,13 @@ def test_gateway_registra_separatamente_api_e_billing_provider():
     client, accountant = Client(_response()), ContabileFinto()
     gateway = OpenAIChatGateway(
         client, "m", accountant, retry_max=1,
-        api_provider="litellm", billing_provider="openrouter",
+        api_provider="proxy-test", billing_provider="openrouter",
     )
 
     gateway.complete([], [])
 
     record = accountant.records[0]
-    assert record.api_provider == "litellm"
+    assert record.api_provider == "proxy-test"
     assert record.billing_provider == "openrouter"
 
 
@@ -136,7 +136,7 @@ def test_gateway_registra_errore_provider_sanitizzato_dopo_l_ultimo_tentativo():
     client, events = FailingClient(error), EventSink()
     gateway = OpenAIChatGateway(
         client, "m", ContabileFinto(), retry_max=1,
-        api_provider="litellm", billing_provider="openrouter", event_sink=events,
+        api_provider="proxy-test", billing_provider="openrouter", event_sink=events,
     )
 
     with pytest.raises(RuntimeError, match="LLM irraggiungibile"):
@@ -144,7 +144,7 @@ def test_gateway_registra_errore_provider_sanitizzato_dopo_l_ultimo_tentativo():
 
     assert events.events == [("provider_error", {
         "model": "m",
-        "api_provider": "litellm",
+        "api_provider": "proxy-test",
         "billing_provider": "openrouter",
         "error_type": "RuntimeError",
         "attempts": 1,
@@ -276,3 +276,38 @@ def test_senza_api_model_il_gateway_usa_la_chiave():
     OpenAIChatGateway(client, "m", ContabileFinto(), retry_max=1).complete([], [])
 
     assert client.richieste[0]["model"] == "m"
+
+
+# ── Corpo aggiuntivo: `extra_body` (fornitore fissato su OpenRouter) ──────
+
+class ClientCheRegistra:
+    """Client `chat.completions` che conserva gli argomenti di ogni richiesta."""
+
+    def __init__(self):
+        self.richieste = []
+        self.chat = NS(completions=NS(create=self._crea))
+
+    def _crea(self, **kwargs):
+        self.richieste.append(kwargs)
+        return _response()
+
+
+def _gateway(client, **kwargs):
+    return OpenAIChatGateway(client, "minimax-m2-7", ContabileFinto(), **kwargs)
+
+
+def test_g1_extra_body_viaggia_nella_richiesta_quando_e_dato():
+    client = ClientCheRegistra()
+    corpo = {"cache": {"no-cache": True, "no-store": True}}
+
+    _gateway(client, extra_body=corpo).complete([{"role": "user", "content": "ciao"}], [])
+
+    assert client.richieste[0]["extra_body"] == corpo
+
+
+def test_g1b_senza_extra_body_la_richiesta_non_ha_il_campo():
+    client = ClientCheRegistra()
+
+    _gateway(client).complete([{"role": "user", "content": "ciao"}], [])
+
+    assert "extra_body" not in client.richieste[0]

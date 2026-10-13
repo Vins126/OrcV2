@@ -47,7 +47,7 @@ class RegistroFinto:
         }
         self.chiamate = []   # traccia delle richieste ricevute
 
-    def cost(self, model: str, unit: str, quantity: float) -> float:
+    def cost(self, model: str, unit: str, quantity: float, route: str | None = None) -> float:
         self.chiamate.append((model, unit, quantity))
         if unit not in self.prezzi:
             raise UnitNotFound(f"unita' '{unit}' non prevista dal registro finto")
@@ -213,18 +213,18 @@ def test_inmemory_rispetta_il_contratto():
 def test_col_registro_reale_del_progetto():
     """Contabile e registro combaciano davvero, coi prezzi di `models.toml`.
 
-    350 token input di opus-5 a $5/milione  = $0.00175
-    120 token output a $25/milione          = $0.00300
-                                              ---------
-                                              $0.00475
+    350 token input di opus-5-5 a $4/milione = $0.00140
+    120 token output a $20/milione           = $0.00240
+                                               ---------
+                                               $0.00380
     """
     c = InMemoryAccountant(ModelRegistry.from_file("models.toml"))
     costo = c.register(UsageRecord(
-        model="opus-5",
+        model="opus-5-5",
         quantities={"input_tokens": 350, "output_tokens": 120},
     ))
-    assert costo == pytest.approx(0.00475)
-    assert c.total_cost == pytest.approx(0.00475)
+    assert costo == pytest.approx(0.0038)
+    assert c.total_cost == pytest.approx(0.0038)
 
 
 def test_col_registro_reale_modello_inesistente():

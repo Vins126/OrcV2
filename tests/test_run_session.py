@@ -78,7 +78,7 @@ def test_registra_terminazione_non_completata_come_evento(tmp_path):
 
     events = [json.loads(line) for line in (ledger.run_dir / "events.jsonl").read_text().splitlines()]
     assert events == [{
-        "schema_version": 2,
+        "schema_version": 3,
         "event_type": "run_terminated",
         "run_id": "run-1",
         "sequence": 1,

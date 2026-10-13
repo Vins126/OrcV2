@@ -22,7 +22,7 @@ from agent_factory import (
     AgentFactory,
     UnsupportedProvider,
 )
-from llm_gateway import AnthropicChatGateway, ChatGatewayBase, OpenAIChatGateway
+from llm_gateway import ChatGatewayBase, OpenAIChatGateway
 from run_reporter import RunReporter
 
 
@@ -52,29 +52,10 @@ class ClientOpenAIFinto:
         )
 
 
-class ClientAnthropicFinto:
-    """Client nel formato Messages di Anthropic che registra cio' che riceve."""
-
-    def __init__(self, input_tokens=1_000_000):
-        self.richieste = []
-        self.input_tokens = input_tokens
-        self.messages = NS(create=self._crea)
-
-    def _crea(self, **kwargs):
-        self.richieste.append(kwargs)
-        return NS(
-            id=f"msg_{len(self.richieste)}", stop_reason="end_turn",
-            usage=NS(input_tokens=self.input_tokens, output_tokens=0,
-                     cache_read_input_tokens=0, cache_creation_input_tokens=0),
-            content=[NS(type="text", text="ok")],
-        )
-
-
 @pytest.fixture
 def chiavi(monkeypatch):
-    """Chiavi fittizie per i fornitori usati dai ruoli di `models.toml`."""
-    monkeypatch.setenv("ORC2_ANTHROPIC_KEY", "chiave-fittizia")
-    monkeypatch.setenv("ORC2_MINIMAX_KEY", "chiave-fittizia")
+    """Chiave fittizia dell'unico fornitore di `models.toml`: OpenRouter."""
+    monkeypatch.setenv("ORC2_OPENROUTER_KEY", "chiave-fittizia")
 
 
 @pytest.fixture
@@ -101,48 +82,54 @@ def fabbrica(tmp_path, chiavi, percorsi_workspace):
 
 # ── Due ruoli, due agenti diversi ─────────────────────────────────────────
 
-def test_due_ruoli_producono_agenti_con_modelli_e_fornitori_diversi(fabbrica):
-    """E' il cuore dell'instradamento statico: il ruolo decide tutto il resto.
+def test_due_ruoli_producono_agenti_con_modelli_diversi_sulla_stessa_infrastruttura(fabbrica):
+    """E' il cuore dell'instradamento statico: il ruolo decide il modello.
 
-    Il planner va su Anthropic col suo gateway; il worker su MiniMax, che parla
-    il formato OpenAI. L'agente non lo sa: riceve un gateway e basta.
+    Tutti i modelli passano da OpenRouter, quindi tutti i gateway sono dello
+    stesso tipo; cambiano modello e fornitore fissato. L'agente non lo sa:
+    riceve un gateway e basta.
     """
     planner = fabbrica.build("planner")
     worker = fabbrica.build("worker")
 
-    assert (planner.model, worker.model) == ("opus-5", "minimax-m2-7")
-    assert isinstance(planner.gateway, AnthropicChatGateway)
+    assert (planner.model, worker.model) == ("opus-5-5", "kimi-k3")
+    assert isinstance(planner.gateway, OpenAIChatGateway)
     assert isinstance(worker.gateway, OpenAIChatGateway)
     assert planner.agent.llm is planner.gateway
 
 
-def test_il_gateway_riceve_il_nome_del_fornitore_e_non_l_alias(fabbrica):
-    """Il percorso diretto richiede il nome che il fornitore conosce davvero."""
+def test_il_gateway_riceve_il_nome_di_openrouter_e_fissa_il_fornitore(fabbrica):
+    """OpenRouter vuole il nome `anthropic/claude-opus-5.5`; Opus si fissa su Anthropic e chiede la cache."""
     planner = fabbrica.build("planner")
 
-    assert planner.gateway.model == "opus-5"             # chiave del progetto
-    assert planner.gateway.api_model == "claude-opus-5"  # nome del fornitore
+    assert planner.gateway.model == "opus-5-5"                          # chiave del progetto
+    assert planner.gateway.api_model == "anthropic/claude-opus-5.5"     # nome su OpenRouter
+    assert planner.gateway.extra_body == {
+        "provider": {"order": ["anthropic"], "allow_fallbacks": False},
+        "cache_control": {"type": "ephemeral"}}      # Anthropic mette in cache solo se glielo si chiede
 
 
-def test_il_worker_riceve_il_nome_minimax_non_l_alias(fabbrica):
-    """MiniMax chiama il modello `MiniMax-M2.7`: l'alias del progetto non esiste per lui."""
-    worker = fabbrica.build("worker")
+def test_il_worker_economico_riceve_il_nome_di_openrouter_non_l_alias(fabbrica):
+    """OpenRouter chiama il modello `minimax/minimax-m3`: l'alias del progetto non esiste per lui."""
+    economico = fabbrica.build("worker_cheap")
 
-    assert worker.gateway.model == "minimax-m2-7"
-    assert worker.gateway.api_model == "MiniMax-M2.7"
+    assert economico.gateway.model == "minimax-m3"
+    assert economico.gateway.api_model == "minimax/minimax-m3"
+    assert economico.gateway.extra_body == {          # fornitore fissato: il listino resta vero
+        "provider": {"order": ["minimax/fp8"], "allow_fallbacks": False}}
 
 
-def test_chi_risponde_e_chi_fattura_coincidono_col_fornitore(fabbrica):
-    """Il default del gateway OpenAI sarebbe "openai": sbagliato per MiniMax.
+def test_chi_risponde_e_chi_fattura_e_openrouter(fabbrica):
+    """Il default del gateway OpenAI sarebbe "openai": sbagliato per OpenRouter.
 
     Senza dichiararlo, ogni record del worker risulterebbe fatturato da un
-    fornitore che non c'entra, e il confronto fra percorsi (che e' la misura
-    centrale di M2s.4) sarebbe falsato.
+    fornitore che non c'entra. Il fornitore che ha davvero risposto, dietro
+    OpenRouter, sta in `served_by`.
     """
     worker = fabbrica.build("worker")
 
-    assert worker.gateway.api_provider == "minimax"
-    assert worker.gateway.billing_provider == "minimax"
+    assert worker.gateway.api_provider == "openrouter"
+    assert worker.gateway.billing_provider == "openrouter"
 
 
 # ── L'agente e' persistente ───────────────────────────────────────────────
@@ -185,7 +172,7 @@ def test_il_contabile_somma_tutta_la_vita_e_ogni_ledger_solo_il_suo_incarico(fab
     worker.assign("primo")
     worker.assign("secondo")
 
-    costo_incarico = 0.30  # un milione di token di input a $0.30
+    costo_incarico = 3.00  # un milione di token di input a $3.00 (kimi-k3)
     totali = [json.loads((l.run_dir / "summary.json").read_text())["total_cost"]
               for l in worker.ledgers]
     assert totali == [pytest.approx(costo_incarico)] * 2
@@ -242,12 +229,12 @@ def test_i_costi_finiscono_su_contabili_separati(fabbrica):
     """Un consumo del planner non deve comparire fra i costi del worker."""
     planner = fabbrica.build("planner")
     worker = fabbrica.build("worker")
-    planner.gateway.client = ClientAnthropicFinto(input_tokens=1_000_000)
+    planner.gateway.client = ClientOpenAIFinto(prompt=1_000_000, completion=0)
     worker.gateway.client = ClientOpenAIFinto(prompt=0, completion=0)
 
     planner.assign("task")
 
-    assert planner.accountant.total_cost == pytest.approx(5.0)  # $5 per milione
+    assert planner.accountant.total_cost == pytest.approx(4.0)  # $4 per milione (opus-5-5)
     assert worker.accountant.total_cost == 0.0
     assert worker.ledgers == []
 
@@ -374,19 +361,19 @@ def test_fornitore_senza_gateway_e_un_errore_parlante_e_non_crea_nulla(
     with pytest.raises(UnsupportedProvider) as errore:
         fabbrica.build("planner")
 
-    assert "anthropic" in str(errore.value)
+    assert "openrouter" in str(errore.value)
     assert costruiti == []
 
 
 def test_credenziali_mancanti_nominano_il_fornitore_e_non_creano_nulla(
         fabbrica, monkeypatch, percorsi_workspace):
     """La ricerca delle chiavi precede la creazione del workspace."""
-    monkeypatch.delenv("ORC2_MINIMAX_KEY")
+    monkeypatch.delenv("ORC2_OPENROUTER_KEY")
 
     with pytest.raises(RuntimeError) as errore:
         fabbrica.build("worker")
 
-    assert "minimax" in str(errore.value) and "ORC2_MINIMAX_KEY" in str(errore.value)
+    assert "openrouter" in str(errore.value) and "ORC2_OPENROUTER_KEY" in str(errore.value)
     assert percorsi_workspace == []
 
 
@@ -399,12 +386,9 @@ def test_ogni_fornitore_mappato_esiste_nel_registro():
     assert set(BACKEND_PER_PROVIDER) <= set(registro.providers)
 
 
-def test_i_fornitori_in_formato_openai_condividono_il_gateway():
-    """Moonshot e MiniMax differiscono per indirizzo e chiave, non per formato."""
-    classi = {BACKEND_PER_PROVIDER[p].gateway for p in ("openai", "moonshot", "minimax")}
-
-    assert classi == {OpenAIChatGateway}
-    assert BACKEND_PER_PROVIDER["anthropic"].gateway is AnthropicChatGateway
+def test_openrouter_parla_il_formato_openai():
+    """OpenRouter espone ogni modello nel formato `chat.completions`."""
+    assert BACKEND_PER_PROVIDER["openrouter"].gateway is OpenAIChatGateway
 
 
 def test_un_fornitore_non_conversazionale_non_e_mappato():
@@ -417,7 +401,7 @@ def test_il_client_usa_l_indirizzo_dichiarato_nel_registro(fabbrica):
     worker = fabbrica.build("worker")
 
     assert isinstance(worker.gateway, ChatGatewayBase)
-    assert str(worker.gateway.client.base_url).startswith("https://api.minimax.io")
+    assert str(worker.gateway.client.base_url).startswith("https://openrouter.ai")
 
 
 # ── Eventi nel ledger dell'incarico corrente ──────────────────────────────
@@ -459,10 +443,10 @@ def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        # Un incarico costa $0.00015 (100 token in input e 100 in output sul
-        # listino del worker): il tetto lascia almeno due incarichi completati
+        # Un incarico costa $0.0018 (100 token in input e 100 in output sul
+        # listino del worker, kimi-k3: $3 e $15 per milione): il tetto lascia almeno due incarichi completati
         # nella zona dell'avviso, fra l'80% e il 100%.
-        budget_usd=0.00125, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+        budget_usd=0.015, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
     )
     worker = fabbrica.build("worker")
     worker.gateway.client = ClientOpenAIFinto(prompt=100, completion=100)

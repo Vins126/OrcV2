@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       # Nessun segreto e nessuna variabile d'ambiente: la configurazione viene
-      # letta solo dal punto d'ingresso (`config.load_llm_settings`), mai
+      # letta solo dal punto d'ingresso (`config.load_environment`, `config.credenziali_fornitore`), mai
       # all'import, e i test sostituiscono i provider con oggetti finti. Se un
       # giorno la CI iniziasse a chiedere una chiave, sarebbe il sintomo che
       # qualcosa legge l'ambiente dove non dovrebbe.

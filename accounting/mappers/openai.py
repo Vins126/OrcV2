@@ -44,6 +44,17 @@ def _common(
     }
 
 
+def _costo_riportato(value: Any) -> float | None:
+    """Il costo dichiarato dal fornitore, oppure `None` se manca o non e' un numero valido.
+
+    Non solleva: la chiamata e' gia' stata pagata e un campo accessorio strano
+    non deve far perdere il record dei token.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value >= 0 and value == value and value != float("inf") else None
+
+
 class OpenAIChatCompletionsUsageMapper:
     """Converte una risposta ``chat.completions`` in un record di consumo."""
 
@@ -53,9 +64,13 @@ class OpenAIChatCompletionsUsageMapper:
                   billing_provider: str | None = "openai") -> UsageRecord:
         """Converte una risposta chat.completions in un record di consumo.
 
-        Scorpora i token serviti dalla cache da quelli di input:
-        `prompt_tokens` li **include**, quindi sommarli entrambi ne
-        conterebbe una parte due volte.
+        Scorpora i token serviti dalla cache e quelli scritti nella cache da
+        quelli di input: `prompt_tokens` li **include**, quindi sommarli tutti
+        ne conterebbe una parte due volte. La scrittura (`cache_write_tokens`)
+        la riportano gli aggregatori per i modelli con cache esplicita; per ora
+        e' un'ipotesi, da confermare con una chiamata vera, che `prompt_tokens`
+        la includa. Legge anche il costo dichiarato dal fornitore
+        (`usage.cost`) e chi ha risposto (`provider`), se presenti.
 
         Args:
             response: la risposta del provider, o un suo finto.
@@ -71,6 +86,7 @@ class OpenAIChatCompletionsUsageMapper:
         usage = field(response, "usage")
         prompt = number(field(usage, "prompt_tokens"))
         cached = number(nested(usage, "prompt_tokens_details", "cached_tokens"))
+        cache_write = number(nested(usage, "prompt_tokens_details", "cache_write_tokens"))
         completion = number(field(usage, "completion_tokens"))
         reasoning = number(nested(usage, "completion_tokens_details", "reasoning_tokens"))
         choices = field(response, "choices") or []
@@ -81,12 +97,16 @@ class OpenAIChatCompletionsUsageMapper:
         # prompt_tokens include cached_tokens: scorporarli impedisce il doppio
         # conteggio quando il listino ha una tariffa cache separata.
         quantities = non_zero(
-            input_tokens=max(0, prompt - cached),
+            input_tokens=max(0, prompt - cached - cache_write),
             cached_input_tokens=cached,
+            cache_write_tokens=cache_write,
             output_tokens=completion,
         )
+        served_by = field(response, "provider")
         return UsageRecord(
             quantities=quantities,
+            reported_cost=_costo_riportato(field(usage, "cost")),
+            served_by=served_by if isinstance(served_by, str) and served_by else None,
             finish_reason=field(first, "finish_reason"),
             n_tool_calls=len(tool_calls),
             reasoning_tokens=int(reasoning),

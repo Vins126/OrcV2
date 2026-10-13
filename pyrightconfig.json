@@ -1,4 +1,12 @@
 {
   "venvPath": ".",
-  "venv": "venv"
+  "venv": "venv",
+  "exclude": [
+    "**/__pycache__",
+    "**/.*",
+    "venv",
+    "workspace",
+    "runs",
+    "campaigns/data"
+  ]
 }

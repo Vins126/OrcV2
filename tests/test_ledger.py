@@ -55,7 +55,7 @@ def test_appende_usage_record_in_jsonl_con_envelope_di_run(tmp_path):
     timestamp = entry["record"].pop("timestamp")
     assert timestamp
     assert entry == {
-        "schema_version": 2,
+        "schema_version": 3,
         "event_type": "usage",
         "run_id": "run-1",
         "sequence": 1,
@@ -77,6 +77,8 @@ def test_appende_usage_record_in_jsonl_con_envelope_di_run(tmp_path):
             "attempt": 1,
             "reasoning_tokens": 0,
             "notes": None,
+            "reported_cost": None,
+            "served_by": None,
         },
     }
 
@@ -88,7 +90,7 @@ def test_appende_evento_non_prezzabile_separato_dai_consumi(tmp_path):
 
     events = _leggi_jsonl(ledger.run_dir / "events.jsonl")
     assert events == [{
-        "schema_version": 2,
+        "schema_version": 3,
         "event_type": "unpriced_usage",
         "run_id": "run-1",
         "sequence": 1,
@@ -109,7 +111,7 @@ def test_close_scrive_summary_derivato_dai_record_e_dagli_eventi(tmp_path):
 
     on_disk = json.loads((ledger.run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary == on_disk
-    assert on_disk["schema_version"] == 2
+    assert on_disk["schema_version"] == 3
     assert on_disk["run_id"] == "run-1"
     assert on_disk["agent_id"] == "worker-1"
     assert on_disk["role"] == "developer"

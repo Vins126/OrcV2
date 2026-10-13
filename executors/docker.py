@@ -32,8 +32,91 @@ Limiti noti:
 
 import os
 import subprocess
+import time
 
 from executors.base import CommandExecutor
+
+#: Reti ammesse. `host` o una rete con nome aprirebbero la sandbox verso la
+#: macchina o verso altri container senza che nessuno l'abbia deciso.
+RETI_AMMESSE = ("none", "bridge")
+
+
+class SandboxImageMissing(Exception):
+    """L'immagine della sandbox non esiste (o Docker non risponde)."""
+
+
+def image_id(image: str) -> str | None:
+    """Identificativo dell'immagine Docker, oppure `None` se non c'e' o Docker non risponde.
+
+    Cerca l'immagine nell'elenco (`docker image ls`) e non con `docker image inspect`:
+    con l'archivio immagini containerd di Docker Desktop, `inspect` sul nome corto risponde
+    a tratti «No such image» anche con l'immagine presente e Docker acceso (osservato il
+    12-13 ottobre 2026), mentre l'elenco la riporta. Un nome assente da' un elenco vuoto.
+    """
+    try:
+        r = subprocess.run(
+            ["docker", "image", "ls", "--no-trunc", "--format", "{{.ID}}", image],
+            capture_output=True, text=True, timeout=30)
+    except FileNotFoundError as errore:
+        # Il comando non esiste: non e' uno stato transitorio, ritentare non serve.
+        raise SandboxImageMissing(
+            "il comando `docker` non e' installato o non e' nel PATH: "
+            "installa Docker Desktop e avvialo") from errore
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    righe = r.stdout.split()
+    return righe[0] if righe else None
+
+
+def _attendi(secondi: float) -> None:
+    """Pausa fra due tentativi. Funzione a se' perche' i test la sostituiscono."""
+    time.sleep(secondi)
+
+
+def ensure_image(image: str, *, inspect=None, attempts: int = 1, delay: float = 0.0,
+                 sleep=None, max_total_s: float | None = None, clock=None) -> None:
+    """Controlla che l'immagine della sandbox esista, prima di costruire agenti.
+
+    Senza, ogni chiamata a `bash` fallirebbe con codice 125 e l'agente
+    brucerebbe budget su errori inutili.
+
+    Args:
+        image: nome dell'immagine, come in `config.DOCKER_IMAGE`.
+        inspect: chi legge l'identificativo; `None` usa `image_id`, cercata al
+            momento della chiamata (cosi' i test possono sostituirla).
+        attempts: quante volte chiedere prima di arrendersi. Il predefinito (1)
+            e' il controllo istantaneo; i punti d'ingresso ne passano di piu'
+            perche' Docker Desktop si spegne a riposo e nei primi secondi dopo
+            il riavvio risponde «No such image» anche se l'immagine c'e'.
+        delay: secondi fra un tentativo e l'altro (non dopo l'ultimo).
+        sleep: come attendere; `None` usa la pausa vera (iniettabile nei test).
+        max_total_s: tetto sul tempo REALE trascorso, pause e tentativi compresi.
+            Senza, con Docker bloccato ogni tentativo puo' durare il suo timeout
+            (30 s) e l'attesa reale sarebbe molto piu' lunga delle sole pause.
+        clock: orologio monotono; `None` usa `time.monotonic` (iniettabile).
+
+    Raises:
+        SandboxImageMissing: se l'immagine non c'e' o Docker non risponde dopo
+            tutti i tentativi; subito, senza attese, se il comando `docker` manca.
+    """
+    leggi = inspect if inspect is not None else image_id
+    attendi = sleep if sleep is not None else _attendi
+    orologio = clock if clock is not None else time.monotonic
+    inizio = orologio()
+    for tentativo in range(1, max(1, attempts) + 1):
+        if leggi(image) is not None:
+            return
+        if tentativo >= attempts:
+            break
+        if max_total_s is not None and orologio() - inizio + delay >= max_total_s:
+            break
+        attendi(delay)
+    raise SandboxImageMissing(
+        f"immagine '{image}' non trovata (o Docker non raggiungibile). "
+        f"Costruiscila dalla radice del progetto con: "
+        f"docker build -f docker/sandbox.Dockerfile -t {image} docker/")
 
 
 class DockerExecutor(CommandExecutor):
@@ -48,7 +131,7 @@ class DockerExecutor(CommandExecutor):
     """
 
     def __init__(self, workspace="workspace", image="debian:bookworm-slim", timeout=60,
-                 memory="512m", pids_limit="256"):
+                 memory="512m", pids_limit="256", network="none"):
         """Prepara la configurazione del container e la cartella condivisa.
 
         Args:
@@ -57,7 +140,18 @@ class DockerExecutor(CommandExecutor):
             timeout: secondi concessi a ogni comando.
             memory: limite di memoria del container.
             pids_limit: limite di processi del container.
+            network: `none` (nessuna rete, la base delle misure) oppure `bridge`
+                (rete normale di Docker, la condizione "con internet"). La rete
+                e' una proprieta' dell'agente per tutta la sua vita.
+
+        Raises:
+            ValueError: se la rete non e' fra quelle ammesse. Si controlla prima
+                di creare la cartella, per non lasciarne di orfane.
         """
+        if network not in RETI_AMMESSE:
+            raise ValueError(
+                f"rete '{network}' non ammessa: scegli fra {', '.join(RETI_AMMESSE)}")
+        self.network = network
         self.workspace = os.path.abspath(workspace)
         # Se la cartella non esiste viene creata
         os.makedirs(self.workspace, exist_ok=True)
@@ -66,6 +160,26 @@ class DockerExecutor(CommandExecutor):
         self.memory = memory
         self.pids_limit = pids_limit
 
+    def _utente_e_permessi(self) -> list[str]:
+        """Utente e permessi del container, secondo la rete.
+
+        `none`: utente 1000 senza altri permessi, come sempre. `bridge`: il
+        container parte come amministratore con quattro soli permessi (applicare
+        il firewall e scendere a utente 1000); l'entrypoint dell'immagine li
+        azzera prima di eseguire il comando, che gira quindi come utente 1000
+        senza alcun permesso. Vedi `docker/sandbox-entrypoint.sh`.
+        """
+        if self.network != "bridge":
+            return ["--user", "1000:1000"]
+        return [
+            "--user", "0:0",
+            "--cap-drop", "ALL",
+            "--cap-add", "NET_ADMIN", "--cap-add", "SETUID",
+            "--cap-add", "SETGID", "--cap-add", "SETPCAP",
+            "-e", "ORC_FIREWALL=1",
+            "-e", "ORC_RUN_AS=1000:1000",
+        ]
+
     def run(self, command: str) -> dict:
         """Esegue il comando in un container usa-e-getta.
 
@@ -73,8 +187,10 @@ class DockerExecutor(CommandExecutor):
         preciso:
             --rm            il container viene distrutto a fine comando: nessuno
                             stato sopravvive tra un'esecuzione e l'altra;
-            --network none  nessun accesso di rete (niente esfiltrazione di dati
-                            né download di codice arbitrario);
+            --network       `none` di default: nessun accesso di rete (niente
+                            esfiltrazione di dati né download di codice
+                            arbitrario) e ambiente ripetibile. `bridge` solo
+                            nella condizione sperimentale "con internet";
             --read-only     filesystem del container non scrivibile, così le
                             uniche modifiche possibili sono nel workspace;
             --tmpfs /tmp    area temporanea in memoria, necessaria perché molti
@@ -99,12 +215,12 @@ class DockerExecutor(CommandExecutor):
         docker_cmd = [
             "docker", "run",
             "--rm",
-            "--network", "none",
+            "--network", self.network,
             "--read-only",
             "--tmpfs", "/tmp",
             "--memory", self.memory,
             "--pids-limit", self.pids_limit,
-            "--user", "1000:1000",
+            *self._utente_e_permessi(),
             "--workdir", "/workspace",
             "--volume", f"{self.workspace}:/workspace",
             self.image,

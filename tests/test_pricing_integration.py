@@ -5,7 +5,7 @@ Nota di design (tesi):
     finto, il registro contro record scritti a mano. E' l'approccio giusto,
     ma lascia scoperta proprio la giunzione fra i due — e li' e' vissuto a
     lungo un difetto reale: il mapper scorpora i token serviti dalla cache in
-    un'unita' `cached_input_tokens`, che `opus-5` non dichiarava a listino.
+    un'unita' `cached_input_tokens`, che `opus-5` (oggi `opus-5-5`) non dichiarava a listino.
     La prima risposta con prompt cache attiva faceva quindi morire la run
     **dopo** aver pagato la chiamata, registrandola a costo zero.
 
@@ -62,7 +62,7 @@ def test_ogni_modello_prezza_l_output_del_mapper(model, cached):
     """
     contabile = InMemoryAccountant(_registro())
     record = OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(cached=cached), model=model, latency_s=0.1,
+        _risposta_chat(cached=cached), model=model, latency_s=0.1, billing_provider=None,
     )
 
     costo = contabile.register(record)
@@ -80,9 +80,11 @@ def test_i_token_da_cache_costano_meno_di_quelli_pieni():
     """
     contabile = InMemoryAccountant(_registro())
     pieno = contabile.register(OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(cached=0), model="opus-5", latency_s=0.1))
+        _risposta_chat(cached=0), model="opus-5-5", latency_s=0.1,
+        billing_provider=None))
     scontato = contabile.register(OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(cached=200), model="opus-5", latency_s=0.1))
+        _risposta_chat(cached=200), model="opus-5-5", latency_s=0.1,
+        billing_provider=None))
 
     assert scontato < pieno
 
@@ -90,7 +92,7 @@ def test_i_token_da_cache_costano_meno_di_quelli_pieni():
 def test_lo_scorporo_non_conta_due_volte_i_token_di_input():
     """350 token di cui 200 da cache restano 350, non 550."""
     record = OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(prompt=350, cached=200), model="opus-5", latency_s=0.1,
+        _risposta_chat(prompt=350, cached=200), model="opus-5-5", latency_s=0.1, billing_provider=None,
     )
 
     assert record.quantities["input_tokens"] == 150
@@ -104,9 +106,11 @@ def test_i_token_di_ragionamento_restano_fuori_dal_costo():
     """
     contabile = InMemoryAccountant(_registro())
     senza = contabile.register(OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(reasoning=0), model="opus-5", latency_s=0.1))
+        _risposta_chat(reasoning=0), model="opus-5-5", latency_s=0.1,
+        billing_provider=None))
     record = OpenAIChatCompletionsUsageMapper.to_record(
-        _risposta_chat(reasoning=80), model="opus-5", latency_s=0.1)
+        _risposta_chat(reasoning=80), model="opus-5-5", latency_s=0.1,
+        billing_provider=None)
     con = contabile.register(record)
 
     assert con == senza
@@ -115,18 +119,18 @@ def test_i_token_di_ragionamento_restano_fuori_dal_costo():
 
 
 def test_il_costo_e_quello_atteso_a_mano():
-    """Ancora numerica sul percorso completo, con opus-5.
+    """Ancora numerica sul percorso completo, con opus-5-5 (listino del 10 ott 2026).
 
-    150 input pieni a $5/milione            = $0.00075
-    200 input da cache a $0.50/milione      = $0.00010
-    120 output a $25/milione                = $0.00300
+    150 input pieni a $4/milione            = $0.00060
+    200 input da cache a $0.20/milione      = $0.00004
+    120 output a $20/milione                = $0.00240
                                               ---------
-                                              $0.00385
+                                              $0.00304
     """
     contabile = InMemoryAccountant(_registro())
     record = OpenAIChatCompletionsUsageMapper.to_record(
         _risposta_chat(prompt=350, completion=120, cached=200),
-        model="opus-5", latency_s=0.1,
+        model="opus-5-5", latency_s=0.1, billing_provider=None,
     )
 
-    assert contabile.register(record) == pytest.approx(0.00385)
+    assert contabile.register(record) == pytest.approx(0.00304)

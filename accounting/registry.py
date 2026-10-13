@@ -24,6 +24,7 @@ Nota di design (tesi):
     resterebbe confinata in questa classe.
 """
 
+import json
 import tomllib
 from math import isfinite
 
@@ -48,6 +49,14 @@ CAPACITA_NOTE = frozenset({
     "stt",           # C10 trascrizione
     "embedding",     # C11 vettori per RAG e per il router
     "rerank",        # C12 riordino per rilevanza
+})
+
+
+#: Chiavi di `extra_body` che la richiesta scrive da se'. L'SDK OpenAI unisce
+#: `extra_body` al corpo e, a chiavi uguali, vince `extra_body`: dichiararle in
+#: configurazione cambierebbe in silenzio cio' che viene chiamato.
+CHIAVI_RISERVATE_EXTRA_BODY = frozenset({
+    "provider", "model", "messages", "tools", "tool_choice", "stream",
 })
 
 
@@ -214,15 +223,53 @@ class ModelRegistry:
             )
         return self.roles[role]["model"]
 
-    def api_model_for(self, model: str) -> str:
-        """Il nome con cui il fornitore conosce il modello.
+    def provider_order_for(self, model: str) -> list[str] | None:
+        """I fornitori a cui OpenRouter deve limitare la richiesta, se dichiarati.
 
         Nota di design (tesi):
-            Il progetto identifica i modelli con una chiave propria (`opus-5`)
-            che compare in ruoli, contabilita' e ledger. Il fornitore ne ha un
-            altro (`claude-opus-5`). Tenerli distinti impedisce che un cambio
-            di nome sul lato del fornitore tocchi i dati gia' archiviati: i
-            record storici restano attribuiti alla chiave, che non cambia.
+            Dietro un aggregatore lo stesso modello puo' essere servito da
+            fornitori diversi, anche quantizzati: senza fissarlo, due run dello
+            stesso modello potrebbero non essere confrontabili. E' un campo
+            facoltativo del modello (`provider_order` in `models.toml`).
+
+        Returns:
+            L'elenco di slug, oppure `None` se il modello non fissa il fornitore.
+
+        Raises:
+            ModelNotFound: se il modello non e' a registro.
+        """
+        return self._modello(model).get("provider_order")
+
+    def extra_body_for(self, model: str) -> dict | None:
+        """I parametri di richiesta aggiuntivi che il modello vuole, se dichiarati.
+
+        Nota di design (tesi):
+            Alcuni modelli richiedono un parametro nella richiesta per usare una
+            funzione: Anthropic mette in cache solo se la richiesta contiene
+            `cache_control`, mentre Kimi e MiniMax lo fanno da soli. La
+            differenza sta nel **modello**, quindi vive in `models.toml` (campo
+            facoltativo `extra_body`) e non in un `if` nel codice (decisione D9).
+            La chiave `provider` e' riservata: la scrive la fabbrica a partire
+            da `provider_order`.
+
+        Returns:
+            La tabella dichiarata, oppure `None` se il modello non ne ha.
+
+        Raises:
+            ModelNotFound: se il modello non e' a registro.
+        """
+        return self._modello(model).get("extra_body")
+
+    def api_model_for(self, model: str) -> str:
+        """Il nome con cui OpenRouter conosce il modello.
+
+        Nota di design (tesi):
+            Il progetto identifica i modelli con una chiave propria
+            (`opus-5-5`) che compare in ruoli, contabilita' e ledger. Il
+            fornitore ne ha un altro (`anthropic/claude-opus-5.5`). Tenerli
+            distinti impedisce che un cambio di nome sul lato del fornitore
+            tocchi i dati gia' archiviati: i record storici restano attribuiti
+            alla chiave, che non cambia.
 
         Args:
             model: chiave del modello, come compare in `[models.*]`.
@@ -325,33 +372,7 @@ class ModelRegistry:
                         f"riconosciute: {self._elenca(CAPACITA_NOTE)}"
                     )
 
-            api_model = dati.get("api_model")
-            if api_model is not None and (
-                not isinstance(api_model, str) or not api_model.strip()
-            ):
-                raise MalformedRegistry(
-                    f"modello '{nome}': api_model dev'essere una stringa non vuota "
-                    f"(il nome con cui il fornitore conosce il modello), trovato "
-                    f"{api_model!r}. Per usare la chiave stessa, ometti il campo"
-                )
-
-            prezzi = dati.get("prices", {})
-            if not prezzi:
-                raise MalformedRegistry(
-                    f"modello '{nome}': nessun prezzo dichiarato in [prices]"
-                )
-
-            for unita, prezzo in prezzi.items():
-                if unita not in self.units:
-                    raise MalformedRegistry(
-                        f"modello '{nome}': l'unita' '{unita}' non e' dichiarata in "
-                        f"[units], quindi manca la base con cui calcolare il costo. "
-                        f"Dichiarate: {self._elenca(self.units)}"
-                    )
-                if not self._is_finite_number(prezzo) or prezzo < 0:
-                    raise MalformedRegistry(
-                        f"modello '{nome}': prezzo negativo per '{unita}' ({prezzo})"
-                    )
+            self._valida_listino(f"modello '{nome}'", dati)
 
         for ruolo, dati in self.roles.items():
             model = dati.get("model")
@@ -378,6 +399,75 @@ class ModelRegistry:
                     f"quello sul costo: un modello privo di cio' che il ruolo "
                     f"richiede non e' confrontabile sul prezzo, per quanto "
                     f"economico. Offre: {self._elenca(possedute)}"
+                )
+
+    def _valida_listino(self, etichetta: str, dati: dict) -> None:
+        """Controlla `api_model`, `provider_order` e `prices` di un modello.
+
+        Un prezzo sbagliato sarebbe un numero sbagliato in ogni misura, e non
+        produrrebbe un errore: per questo si blocca al caricamento.
+        """
+        api_model = dati.get("api_model")
+        if api_model is not None and (
+            not isinstance(api_model, str) or not api_model.strip()
+        ):
+            raise MalformedRegistry(
+                f"{etichetta}: api_model dev'essere una stringa non vuota "
+                f"(il nome con cui il fornitore conosce il modello), trovato "
+                f"{api_model!r}. Per usare la chiave stessa, ometti il campo"
+            )
+
+        ordine = dati.get("provider_order")
+        if ordine is not None and (
+            not isinstance(ordine, list)
+            or not ordine
+            or not all(isinstance(v, str) and v.strip() for v in ordine)
+        ):
+            raise MalformedRegistry(
+                f"{etichetta}: provider_order dev'essere una lista non vuota di "
+                f"nomi di fornitore non vuoti, trovato {ordine!r}"
+            )
+
+        extra = dati.get("extra_body")
+        if extra is not None:
+            if not isinstance(extra, dict):
+                raise MalformedRegistry(
+                    f"{etichetta}: extra_body dev'essere una tabella di parametri, "
+                    f"trovato {extra!r}"
+                )
+            riservate = sorted(set(extra) & CHIAVI_RISERVATE_EXTRA_BODY)
+            if riservate:
+                raise MalformedRegistry(
+                    f"{etichetta}: extra_body non puo' contenere {', '.join(riservate)}: "
+                    f"sono chiavi riservate, che la richiesta scrive da se' (`provider` "
+                    f"la scrive la fabbrica da `provider_order`). L'SDK unisce extra_body "
+                    f"al corpo della richiesta e a chiavi uguali vince extra_body: "
+                    f"cambierebbe in silenzio il modello o il fornitore realmente chiamati"
+                )
+            try:
+                json.dumps(extra)
+            except (TypeError, ValueError) as errore:
+                raise MalformedRegistry(
+                    f"{etichetta}: extra_body deve contenere solo valori JSON (numeri, "
+                    f"testo, booleani, liste, tabelle), altrimenti la prima richiesta "
+                    f"fallirebbe dopo aver gia' creato la run: {errore}"
+                ) from errore
+
+        prezzi = dati.get("prices", {})
+        if not prezzi:
+            raise MalformedRegistry(
+                f"{etichetta}: nessun prezzo dichiarato in [prices]"
+            )
+        for unita, prezzo in prezzi.items():
+            if unita not in self.units:
+                raise MalformedRegistry(
+                    f"{etichetta}: l'unita' '{unita}' non e' dichiarata in "
+                    f"[units], quindi manca la base con cui calcolare il costo. "
+                    f"Dichiarate: {self._elenca(self.units)}"
+                )
+            if not self._is_finite_number(prezzo) or prezzo < 0:
+                raise MalformedRegistry(
+                    f"{etichetta}: prezzo negativo per '{unita}' ({prezzo})"
                 )
 
     @staticmethod

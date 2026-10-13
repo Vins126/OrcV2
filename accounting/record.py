@@ -26,7 +26,7 @@ class UsageRecord:
     Attributes:
         model: nome del modello, come compare nel registro.
         api_provider: servizio chiamato direttamente dall'applicazione
-            (per esempio `litellm` oppure `openai`).
+            (per esempio `openrouter` oppure `openai`).
         billing_provider: soggetto che fattura il consumo (per esempio
             `openrouter` oppure `openai`). Entrambi sono metadati di audit,
             non chiavi di prezzo: il listino e' scelto da `model`.
@@ -64,6 +64,14 @@ class UsageRecord:
         reasoning_tokens: token di ragionamento dichiarati dal fornitore.
             **Solo per analisi**, mai per il calcolo del costo.
         notes: annotazione libera.
+        reported_cost: costo che il **fornitore dichiara** per questa chiamata
+            (per OpenRouter, `usage.cost`), oppure `None` se non lo riporta.
+            E' una misura, non un calcolo: `cost` resta quello ricavato dal
+            listino, e il confronto fra i due e' cio' che misura la tassa
+            dell'aggregatore. `None` non e' zero: un costo non riportato non
+            equivale a una chiamata gratuita.
+        served_by: fornitore che ha davvero risposto, se lo dichiara (dietro un
+            aggregatore puo' differire da `billing_provider`), altrimenti `None`.
 
     ⚠️ Due trappole sul conteggio, da non sbagliare mai:
 
@@ -113,6 +121,8 @@ class UsageRecord:
     timestamp: str = field(default_factory= lambda: datetime.now(timezone.utc).isoformat())
     reasoning_tokens: int = 0
     notes: str|None = None
+    reported_cost: float | None = None
+    served_by: str | None = None
 
     def __post_init__(self) -> None:
         """Rifiuta dati impossibili prima che raggiungano listino e ledger."""
@@ -120,6 +130,13 @@ class UsageRecord:
             raise InvalidUsage("model non puo' essere vuoto")
         if self.measurement_source not in {"reported", "derived", "missing"}:
             raise InvalidUsage("measurement_source deve essere reported, derived o missing")
+        if self.reported_cost is not None and (
+            not isinstance(self.reported_cost, (int, float))
+            or isinstance(self.reported_cost, bool)
+            or not isfinite(self.reported_cost)
+            or self.reported_cost < 0
+        ):
+            raise InvalidUsage(f"reported_cost non valido: {self.reported_cost!r}")
         for unit, quantity in self.quantities.items():
             if not isinstance(unit, str) or not unit:
                 raise InvalidUsage("ogni unita' di consumo deve avere un nome non vuoto")

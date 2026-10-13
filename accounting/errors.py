@@ -73,3 +73,4 @@ class CapabilityUnavailable(RegistryError):
 
 class InvalidUsage(ValueError):
     """Un UsageRecord contiene quantita' non valide per la contabilita'."""
+

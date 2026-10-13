@@ -4,7 +4,7 @@ Fino a M2s.2 la catena di montaggio di un agente — modello, client, contabile,
 gateway, strumenti — era scritta a mano in `main.py`, e valeva per un agente
 solo. Qui la stessa catena e' parametrizzata sul **ruolo**: si dice "worker" e
 si ottiene un agente col modello che il registro assegna a quel ruolo,
-raggiunto attraverso il suo fornitore.
+raggiunto attraverso OpenRouter.
 
 Nota di design (tesi):
     **Un agente e' persistente.** Ha la propria finestra di contesto, che
@@ -30,6 +30,7 @@ Nota di design (tesi):
     risolvere.
 """
 
+import copy
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -37,7 +38,6 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from uuid import uuid4
 
-import anthropic
 import openai
 
 import config
@@ -46,7 +46,7 @@ from accounting.ledger import RunLedger
 from accounting.ledger_accountant import LedgerAccountant
 from agent import Agent, RunResult
 from budget_guard import BudgetGuard
-from llm_gateway import AnthropicChatGateway, ChatGatewayBase, OpenAIChatGateway
+from llm_gateway import ChatGatewayBase, OpenAIChatGateway
 from run_reporter import RunReporter
 from run_session import RunSession
 from tools import build_default_tools
@@ -78,36 +78,22 @@ class Backend(NamedTuple):
     make_client: Callable[[config.ProviderCredentials], Any]
 
 
-def _client_anthropic(credenziali: config.ProviderCredentials) -> Any:
-    """Costruisce il client dell'SDK Anthropic.
-
-    `base_url` puo' essere `None`: in quel caso l'SDK usa il proprio endpoint
-    di default, che e' la scelta giusta per i fornitori che non hanno bisogno
-    di un indirizzo particolare.
-    """
-    return anthropic.Anthropic(
-        api_key=credenziali.api_key, base_url=credenziali.base_url)
-
-
 def _client_openai(credenziali: config.ProviderCredentials) -> Any:
-    """Costruisce il client dell'SDK OpenAI.
+    """Costruisce il client dell'SDK OpenAI, puntato all'indirizzo del fornitore.
 
-    Serve anche ai fornitori che ne adottano il formato `chat.completions` con
-    un proprio indirizzo (Moonshot, MiniMax): cambia solo `base_url`.
+    OpenRouter espone i modelli nel formato `chat.completions`: cambia solo
+    `base_url`.
     """
     return openai.OpenAI(
         api_key=credenziali.api_key, base_url=credenziali.base_url)
 
 
 #: Per ogni fornitore, come raggiungerlo. Le chiavi sono i nomi dichiarati in
-#: `[providers.*]` di `models.toml`. Piu' fornitori possono puntare alla stessa
-#: classe di gateway: Moonshot e MiniMax parlano lo stesso formato di OpenAI e
-#: differiscono solo per indirizzo e chiave, che arrivano dal registro.
+#: `[providers.*]` di `models.toml`. Dal 12 ottobre 2026 e' uno solo: OpenRouter.
+#: Gli altri backend (Anthropic, Moonshot, MiniMax, OpenAI) sono scollegati: vedi
+#: `docs/INFRASTRUTTURE_SCOLLEGATE.md` per come rimetterli.
 BACKEND_PER_PROVIDER: dict[str, Backend] = {
-    "anthropic": Backend(AnthropicChatGateway, _client_anthropic),
-    "openai": Backend(OpenAIChatGateway, _client_openai),
-    "moonshot": Backend(OpenAIChatGateway, _client_openai),
-    "minimax": Backend(OpenAIChatGateway, _client_openai),
+    "openrouter": Backend(OpenAIChatGateway, _client_openai),
 }
 
 
@@ -288,6 +274,11 @@ class AgentFactory:
         model = self.registry.model_for(role)
         provider = self.registry.models[model]["provider"]
 
+        agent_id = f"{role}-{uuid4().hex[:8]}"
+        # Un guardiano e un contabile per agente: vedi la nota di design.
+        guardiano = BudgetGuard(self.budget_usd)
+        accountant = LedgerAccountant(InMemoryAccountant(self.registry))
+
         backend = self.backends.get(provider)
         if backend is None:
             raise UnsupportedProvider(
@@ -295,21 +286,29 @@ class AgentFactory:
                 f"'{provider}', che non ha un gateway di chat; "
                 f"supportati: {', '.join(sorted(self.backends)) or '(nessuno)'}"
             )
-
+        ordine = self.registry.provider_order_for(model)
+        # Dietro un aggregatore il vincolo dice quale fornitore deve servire la
+        # richiesta e vieta il ripiego su un altro: senza, lo stesso modello
+        # puo' arrivare da fornitori diversi (anche quantizzati) fra una run e
+        # l'altra, e il confronto di costo non misurerebbe piu' la stessa cosa.
+        corpo: dict[str, Any] = {}
+        if ordine:
+            corpo["provider"] = {"order": list(ordine), "allow_fallbacks": False}
+        # I parametri propri del modello (per Opus, `cache_control`) si uniscono
+        # al vincolo. Si copiano: due agenti dello stesso modello non devono
+        # condividere lo stesso dizionario, e il registro e' condiviso da tutti.
+        corpo.update(copy.deepcopy(self.registry.extra_body_for(model) or {}))
+        opzioni: dict[str, Any] = {"extra_body": corpo} if corpo else {}
         credenziali = config.credenziali_fornitore(
             provider, self.registry.providers[provider])
-        client = backend.make_client(credenziali)
-
-        agent_id = f"{role}-{uuid4().hex[:8]}"
-        # Un guardiano e un contabile per agente: vedi la nota di design.
-        guardiano = BudgetGuard(self.budget_usd)
-        accountant = LedgerAccountant(InMemoryAccountant(self.registry))
         gateway = backend.gateway(
-            client, model, accountant,
+            backend.make_client(credenziali), model, accountant,
             api_model=self.registry.api_model_for(model),
-            # Chiamando il fornitore direttamente, chi risponde e chi fattura
-            # coincidono. Va dichiarato: il default della classe e' quello di
-            # OpenAI, sbagliato per Moonshot e MiniMax che ne usano il formato.
+            **opzioni,
+            # Chi si chiama e chi fattura e' l'aggregatore. Va dichiarato: il
+            # default della classe e' "openai", sbagliato per OpenRouter che ne
+            # usa il formato. Il fornitore che ha davvero risposto sta in
+            # `served_by` del record.
             api_provider=provider,
             billing_provider=provider,
             budget_guard=guardiano,

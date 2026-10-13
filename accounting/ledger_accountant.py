@@ -76,6 +76,10 @@ class LedgerAccountant(Accountant):
                     "measurement_source": record.measurement_source,
                     "reason": type(error).__name__,
                     "quantities": dict(record.quantities),
+                    # L'unico numero vero di una chiamata che il listino non sa
+                    # prezzare: il report lo somma al costo riportato.
+                    "reported_cost": record.reported_cost,
+                    "served_by": record.served_by,
                 },
             )
             raise

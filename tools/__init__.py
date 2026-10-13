@@ -23,8 +23,14 @@ from tools.read_file import ReadFileTool
 from tools.write_file import WriteFileTool
 from workspace import Workspace
 
-def build_default_tools(workspace_path: str) -> list:
-    """Costruisce i tool standard, tutti confinati nello stesso workspace."""
+def build_default_tools(workspace_path: str, *, network: str = "none") -> list:
+    """Costruisce i tool standard, tutti confinati nello stesso workspace.
+
+    Args:
+        workspace_path: cartella di lavoro dell'agente.
+        network: rete della sandbox, `none` (predefinita) o `bridge`. Vale per
+            tutta la vita degli strumenti, quindi per tutta quella dell'agente.
+    """
     workspace = Workspace(workspace_path)
     executor = DockerExecutor(
         workspace.path,
@@ -32,5 +38,6 @@ def build_default_tools(workspace_path: str) -> list:
         timeout=config.EXEC_TIMEOUT,
         memory=config.DOCKER_MEMORY,
         pids_limit=config.DOCKER_PIDS_LIMIT,
+        network=network,
     )
     return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace)]

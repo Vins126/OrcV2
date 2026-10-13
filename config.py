@@ -6,8 +6,8 @@ costanti sono le variabili degli esperimenti della tesi, e averle in un solo
 punto rende le esecuzioni riproducibili e confrontabili.
 
 I segreti vivono nel file `.env` (non versionato), caricato solo dal punto di
-ingresso. Da M2s.2 ce n'e' uno per fornitore: `load_llm_settings` serve il
-percorso mono-agente, `credenziali_fornitore` quello per ruolo.
+ingresso. Ce n'e' uno per fornitore: `credenziali_fornitore` risolve la chiave
+della strada con cui si raggiunge un modello.
 """
 
 import os
@@ -36,42 +36,12 @@ def richiedi_env(nome: str) -> str:
         raise RuntimeError(f"Variabile d'ambiente mancante: {nome}")
     return valore
 
-@dataclass(frozen=True)
-class LLMSettings:
-    """Dati di connessione caricati solo dal punto d'ingresso dell'applicazione."""
-
-    base_url: str
-    api_key: str
-    model: str
-    api_provider: str
-    billing_provider: str
-
-
-def load_llm_settings(
-    *, model_override: str | None = None, dotenv_path: str | Path | None = None
-) -> LLMSettings:
-    """Carica i segreti al runtime, non durante l'import dei moduli.
-
-    Separare il caricamento dall'import rende possibile usare `Agent`, i test e
-    gli strumenti di sviluppo senza avere un `.env` locale o una API key.
-    """
-    load_dotenv(dotenv_path=dotenv_path)
-    return LLMSettings(
-        base_url=richiedi_env("ORC2_BASE_URL"),
-        api_key=richiedi_env("ORC2_API_KEY"),
-        model=model_override or richiedi_env("ORC2_MODEL"),
-        api_provider=os.getenv("ORC2_API_PROVIDER", "litellm"),
-        billing_provider=os.getenv("ORC2_BILLING_PROVIDER", "openrouter"),
-    )
-
-
 def load_environment(dotenv_path: str | Path | None = None) -> None:
     """Carica il file `.env` nell'ambiente, senza pretendere nessuna variabile.
 
-    Serve al percorso diretto, che legge le chiavi **per fornitore**
-    (`credenziali_fornitore`) e non la terna globale di `load_llm_settings`.
-    Come quella, si chiama solo dal punto d'ingresso e mai all'import: i moduli
-    restano importabili e testabili senza un `.env`.
+    Le chiavi si leggono **per fornitore** (`credenziali_fornitore`). Si chiama
+    solo dal punto d'ingresso e mai all'import: i moduli restano importabili e
+    testabili senza un `.env`.
 
     Le variabili gia' presenti nell'ambiente **non** vengono sovrascritte: un
     valore esportato nella shell vince su quello del file.
@@ -165,7 +135,19 @@ ALERT_THRESHOLD = 4
 # -- SANDBOX DOCKER --
 # Limiti del container in cui gira il tool `bash`, per contenere i danni di un
 # comando sbagliato o malevolo.
-DOCKER_IMAGE = "debian:bookworm-slim"
+# Immagine costruita da `docker/sandbox.Dockerfile` (Python, pytest, Node a
+# versioni fissate). Le run fatte prima del 9 ottobre 2026 usavano
+# `debian:bookworm-slim`, senza Python: non sono confrontabili con quelle nuove.
+DOCKER_IMAGE = "orc-sandbox:m2s4"
+# Docker Desktop spegne il motore a riposo e lo riavvia al primo comando: finche' non risponde,
+# l'immagine non si puo' cercare. All'avvio si aspetta fino a (tentativi - 1) x attesa = 55 secondi
+# di pause, con un tetto di 60 s sul tempo reale, prima di dichiararla mancante. (Il «No such
+# image» a tratti con Docker acceso era invece `inspect` sul nome corto: `image_id` usa l'elenco.)
+DOCKER_TENTATIVI_AVVIO = 12
+DOCKER_ATTESA_AVVIO_S = 5.0
+# Tetto sul tempo reale (tentativi compresi): con Docker bloccato ogni `inspect` puo' durare
+# fino al suo timeout di 30 s, e contare solo le pause non basterebbe.
+DOCKER_ATTESA_AVVIO_MAX_S = 60.0
 DOCKER_MEMORY = "512m"
 DOCKER_PIDS_LIMIT = "256"
 EXEC_TIMEOUT = 60

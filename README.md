@@ -34,7 +34,7 @@ sempre il modello peggiore.
 | M2b | Intelligenza di instradamento: giudice, cascade, router appreso | ⬜ |
 | M7 | Campagna sperimentale e numeri della tesi | ⬜ |
 
-**195 test**, nessuno dei quali tocca la rete o consuma budget. CI su ogni push.
+**387 test** di unita', nessuno dei quali tocca la rete o consuma budget (altri 41 di integrazione richiedono Docker e si lanciano con `ORC_INTEGRATION=1`). CI su ogni push.
 
 La logica dell'ordine: **prima si misura, poi si instrada.** Senza un apparato
 di misura riproducibile non esiste né una baseline né una prova, e un router
@@ -54,8 +54,10 @@ python main.py "crea un file ciao.txt con dentro hello, poi rileggilo"
 ```
 
 Senza altre opzioni l'agente ha il ruolo `worker`, quindi `models.toml` lo assegna a
-MiniMax e serve `ORC2_MINIMAX_KEY` nel `.env`. Il ruolo decide modello e fornitore:
-cambiarlo non richiede di toccare il codice.
+`kimi-k3`. Tutti i modelli passano da **OpenRouter** e serve solo `ORC2_OPENROUTER_KEY` nel
+`.env`. Il ruolo decide il modello: cambiarlo non richiede di toccare il codice. Le altre
+infrastrutture (Anthropic, Moonshot, MiniMax, OpenAI, il proxy locale) sono scollegate:
+vedi `docs/INFRASTRUTTURE_SCOLLEGATE.md`.
 
 Serve **Docker in esecuzione**: il tool `bash` non esegue nulla sulla macchina
 host, solo dentro un container effimero senza rete, non-root, con filesystem in
@@ -64,10 +66,9 @@ sola lettura tranne il workspace.
 ```bash
 python main.py --help                                  # opzioni, senza contattare nulla
 python main.py --role planner --budget-usd 0.01 "..." # diretto, col ruolo planner e un tetto
-python main.py --via-proxy --role worker "..."        # stesso modello, ma via proxy (.env)
 python main.py --workspace /tmp/orc-work --runs-dir /tmp/orc-runs "..."
 
-pytest -q                                              # 195 test, offline, a costo zero
+pytest -q                                              # 387 test, offline, a costo zero
 ```
 
 ---

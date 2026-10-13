@@ -1,0 +1,78 @@
+# Campagna M2s.4a (controllo dello strumento): task facili risolvibili con la sola shell.
+# Non misurano la capacita' del modello: 10 su 10 riusciti non e' un risultato.
+#
+# Per ogni task:
+#   prompt    cio' che si dice all'agente
+#   setup     comando shell eseguito nel workspace PRIMA del prompt (facoltativo)
+#   verify    comando shell eseguito nel workspace DOPO la run: exit code 0 = riuscito
+#   reference soluzione di controllo, NON mostrata al modello: serve ai test per
+#             provare che `verify` passa con una soluzione giusta e fallisce senza.
+#
+# Solo comandi POSIX portabili: il test li esegue con la bash locale, la sandbox
+# (immagine `orc-sandbox:m2s4`, Debian con Python, pytest e Node) con la sua.
+
+[[task]]
+id = "ciao"
+prompt = "Crea il file ciao.txt con dentro la sola parola hello."
+verify = '[ "$(cat ciao.txt)" = "hello" ]'
+reference = "echo hello > ciao.txt"
+
+[[task]]
+id = "cartelle"
+prompt = "Crea il file a/b/c/note.md con dentro la sola parola ok, creando anche le cartelle che mancano."
+verify = '[ "$(cat a/b/c/note.md)" = "ok" ]'
+reference = "mkdir -p a/b/c && echo ok > a/b/c/note.md"
+
+[[task]]
+id = "numeri"
+prompt = "Crea il file numeri.txt con i numeri da 1 a 20, uno per riga."
+verify = '[ "$(cat numeri.txt)" = "$(seq 1 20)" ]'
+reference = "seq 1 20 > numeri.txt"
+
+[[task]]
+id = "conta-errori"
+setup = "printf 'ERROR a\\nok\\nERROR b\\nwarn\\nERROR c\\n' > log.txt"
+prompt = "Conta le righe di log.txt che contengono la parola ERROR e scrivi solo quel numero nel file count.txt."
+verify = '[ "$(tr -d " \n" < count.txt)" = "3" ]'
+reference = "grep -c ERROR log.txt > count.txt"
+
+[[task]]
+id = "ordina"
+setup = "printf 'pera\\nmela\\nbanana\\nciliegia\\n' > words.txt"
+prompt = "Ordina alfabeticamente le righe di words.txt e salva il risultato in sorted.txt."
+verify = '[ "$(cat sorted.txt)" = "$(printf "banana\nciliegia\nmela\npera")" ]'
+reference = "sort words.txt > sorted.txt"
+
+[[task]]
+id = "sostituisci"
+setup = "printf 'host=foo\\nname=foo-server\\nport=80\\n' > config.ini"
+prompt = "In config.ini sostituisci ogni occorrenza di foo con bar, modificando il file stesso."
+verify = '[ "$(cat config.ini)" = "$(printf "host=bar\nname=bar-server\nport=80")" ]'
+reference = "sed 's/foo/bar/g' config.ini > t.ini && mv t.ini config.ini"
+
+[[task]]
+id = "somma"
+prompt = "Crea lo script somma.sh che stampa la somma dei suoi due argomenti: 'bash somma.sh 2 3' deve stampare 5."
+verify = '[ "$(bash somma.sh 2 3)" = "5" ] && [ "$(bash somma.sh 10 32)" = "42" ]'
+reference = "printf 'echo $(($1 + $2))\\n' > somma.sh"
+
+[[task]]
+id = "colonna"
+setup = "printf 'a,1,x\\nb,2,y\\nc,3,z\\n' > data.csv"
+prompt = "Estrai la seconda colonna di data.csv (separatore virgola), un valore per riga, in col2.txt."
+verify = '[ "$(cat col2.txt)" = "$(printf "1\n2\n3")" ]'
+reference = "cut -d, -f2 data.csv > col2.txt"
+
+[[task]]
+id = "elenco"
+setup = "mkdir -p src/x && printf a > src/b.txt && printf a > src/x/a.txt && printf a > src/c.md"
+prompt = "Elenca in elenco.txt i percorsi di tutti i file .txt dentro src/, anche nelle sottocartelle, uno per riga, in ordine alfabetico, scritti come src/b.txt."
+verify = '[ "$(cat elenco.txt)" = "$(printf "src/b.txt\nsrc/x/a.txt")" ]'
+reference = "find src -name '*.txt' | sort > elenco.txt"
+
+[[task]]
+id = "conta-file"
+setup = "mkdir -p dati && touch dati/1 dati/2 dati/3 dati/4"
+prompt = "Crea lo script conta.sh che stampa quanti file ci sono nella cartella data come primo argomento: 'bash conta.sh dati' deve stampare 4."
+verify = 'mkdir -p prova && touch prova/a prova/b && [ "$(bash conta.sh dati | tr -d " ")" = "4" ] && [ "$(bash conta.sh prova | tr -d " ")" = "2" ]'
+reference = "printf 'ls \"$1\" | wc -l\\n' > conta.sh"

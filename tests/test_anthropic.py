@@ -130,7 +130,7 @@ def test_conta_gli_strumenti_richiesti_e_la_ragione_di_fine():
 # ── Mapper contro il listino reale ────────────────────────────────────────
 
 def test_il_listino_reale_prezza_le_quattro_unita():
-    """`opus-5` deve dichiarare tutte le unita' che questo mapper puo' emettere.
+    """`opus-5-5` deve dichiarare tutte le unita' che questo mapper puo' emettere.
 
     E' lo stesso controllo che a M2a scopri' il buco sui token da cache: la
     giuntura fra cio' che un mapper produce e cio' che il registro sa prezzare.
@@ -138,13 +138,13 @@ def test_il_listino_reale_prezza_le_quattro_unita():
     contabile = InMemoryAccountant(ModelRegistry.from_file("models.toml"))
     record = Mapper.to_record(
         _response(_usage(input_tokens=150, output=120, cache_read=200, cache_write=400)),
-        model="opus-5", latency_s=0.1,
+        model="opus-5-5", latency_s=0.1,
     )
 
     costo = contabile.register(record)
 
-    # 150 pieni a $5 + 200 da cache a $0.50 + 400 scritti a $6.25 + 120 out a $25
-    assert costo == pytest.approx(0.00075 + 0.0001 + 0.0025 + 0.003)
+    # 150 pieni a $4 + 200 da cache a $0.20 + 400 scritti a $5 + 120 out a $20
+    assert costo == pytest.approx(0.0006 + 0.00004 + 0.002 + 0.0024)
 
 
 # ── Gateway: conversione della risposta ───────────────────────────────────

@@ -384,9 +384,9 @@ def test_api_model_di_un_modello_ignoto_e_un_errore_parlante():
         _registro().api_model_for("fantasma")
 
 
-def test_opus_5_del_progetto_dichiara_il_nome_del_fornitore():
-    """Il percorso diretto verso Anthropic non funzionerebbe con l'alias."""
+def test_opus_5_5_del_progetto_dichiara_il_nome_del_fornitore():
+    """OpenRouter non conosce l'alias del progetto: vuole `anthropic/claude-opus-5.5`."""
     r = ModelRegistry.from_file("models.toml")
 
-    assert r.api_model_for("opus-5") == "claude-opus-5"
-    assert r.api_model_for("opus-5") != "opus-5"
+    assert r.api_model_for("opus-5-5") == "anthropic/claude-opus-5.5"
+    assert r.api_model_for("opus-5-5") != "opus-5-5"

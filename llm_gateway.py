@@ -245,12 +245,27 @@ class OpenAIChatGateway(ChatGatewayBase):
     DEFAULT_BILLING_PROVIDER = "openai"
     RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError)
 
+    def __init__(self, *args: Any, extra_body: dict[str, Any] | None = None, **kwargs: Any):
+        """Args aggiuntivi rispetto alla base.
+
+        Args:
+            extra_body: campi in piu' da aggiungere al corpo della richiesta, se
+                dato. Serve a OpenRouter per fissare il fornitore che deve
+                servire il modello (`{"provider": {"order": [...],
+                "allow_fallbacks": False}}`). `None` lascia la richiesta
+                com'e'.
+        """
+        super().__init__(*args, **kwargs)
+        self.extra_body = extra_body
+
     def _invoke(self, messages: list[Any], tools: list[dict[str, Any]]) -> Any:
         """Esegue la chiamata remota e restituisce la risposta grezza."""
+        extra = {} if self.extra_body is None else {"extra_body": self.extra_body}
         return self.client.chat.completions.create(
             model=self.api_model,
             messages=self._to_wire(messages),
             tools=tools,
+            **extra,
         )
 
     @staticmethod

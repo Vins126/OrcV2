@@ -30,3 +30,6 @@ runs/
 
 # Materiale di studio personale, non parte del lavoro consegnato
 docs/STUDIO.md
+
+# Esercizi scaricati da `campaign.py fetch-polyglot` (contenuto di terzi, MIT, fissato a un commit)
+campaigns/data/
