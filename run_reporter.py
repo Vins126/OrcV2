@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from run_status import RunStatus
 
 log = logging.getLogger(__name__)
 
@@ -11,12 +12,16 @@ class RunReporter:
     """Trasforma summary ed eventi della run in un riepilogo leggibile."""
 
     _STATUS_LABELS = {
-        "completed": "completato",
-        "max_iterations": "limite di iterazioni raggiunto",
-        "loop_detected": "loop rilevato",
-        "budget_exhausted": "budget esaurito",
-        "service_unavailable": "servizio LLM non disponibile",
-        "unexpected_error": "errore inatteso",
+        RunStatus.COMPLETED: "completato",
+        RunStatus.MAX_ITERATIONS: "limite di iterazioni raggiunto",
+        RunStatus.LOOP_DETECTED: "loop rilevato",
+        RunStatus.BUDGET_EXHAUSTED: "budget esaurito",
+        RunStatus.SERVICE_UNAVAILABLE: "servizio LLM non disponibile",
+        RunStatus.UNEXPECTED_ERROR: "errore inatteso",
+        RunStatus.EMPTY_RESPONSE: "il modello ha chiuso senza rispondere",
+        RunStatus.OUTPUT_TRUNCATED: "risposta interrotta dal limite di token",
+        RunStatus.REFUSED: "rifiuto del modello",
+        RunStatus.PROVIDER_ERROR: "errore dichiarato dal fornitore",
     }
 
     def emit(

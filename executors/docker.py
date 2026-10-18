@@ -26,19 +26,159 @@ Prerequisito operativo:
 Limiti noti:
     - L'utente del container è fissato a `1000:1000`: i file creati nel workspace
       appartengono a quell'UID, che può non coincidere con quello dell'host.
-    - Allo scadere del timeout viene interrotto il processo client `docker run`,
-      ma il container potrebbe restare in esecuzione.
+    - Allo scadere del timeout il container viene fermato con `docker kill`; se
+      anche il `kill` fallisce (Docker bloccato), il container puo' restare vivo.
+    - Il limite ai container contemporanei (`ContainerLimiter`) usa `fcntl`, che
+      esiste su macOS e Linux, non su Windows.
 """
 
+import fcntl
+import logging
 import os
 import subprocess
+import threading
 import time
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
+from pathlib import Path
+from typing import Any, Protocol
 
 from executors.base import CommandExecutor
+
+log = logging.getLogger(__name__)
 
 #: Reti ammesse. `host` o una rete con nome aprirebbero la sandbox verso la
 #: macchina o verso altri container senza che nessuno l'abbia deciso.
 RETI_AMMESSE = ("none", "bridge")
+
+
+#: Tempo massimo concesso al `docker kill` dopo un timeout. Un `kill` sano risponde in
+#: meno di un secondo; con Docker Desktop sotto carico puo' volerci qualche secondo. Piu'
+#: corto rischierebbe di liberare il posto con il container ancora vivo.
+KILL_TIMEOUT_S = 10
+
+#: Sotto questa attesa per un posto non si scrive nulla nel ledger: ogni comando
+#: aggiungerebbe una riga inutile.
+SANDBOX_WAIT_EVENT_S = 0.1
+
+
+class EventSink(Protocol):
+    """Dove annotare un fatto tecnico (in pratica il `CurrentRun` dell'agente)."""
+
+    def append_event(self, event_type: str, details: dict[str, Any]) -> None:
+        """Registra un fatto della run che non e' un consumo."""
+
+
+class ContainerLimiter:
+    """Limita quanti container possono girare nello stesso momento, anche fra processi.
+
+    Il limite riguarda una risorsa unica, la macchina (memoria, processore, demone
+    Docker): per questo di norma ne esiste una sola istanza per processo, quella di
+    modulo (`shared_limiter`), e chi ne vuole una propria (un test, un uso
+    particolare) la passa a `DockerExecutor`.
+
+    I posti sono `max_concurrent` file in `slots_dir`: prendere un posto vuol dire
+    bloccare uno di quei file con `fcntl.flock`. Il blocco e' del sistema operativo,
+    quindi vale fra thread e fra **processi diversi** (due campagne lanciate da due
+    terminali) che usano la stessa cartella, e si scioglie da solo se il processo
+    muore, anche per un crash o un Ctrl+C: nessun posto resta bloccato per sempre.
+
+    Limiti noti:
+        - Processi con `max_concurrent` diversi sulla stessa cartella: vale il
+          limite piu' alto (chi ha 6 usa i file 0-5, chi ha 4 i file 0-3).
+        - L'attesa di un posto non ha un tempo massimo: il `timeout` dell'esecutore
+          conta solo da quando il container parte. Il tempo in coda si legge nel
+          ledger (evento `sandbox_wait`).
+        - Il posto libero si cerca ogni `poll_s` secondi: l'ordine fra chi aspetta
+          non e' garantito (nessuna coda equa).
+        - Il container puo' restare vivo con il posto gia' libero: se il processo
+          muore durante un `docker run`, se arriva un Ctrl+C (o un'altra eccezione
+          che non sia lo scadere del tempo), o se il tempo scade prima che Docker
+          abbia avviato il container (il `kill` non lo trova). Per un ciclo infinito
+          il limite viene superato. Rimedio previsto in M4: fermare all'avvio i
+          container `orc-sandbox-*` orfani. Non provato con Docker vero.
+    """
+
+    def __init__(self, max_concurrent: int, slots_dir: str | Path, *, poll_s: float = 0.05):
+        """Prepara i posti.
+
+        Args:
+            max_concurrent: container al massimo vivi insieme.
+            slots_dir: cartella dei file dei posti, condivisa da chi deve rispettare
+                lo stesso limite.
+            poll_s: ogni quanto riprovare quando i posti sono tutti presi.
+
+        Raises:
+            ValueError: se `max_concurrent` non e' positivo. Si controlla prima di
+                creare la cartella, per non lasciarne di orfane.
+        """
+        if max_concurrent < 1:
+            raise ValueError(f"max_concurrent deve essere almeno 1, non {max_concurrent}")
+        self.max_concurrent = max_concurrent
+        self.slots_dir = Path(slots_dir)
+        self.poll_s = poll_s
+        self.slots_dir.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def slot(self) -> Iterator[float]:
+        """Prende un posto, aspettando se sono tutti occupati, e lo rilascia sempre.
+
+        Yields:
+            I secondi passati ad aspettare il posto.
+        """
+        inizio = time.monotonic()
+        while True:
+            for indice in range(self.max_concurrent):
+                fd = os.open(self.slots_dir / f"slot-{indice}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    os.close(fd)
+                    continue
+                except BaseException:
+                    # Un errore diverso da «occupato» (per esempio un disco che non
+                    # supporta i lock): il descrittore non deve restare aperto.
+                    os.close(fd)
+                    raise
+                try:
+                    yield time.monotonic() - inizio
+                finally:
+                    # Chiudere il descrittore scioglie gia' il blocco: `close` deve
+                    # avvenire anche se lo sblocco esplicito fallisse.
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    finally:
+                        os.close(fd)
+                return
+            time.sleep(self.poll_s)
+
+
+_shared: ContainerLimiter | None = None
+_shared_lock = threading.Lock()
+
+
+def shared_limiter() -> ContainerLimiter:
+    """Il limitatore unico di modulo, creato alla prima richiesta.
+
+    Legge `config.DOCKER_MAX_CONCURRENT` e `config.DOCKER_SLOTS_DIR` **una volta
+    sola**: cambiarli dopo non ha effetto (e' voluto: il limite non deve cambiare a
+    meta' lavoro), salvo `reset_shared_limiter`.
+    """
+    global _shared
+    with _shared_lock:
+        if _shared is None:
+            import config
+            _shared = ContainerLimiter(config.DOCKER_MAX_CONCURRENT,
+                                       Path(config.DOCKER_SLOTS_DIR).expanduser())
+        return _shared
+
+
+def reset_shared_limiter() -> None:
+    """Dimentica il limitatore di modulo (serve ai test, per ripartire da uno nuovo)."""
+    global _shared
+    with _shared_lock:
+        _shared = None
 
 
 class SandboxImageMissing(Exception):
@@ -131,7 +271,9 @@ class DockerExecutor(CommandExecutor):
     """
 
     def __init__(self, workspace="workspace", image="debian:bookworm-slim", timeout=60,
-                 memory="512m", pids_limit="256", network="none"):
+                 memory="512m", pids_limit="256", network="none",
+                 limiter: ContainerLimiter | None = None,
+                 event_sink: EventSink | None = None):
         """Prepara la configurazione del container e la cartella condivisa.
 
         Args:
@@ -143,6 +285,12 @@ class DockerExecutor(CommandExecutor):
             network: `none` (nessuna rete, la base delle misure) oppure `bridge`
                 (rete normale di Docker, la condizione "con internet"). La rete
                 e' una proprieta' dell'agente per tutta la sua vita.
+            limiter: limitatore dei container contemporanei. Se manca si usa quello
+                unico di modulo (`shared_limiter`), cosi' il limite non si aggira
+                per dimenticanza.
+            event_sink: dove annotare le attese lunghe per un posto (evento
+                `sandbox_wait`). Di norma il `CurrentRun` dell'agente; `None` per
+                non annotare (per esempio la verifica di una campagna).
 
         Raises:
             ValueError: se la rete non e' fra quelle ammesse. Si controlla prima
@@ -159,6 +307,8 @@ class DockerExecutor(CommandExecutor):
         self.timeout = timeout
         self.memory = memory
         self.pids_limit = pids_limit
+        self.limiter = limiter if limiter is not None else shared_limiter()
+        self.event_sink = event_sink
 
     def _utente_e_permessi(self) -> list[str]:
         """Utente e permessi del container, secondo la rete.
@@ -212,9 +362,12 @@ class DockerExecutor(CommandExecutor):
             subprocess.TimeoutExpired: se il comando supera il timeout.
             FileNotFoundError: se l'eseguibile `docker` non è installato.
         """
+        # Un nome proprio per ogni container: serve a fermarlo se il comando non finisce.
+        nome = f"orc-sandbox-{uuid.uuid4().hex[:12]}"
         docker_cmd = [
             "docker", "run",
             "--rm",
+            "--name", nome,
             "--network", self.network,
             "--read-only",
             "--tmpfs", "/tmp",
@@ -226,5 +379,28 @@ class DockerExecutor(CommandExecutor):
             self.image,
             "bash", "-c", command,
         ]
-        r = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=self.timeout)
+        # Il posto si tiene fino a container fermo: anche il `kill` avviene dentro.
+        with self.limiter.slot() as attesa:
+            if self.event_sink is not None and attesa >= SANDBOX_WAIT_EVENT_S:
+                # L'attesa e' un dato secondario: se annotarla fallisce si avvisa nel
+                # log e il comando dell'agente parte lo stesso.
+                try:
+                    self.event_sink.append_event("sandbox_wait", {
+                        "wait_s": round(attesa, 3),
+                        "max_concurrent": self.limiter.max_concurrent,
+                    })
+                except Exception as errore:
+                    log.warning("Evento sandbox_wait non registrato (%.3f s di attesa): %s",
+                                attesa, errore)
+            try:
+                r = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                # `timeout` di `subprocess.run` ferma il programma `docker`, non il container:
+                # un ciclo infinito resterebbe vivo (e a consumare) per sempre. Lo si ferma
+                # per nome; `--rm` poi lo rimuove. Se il `kill` stesso fallisce, l'errore di
+                # tempo arriva comunque a chi ha chiamato.
+                with suppress(Exception):
+                    subprocess.run(["docker", "kill", nome], capture_output=True,
+                                   timeout=KILL_TIMEOUT_S)
+                raise
         return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}

@@ -117,6 +117,13 @@ api_key_env = "ORC2_OPENROUTER_KEY"
 #  diversi, anche quantizzati, e non sono confrontabili. Lo slug si legge
 #  dall'elenco degli endpoint del modello su OpenRouter.
 #
+#  stall_timeout_s — FACOLTATIVO. Secondi senza un chunk interpretato dopo i quali
+#  uno stream si considera bloccato e viene interrotto (e ritentato). Senza, vale
+#  `STALL_TIMEOUT_S` di config.py. Si stringe per modello guardando
+#  `max_chunk_gap_s` nei record di consumo: un modello che mostra il ragionamento
+#  ha pause brevi (minimax-m3: 0,95 s al massimo in un campione), uno che lo
+#  nasconde puo' tacere a lungo e vuole una soglia piu' larga.
+#
 #  prices — solo le unita' pertinenti al modello. Un'unita' assente significa
 #  che il modello non offre quel tipo di consumo.
 # ───────────────────────────────────────────────────────────────────────────

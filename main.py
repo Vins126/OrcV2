@@ -20,6 +20,7 @@ from accounting import ModelRegistry
 from accounting.errors import RegistryError
 from agent_factory import AgentFactory, UnsupportedProvider
 from executors.docker import SandboxImageMissing, ensure_image
+from run_status import RunStatus
 
 
 DEFAULT_TASK = "usando bash crea il file ciao.txt con dentro 'hello', poi con read_file rileggilo"
@@ -82,7 +83,7 @@ def _run_direct(parser: argparse.ArgumentParser, args: argparse.Namespace,
         parser.error(str(error))
 
     result = built.assign(args.task, max_iterations=args.max_iterations)
-    return 0 if result.status == "completed" else 1
+    return 0 if result.status == RunStatus.COMPLETED else 1
 
 
 def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) -> int:

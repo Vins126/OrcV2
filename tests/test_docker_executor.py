@@ -568,3 +568,58 @@ def test_f4_con_piu_righe_vale_la_prima(monkeypatch):
                         _subprocess_finto(stdout="sha256:primo\nsha256:secondo\n"))
 
     assert _IMAGE_ID_VERO("orc-sandbox:m2s4") == "sha256:primo"
+
+
+# ── Un comando che non finisce non lascia un container vivo ───────────────
+
+import subprocess  # noqa: E402
+
+
+def _esecuzioni_che_scadono(monkeypatch, kill_solleva=False):
+    """`docker run` scade come per un ciclo infinito; registra anche l'eventuale `docker kill`."""
+    viste: list[list[str]] = []
+
+    def finto(argomenti, **kwargs):
+        viste.append(list(argomenti))
+        if argomenti[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(argomenti, 1)
+        if kill_solleva:
+            raise OSError("docker non risponde")
+        return NS(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr("executors.docker.subprocess.run", finto)
+    return viste
+
+
+def test_ogni_container_ha_un_nome_proprio(tmp_path, chiamate):
+    esecutore = DockerExecutor(str(tmp_path))
+
+    esecutore.run("true")
+    esecutore.run("true")
+
+    nomi = [_valore_dopo(c, "--name") for c in chiamate]
+    assert len(set(nomi)) == 2 and all(n.startswith("orc-sandbox-") for n in nomi)
+
+
+def test_allo_scadere_del_tempo_il_container_si_ferma_e_l_errore_resta(tmp_path, monkeypatch):
+    """`subprocess.run(timeout=)` ferma il programma `docker`, non il container: servirebbe un `kill`."""
+    viste = _esecuzioni_che_scadono(monkeypatch)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        DockerExecutor(str(tmp_path)).run("while true; do :; done")
+
+    nome = _valore_dopo(viste[0], "--name")
+    assert viste[1] == ["docker", "kill", nome]
+
+
+def test_se_il_kill_fallisce_l_errore_di_tempo_arriva_lo_stesso(tmp_path, monkeypatch):
+    _esecuzioni_che_scadono(monkeypatch, kill_solleva=True)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        DockerExecutor(str(tmp_path)).run("while true; do :; done")
+
+
+def test_senza_scadenza_non_c_e_nessun_kill(tmp_path, chiamate):
+    DockerExecutor(str(tmp_path)).run("true")
+
+    assert len(chiamate) == 1 and chiamate[0][:2] == ["docker", "run"]

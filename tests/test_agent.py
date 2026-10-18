@@ -33,6 +33,7 @@ from agent import Agent, AgentFailure, RunResult
 from budget_guard import BudgetExceeded
 from llm_contracts import AssistantTurn, ToolCall
 from loop_detector import RilevatoreLoop
+from run_status import RunStatus
 
 
 class FakeGateway:
@@ -96,7 +97,7 @@ def test_run_restituisce_esito_e_numero_di_iterazioni():
 
     result = agent.run("task")
 
-    assert result == RunResult(status="completed", iterations=1, final_message="Ho finito")
+    assert result == RunResult(status=RunStatus.COMPLETED, iterations=1, final_message="Ho finito")
 
 
 def test_run_dichiara_il_limite_di_iterazioni():
@@ -105,7 +106,7 @@ def test_run_dichiara_il_limite_di_iterazioni():
     result = agent.run("task", max_iterations=1)
 
     assert result == RunResult(
-        status="max_iterations", iterations=1,
+        status=RunStatus.MAX_ITERATIONS, iterations=1,
         final_message="Limite di 1 iterazioni raggiunto.",
     )
 

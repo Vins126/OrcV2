@@ -581,9 +581,16 @@ Il controllo vive nel gateway, **prima** della chiamata, sul costo già osservat
 
 > **Il limite, da dichiarare in tesi.** Il costo di una chiamata si conosce solo **dopo** averla
 > fatta. Il controllo pre-chiamata non può quindi impedire che l'ultima chiamata sfori il tetto:
-> può solo impedire di farne un'altra. **Lo sforamento massimo possibile è il costo di una
-> singola chiamata**, ed è riportato nel report (`overrun_usd`). Non è un difetto
-> dell'implementazione: è una proprietà del modello di fatturazione a consumo.
+> può solo impedire di farne un'altra. Con un solo agente **lo sforamento massimo è il costo di
+> una singola chiamata**. Con N agenti che condividono un tetto, ciascuno può leggere «sotto
+> soglia» prima che gli altri abbiano registrato la propria spesa: **lo sforamento massimo
+> diventa la somma di N chiamate in volo**. Nelle campagne il tetto totale conta anche la spesa
+> prenotata per le run in corso (D28), e lo sforamento torna a una chiamata per run; il tetto di
+> squadra, che legge la spesa senza prenotazione, resta esposto al caso peggiore di N chiamate.
+> Il costo di una chiamata non è un valore fisso (sui modelli frontier del pool, misurato, da
+> $0,007 a $0,040): lo sforamento si dichiara come intervallo ed è riportato per ogni run
+> (`overrun_usd`). Non è un difetto dell'implementazione: è una proprietà della fatturazione a
+> consumo, che il parallelismo amplifica.
 
 **Scelta metodologica deliberata:** alla soglia morbida il sistema **non inietta** messaggi nel
 contesto del modello (del tipo *«concludi presto»*). Lo farebbe volentieri un prodotto; una
@@ -662,7 +669,8 @@ Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
 - **Ledger di run**: archivio append-only per singola esecuzione (`usage.jsonl` + `events.jsonl`
   + `summary.json`); è lo schema iniziale del dataset del flywheel (§9.5).
 - **Sforamento residuo**: quanto una run può superare il tetto di budget — al massimo il costo di
-  una singola chiamata, perché il costo si conosce solo a chiamata avvenuta (§9.6).
+  una singola chiamata con un agente solo, fino a N chiamate con N agenti che condividono un tetto
+  senza prenotazione, perché il costo si conosce solo a chiamata avvenuta (§9.6).
 - **Giudizio a coppie**: si mostrano due output dello stesso task senza dire chi li ha prodotti e si
   chiede quale sia migliore. Un giudizio = un confronto = una risposta, A oppure B (§5.2).
 - **Curva di apprendimento**: accuratezza del router in funzione del numero di etichette. Dice quando

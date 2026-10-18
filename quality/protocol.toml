@@ -1,0 +1,55 @@
+# PROTOCOLLO DELL'ESPERIMENTO M2b.5 (esperimento anticipato)
+#
+# BOZZA da rivedere. Va fissato PRIMA di guardare i risultati: dopo la prima esecuzione
+# vera non si cambia piu' (se si cambia, si dichiara e si rifa' tutto).
+# Il testo di domande e criteri e' l'unica parte "scientifica" di questo file: e' quella
+# che decide cosa misuriamo. Le soglie di decisione sono quelle di D21 (14 ott 2026).
+
+[state]
+# Cosa legge lo stimatore. Solo istruzioni e codice: mai test, esito, nome del mutante.
+# Segnaposto ammessi: {instructions} e {solution}. Le graffe vanno raddoppiate ({{ }}).
+template = """EXERCISE:
+{instructions}
+
+SOLUTION:
+{solution}"""
+
+[question]
+# La domanda sì/no per d1 (in inglese: il modello e' addestrato in inglese).
+text = "Does this Python solution correctly implement the exercise for every valid input, including edge cases?"
+# Criteri della variante "con criteri". Solo le chiavi true/false hanno effetto su d1.
+criteria_true = "The solution is correct and complete: it would pass a thorough test suite."
+criteria_false = "The solution has at least one bug, a missing case, or wrong behaviour."
+
+[frontier]
+# Il giudice costoso, per chiave di models.toml.
+model = "opus-5-5"
+system = "You are a meticulous code reviewer. You judge whether a Python solution to an exercise is correct."
+# Segnaposto ammessi: {instructions} e {solution}.
+user_template = """Exercise instructions:
+{instructions}
+
+Proposed solution:
+{solution}
+
+Does the solution correctly implement the exercise for every valid input, including edge cases?
+Reply with a single JSON object and nothing else: {{"probability": N}}, where N is an integer from 0 to 100
+giving the probability that the solution is correct (0 = certainly wrong, 100 = certainly correct)."""
+
+[decision]
+# Regola di D21, fissata prima dei risultati. Si applica a `primary`: l'altra variante di d1
+# si riporta ma non entra nella decisione (evita di scegliere la variante migliore dopo aver visto i numeri).
+primary = "d1_hosted_plain"
+reference = "frontier"
+promising_lower_bound = 0.70      # limite inferiore dell'intervallo al 95% dell'AUROC
+max_gap_to_reference = 0.10       # AUROC del primario non oltre 0,10 sotto quello del riferimento
+negative_upper_bound = 0.65       # limite superiore dell'intervallo: sotto questo e' "negativo"
+
+[run]
+repetitions_d1 = 3
+repetitions_frontier = 1
+max_total_usd = 4.0               # tetto di spesa dell'intera esecuzione (D22)
+reserve_per_call_usd = 0.02       # prenotato per ogni giudizio frontier in volo
+workers = 4
+bootstrap_samples = 2000
+seed = 0

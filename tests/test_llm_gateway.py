@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace as NS
 
+import httpx
+import openai
 import pytest
 
 from accounting.base import Accountant
@@ -159,6 +161,29 @@ def test_gateway_non_ritenta_un_errore_di_richiesta_non_recuperabile():
         gateway.complete([], [])
 
     assert client.calls == 1
+
+
+def test_un_timeout_viene_ritentato_dal_gateway_e_poi_registrato_come_errore(monkeypatch):
+    """Ogni tentativo scaduto passa dal gateway, che li conta e poi annota l'errore.
+
+    Con i ritentativi interni dell'SDK spenti, il numero di chiamate al client
+    e' esattamente `retry_max`: nessuna richiesta parte senza che il gateway lo
+    sappia.
+    """
+    monkeypatch.setattr("llm_gateway.time.sleep", lambda _s: None)
+    timeout = openai.APITimeoutError(request=httpx.Request("POST", "https://x.test"))
+    client, events = FailingClient(timeout), EventSink()
+    gateway = OpenAIChatGateway(
+        client, "m", ContabileFinto(), retry_max=3, event_sink=events,
+    )
+
+    with pytest.raises(RuntimeError, match="LLM irraggiungibile"):
+        gateway.complete([], [])
+
+    assert client.calls == 3
+    assert [tipo for tipo, _ in events.events] == ["provider_error"]
+    assert events.events[0][1]["error_type"] == "APITimeoutError"
+    assert events.events[0][1]["attempts"] == 3
 
 
 def test_gateway_ferma_prima_della_rete_quando_il_budget_e_esaurito():

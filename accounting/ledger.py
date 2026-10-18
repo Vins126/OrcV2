@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,7 +29,7 @@ class RunLedger:
     # breakdown per modello/durata nel summary. La v3 aggiunge al record il costo
     # dichiarato dal fornitore (`reported_cost`) e chi ha risposto (`served_by`).
     # I ledger delle versioni precedenti restano immutati.
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(
         self,
@@ -61,51 +62,73 @@ class RunLedger:
         self.started_at = self._now()
         self._usage_sequence = 0
         self._event_sequence = 0
+        # Numerazione e scrittura avvengono insieme sotto lo stesso lock: `+= 1` non e'
+        # atomico e due scritture sullo stesso file si potrebbero mescolare. Copre anche
+        # `close`, che rilegge i file: senza, potrebbe leggere una riga scritta a meta'.
+        # Protegge i thread che usano QUESTA istanza (oggi uno solo; da M4 un ledger potra'
+        # essere condiviso), non processi diversi.
+        self._lock = threading.Lock()
 
         # Non riusare mai una directory esistente: farlo mescolerebbe i dati di
         # due run e renderebbe il summary non piu' riproducibile.
         self.run_dir.mkdir(parents=True, exist_ok=False)
 
     def append_usage(self, record: UsageRecord) -> None:
-        """Aggiunge un consumo gia' prezzato al ledger della run."""
-        self._usage_sequence += 1
-        self._append_jsonl(
-            self.run_dir / "usage.jsonl",
-            {
-                "schema_version": self.SCHEMA_VERSION,
-                "event_type": "usage",
-                "run_id": self.run_id,
-                "sequence": self._usage_sequence,
-                "record": asdict(record),
-            },
-        )
+        """Aggiunge un consumo gia' prezzato al ledger della run. Sicuro fra thread."""
+        with self._lock:
+            self._usage_sequence += 1
+            self._append_jsonl(
+                self.run_dir / "usage.jsonl",
+                {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "event_type": "usage",
+                    "run_id": self.run_id,
+                    "sequence": self._usage_sequence,
+                    "record": asdict(record),
+                },
+            )
 
     def append_event(self, event_type: str, details: dict[str, Any]) -> None:
-        """Aggiunge un evento che non rappresenta un consumo prezzato."""
-        self._event_sequence += 1
-        self._append_jsonl(
-            self.run_dir / "events.jsonl",
-            {
-                "schema_version": self.SCHEMA_VERSION,
-                "event_type": event_type,
-                "run_id": self.run_id,
-                "sequence": self._event_sequence,
-                "details": details,
-            },
-        )
+        """Aggiunge un evento che non rappresenta un consumo prezzato. Sicuro fra thread."""
+        with self._lock:
+            self._event_sequence += 1
+            self._append_jsonl(
+                self.run_dir / "events.jsonl",
+                {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "event_type": event_type,
+                    "run_id": self.run_id,
+                    "sequence": self._event_sequence,
+                    "details": details,
+                },
+            )
 
     def read_events(self) -> list[dict[str, Any]]:
         """Restituisce gli eventi append-only della run per report e analisi."""
-        return self._read_jsonl(self.run_dir / "events.jsonl")
+        with self._lock:
+            return self._read_jsonl(self.run_dir / "events.jsonl")
 
-    def close(self, *, status: str, iterations: int) -> dict[str, Any]:
+    def close(self, *, status: str, iterations: int,
+              final_message: str | None = None) -> dict[str, Any]:
         """Deriva e persiste il riepilogo finale della run.
 
         Il summary viene calcolato rileggendo i JSONL: non esiste un contatore
         parallelo da mantenere coerente con i file append-only.
+
+        Dalla versione 4 porta anche l'esito della run: `last_finish_reason` (il
+        motivo di arresto dell'ultima risposta arrivata, ricavato dai record: un
+        tentativo interrotto non ne ha uno) e `final_message` (cio' che l'agente
+        ha detto chiudendo). Senza, dopo una run fallita non si poteva leggere
+        cosa avesse risposto, e una risposta vuota si confondeva con una sbagliata.
+
+        Args:
+            status: come si e' chiusa la run.
+            iterations: iterazioni svolte.
+            final_message: il messaggio con cui l'agente ha chiuso, se c'e'.
         """
-        usage_entries = self._read_jsonl(self.run_dir / "usage.jsonl")
-        events = self._read_jsonl(self.run_dir / "events.jsonl")
+        with self._lock:
+            usage_entries = self._read_jsonl(self.run_dir / "usage.jsonl")
+            events = self._read_jsonl(self.run_dir / "events.jsonl")
         
         cost_by_model: dict[str, float] = {}
         cost_by_operation: dict[str, float] = {}
@@ -121,6 +144,16 @@ class RunLedger:
             cost_by_operation[operation] = cost_by_operation.get(operation, 0.0) + cost
             for unit, quantity in record["quantities"].items():
                 quantities_by_unit[unit] = quantities_by_unit.get(unit, 0.0) + float(quantity)
+
+        # Solo le risposte arrivate all'agente: un tentativo interrotto puo' avere un
+        # motivo (riletto da `/generation`), ma e' stato scartato, e una run finita dopo
+        # una serie di stalli sembrerebbe conclusa normalmente.
+        last_finish_reason = next(
+            (e["record"]["finish_reason"] for e in reversed(usage_entries)
+             if e["record"].get("finish_reason")
+             and e["record"].get("status") != "interrupted"),
+            None,
+        )
 
         finished_at = self._now()
         duration_s = (
@@ -152,6 +185,8 @@ class RunLedger:
                 for operation, cost in cost_by_operation.items()
             },
             "quantities_by_unit": quantities_by_unit,
+            "last_finish_reason": last_finish_reason,
+            "final_message": final_message,
         }
         self._write_summary_atomically(summary)
         return summary

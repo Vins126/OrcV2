@@ -15,12 +15,14 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 import config
+from run_status import RunStatus
 from task_model import CampaignError, Task
 from accounting import ModelRegistry
 from accounting.errors import ModelNotFound, RegistryError, UnitNotFound
 from agent_factory import AgentFactory
 from executors import docker as sandbox
 from executors.docker import RETI_AMMESSE, DockerExecutor, SandboxImageMissing
+from parallel_runner import Admission, JobOutcome, run_parallel
 from tools import build_default_tools
 
 
@@ -149,13 +151,78 @@ def shell_docker(workspace: Path, command: str) -> int:
     return int(executor.run(command)["exit_code"])
 
 
+def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
+                shell: Callable[[Path, str], int],
+                max_iterations: int | None) -> dict[str, Any]:
+    """Una run: agente nuovo, setup, incarico, verifica. Restituisce la riga del manifesto.
+
+    Gira su un thread del gruppo quando la campagna e' concorrente: non scrive
+    nel manifesto e non tocca stato condiviso, restituisce solo la riga. E' la
+    parte che non cambia fra la campagna in serie e quella in parallelo.
+    """
+    riga_base: dict[str, Any] = {
+        "task_id": task.id, "rep": rep, "run_id": None, "error_type": None,
+    }
+    try:
+        built = factory.build(role)
+    except Exception as errore:
+        # Guasto della campagna (chiave mancante, Docker spento): si annota e si
+        # prosegue; non e' un fallimento del modello.
+        return {**riga_base, "agent_id": None, "model": None, "workspace": None,
+                "status": "build_failed", "verified": False, "success": False,
+                "total_cost": 0.0, "error_type": type(errore).__name__}
+
+    row: dict[str, Any] = {
+        **riga_base, "agent_id": built.agent_id, "model": built.model,
+        "workspace": str(built.workspace),
+    }
+    try:
+        _scrivi_file(built.workspace, task.files)
+        setup_ok = not task.setup or shell(built.workspace, task.setup) == 0
+    except Exception as errore:
+        setup_ok = False
+        row["error_type"] = type(errore).__name__
+    if not setup_ok:
+        # Un setup fallito e' un guasto della campagna, non del modello: si
+        # annota a parte e non si interpella l'agente.
+        row.update(status="setup_failed", verified=False, success=False, total_cost=0.0)
+        return row
+
+    try:
+        result = built.assign(task.prompt, max_iterations=max_iterations)
+        status = result.status
+    except Exception as errore:  # una run guasta non deve fermare la campagna
+        status = RunStatus.UNEXPECTED_ERROR
+        row["error_type"] = type(errore).__name__
+
+    try:
+        # I file da ripristinare (i test originali) si riscrivono PRIMA di
+        # verificare: se l'agente li ha toccati, cio' non conta.
+        _scrivi_file(built.workspace, task.restore)
+        verified = shell(built.workspace, task.verify) == 0
+    except Exception as errore:
+        # La run e' gia' stata pagata: la riga con il suo costo si scrive
+        # comunque, con la verifica data per non riuscita.
+        verified = False
+        row["error_type"] = row["error_type"] or type(errore).__name__
+
+    row.update(
+        run_id=built.ledgers[-1].run_id if built.ledgers else None,
+        status=status, verified=verified,
+        success=status == RunStatus.COMPLETED and verified,
+        total_cost=built.accountant.total_cost)
+    return row
+
+
 def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int,
                  campaign_id: str, campaigns_dir: Path,
                  shell: Callable[[Path, str], int],
                  max_total_usd: float | None = None,
                  max_iterations: int | None = None,
-                 environment: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Lancia ogni task `repetitions` volte, una run alla volta, e annota il manifesto.
+                 environment: dict[str, Any] | None = None,
+                 workers: int = 1,
+                 reserve_per_run_usd: float | None = None) -> list[dict[str, Any]]:
+    """Lancia ogni task `repetitions` volte, fino a `workers` run alla volta, e annota il manifesto.
 
     Ogni run ha un agente nuovo e quindi un workspace nuovo: le ripetizioni
     sono indipendenti. Una run e' un successo solo se l'incarico e' `completed`
@@ -164,20 +231,44 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
 
     Il manifesto (`<campaigns_dir>/<campaign_id>.jsonl`) riceve una riga per
     run, scritta subito: se la campagna si interrompe, quanto gia' speso resta
-    documentato. Il tetto `max_total_usd` si controlla **prima** di ogni run e
-    somma la spesa calcolata finora; una run in corso non si interrompe, quindi
-    il tetto puo' essere superato al piu' di una run (il tetto per run lo da'
-    la fabbrica).
+    documentato. Con piu' operai le righe arrivano nell'ordine in cui le run
+    finiscono; il valore restituito segue invece l'ordine dei task. Le righe le
+    scrive sempre e solo il thread principale: nessuna scrittura concorrente.
+
+    Il tetto `max_total_usd` governa le **partenze**: una run parte solo se la
+    spesa registrata piu' quella **prenotata** per le run in volo **e per lei
+    stessa** non supera il tetto. La prenotazione e' `reserve_per_run_usd` (il
+    tetto per run della fabbrica): e' il massimo che ogni run puo' spendere, a
+    meno di una chiamata. Vale anche con un solo operaio: l'ultima run parte solo
+    se il suo tetto ci sta ancora. Una run in corso non si interrompe. Resta uno
+    sforamento possibile, limitato: ogni run puo' superare il proprio tetto di una
+    chiamata (vedi `TESI_master.md` §9.6). Fino al 17 ott 2026 la run che partiva
+    non era contata, e lo sforamento poteva arrivare a un tetto intero per run.
 
     Se `environment` e' dato (immagine, identificativo, rete), diventa la prima
     riga del manifesto; il report la ignora perche' non e' una run.
 
     Raises:
-        CampaignError: se `repetitions` non e' positivo. Il controllo precede
-            ogni effetto: nessun agente, nessuna cartella.
+        CampaignError: se `repetitions` o `workers` non sono positivi, se il tetto
+            per run supera quello totale, o se con
+            piu' operai e un tetto totale manca `reserve_per_run_usd`. I
+            controlli precedono ogni effetto: nessun agente, nessuna cartella.
     """
     if repetitions < 1:
         raise CampaignError(f"repetitions deve essere almeno 1, non {repetitions}")
+    if workers < 1:
+        raise CampaignError(f"workers deve essere almeno 1, non {workers}")
+    if workers > 1 and max_total_usd is not None and reserve_per_run_usd is None:
+        raise CampaignError(
+            "con workers > 1 e un tetto totale serve reserve_per_run_usd (il tetto per "
+            "run): senza non si sa quanto possono ancora spendere le run in volo")
+    if (max_total_usd is not None and reserve_per_run_usd is not None
+            and reserve_per_run_usd > max_total_usd):
+        # Ogni run prenota il proprio tetto prima di partire: con un tetto per run piu'
+        # alto di quello totale non ne partirebbe nessuna, senza un errore visibile.
+        raise CampaignError(
+            f"il tetto per run ({reserve_per_run_usd}) supera il tetto totale "
+            f"({max_total_usd}): non partirebbe nessuna run")
 
     campaigns_dir = Path(campaigns_dir)
     manifest = campaigns_dir / f"{campaign_id}.jsonl"
@@ -190,85 +281,63 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
         # In testa al manifesto, fuori dalle righe restituite: non e' una run.
         with open(manifest, "a") as f:
             f.write(json.dumps({"environment": environment}) + "\n")
-    rows: list[dict[str, Any]] = []
-    spent = 0.0
 
     def annota(row: dict[str, Any]) -> None:
-        rows.append(row)
+        # Solo il thread principale scrive: nessun lock, nessuna riga interlacciata.
         with open(manifest, "a") as f:
             f.write(json.dumps(row) + "\n")
 
-    for task in tasks:
-        for rep in range(1, repetitions + 1):
-            if max_total_usd is not None and spent >= max_total_usd:
-                annota({"stopped": "max_total_usd", "spent": spent,
-                        "max_total_usd": max_total_usd})
-                return rows
+    jobs = [(task, rep) for task in tasks for rep in range(1, repetitions + 1)]
+    righe_run: dict[int, dict[str, Any]] = {}
+    spent = 0.0
 
-            riga_base: dict[str, Any] = {
-                "task_id": task.id, "rep": rep, "run_id": None, "error_type": None,
-            }
-            try:
-                built = factory.build(role)
-            except Exception as errore:
-                # Guasto della campagna (chiave mancante, Docker spento): si
-                # annota e si prosegue; non e' un fallimento del modello.
-                annota({**riga_base, "agent_id": None, "model": None, "workspace": None,
-                        "status": "build_failed", "verified": False, "success": False,
-                        "total_cost": 0.0, "error_type": type(errore).__name__})
-                continue
+    def admit(_job: tuple[Task, int], in_volo: int) -> Admission:
+        if max_total_usd is None:
+            return Admission.START
+        if spent >= max_total_usd:
+            return Admission.STOP
+        # Si prenota anche la run che sta per partire: contando solo quelle gia' in volo,
+        # con tetto 0,05 e 0,02 per run ne partivano 3 (0,06 prenotati) e lo sforamento
+        # poteva arrivare a un tetto intero per run invece che a una chiamata.
+        if spent + (in_volo + 1) * (reserve_per_run_usd or 0.0) > max_total_usd:
+            return Admission.WAIT
+        return Admission.START
 
-            row: dict[str, Any] = {
-                **riga_base, "agent_id": built.agent_id, "model": built.model,
-                "workspace": str(built.workspace),
-            }
-            try:
-                _scrivi_file(built.workspace, task.files)
-                setup_ok = not task.setup or shell(built.workspace, task.setup) == 0
-            except Exception as errore:
-                setup_ok = False
-                row["error_type"] = type(errore).__name__
-            if not setup_ok:
-                # Un setup fallito e' un guasto della campagna, non del modello:
-                # si annota a parte e non si interpella l'agente.
-                row.update(status="setup_failed", verified=False, success=False,
-                           total_cost=0.0)
-                annota(row)
-                continue
+    def on_done(esito: JobOutcome[tuple[Task, int], dict[str, Any]]) -> None:
+        nonlocal spent
+        task, rep = esito.job
+        if esito.error is not None:
+            # Non dovrebbe succedere (`_esegui_run` gestisce i guasti noti): si
+            # annota comunque, perche' una riga mancante falserebbe la campagna.
+            row = {"task_id": task.id, "rep": rep, "run_id": None, "agent_id": None,
+                   "model": None, "workspace": None, "status": RunStatus.UNEXPECTED_ERROR,
+                   "verified": False, "success": False, "total_cost": 0.0,
+                   "error_type": type(esito.error).__name__}
+        else:
+            row = esito.result or {}
+        spent += row.get("total_cost", 0.0)
+        righe_run[esito.index] = row
+        annota(row)
 
-            try:
-                result = built.assign(task.prompt, max_iterations=max_iterations)
-                status = result.status
-            except Exception as errore:  # una run guasta non deve fermare la campagna
-                status = "unexpected_error"
-                row["error_type"] = type(errore).__name__
+    esiti = run_parallel(
+        jobs,
+        lambda job: _esegui_run(factory, job[0], job[1], role=role, shell=shell,
+                                max_iterations=max_iterations),
+        max_workers=workers, admit=admit, on_done=on_done)
 
-            try:
-                # I file da ripristinare (i test originali) si riscrivono PRIMA di
-                # verificare: se l'agente li ha toccati, cio' non conta.
-                _scrivi_file(built.workspace, task.restore)
-                verified = shell(built.workspace, task.verify) == 0
-            except Exception as errore:
-                # La run e' gia' stata pagata: la riga con il suo costo si
-                # scrive comunque, con la verifica data per non riuscita.
-                verified = False
-                row["error_type"] = row["error_type"] or type(errore).__name__
-
-            cost = built.accountant.total_cost
-            spent += cost
-            row.update(
-                run_id=built.ledgers[-1].run_id if built.ledgers else None,
-                status=status, verified=verified,
-                success=status == "completed" and verified, total_cost=cost)
-            annota(row)
+    rows = [righe_run[i] for i in sorted(righe_run)]
+    if any(not e.started for e in esiti):
+        fermata = {"stopped": "max_total_usd", "spent": spent, "max_total_usd": max_total_usd}
+        annota(fermata)
+        rows.append(fermata)
     return rows
 
 
-def tools_builder_for(network: str) -> Callable[[str], list]:
+def tools_builder_for(network: str) -> Callable[..., list]:
     """Costruttore di strumenti per la fabbrica, con la rete scelta per l'agente.
 
-    La fabbrica accetta gia' un `tools_builder(workspace) -> list`: si fissa la
-    rete con `functools.partial`, senza cambiare la sua interfaccia.
+    La fabbrica chiama `tools_builder(workspace, event_sink=...)`: si fissa la rete
+    con `functools.partial`, e il collegamento all'incarico passa intatto.
     """
     return functools.partial(build_default_tools, network=network)
 
@@ -328,7 +397,7 @@ def report(manifest_path: Path, runs_root: Path, registry: Any) -> CampaignRepor
     for r in run:
         if not r.get("success"):
             stato = r.get("status", "unknown")
-            causa = stato if stato != "completed" else "verification_failed"
+            causa = stato if stato != RunStatus.COMPLETED else "verification_failed"
             cause[causa] = cause.get(causa, 0) + 1
     request_id_visti: dict[str, int] = {}
     costo_totale = costo_output = 0.0
@@ -420,7 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Campagna di misura ORC (M2s.4)")
     sotto = parser.add_subparsers(dest="comando", required=True)
 
-    run = sotto.add_parser("run", help="lancia i task in serie")
+    run = sotto.add_parser("run", help="lancia i task (in serie, o in parallelo con --workers)")
     run.add_argument("--tasks", type=Path, default=PROJECT_ROOT / "campaigns" / "m2s4a.toml",
                      help="file TOML dei task, oppure cartella di esercizi polyglot "
                           "(vedi fetch-polyglot)")
@@ -433,6 +502,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-total-usd", type=float, required=True,
                      help="tetto in USD per l'intera campagna (obbligatorio)")
     run.add_argument("--max-iterations", type=int, default=config.MAX_ITERAZIONI)
+    run.add_argument("--workers", type=int, default=1,
+                     help="quante run in parallelo (predefinito 1: in serie, come sempre). "
+                          "Ogni run ha il suo agente e il suo container; il tetto totale conta "
+                          "anche il tetto per run di quelle in volo")
     run.add_argument("--network", choices=RETI_AMMESSE, default="none",
                      help="rete della sandbox degli agenti: none (la base delle misure) o bridge "
                           "(condizione 'con internet'); setup e verifica restano sempre senza rete")
@@ -498,6 +571,8 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
         return 0
 
     try:
+        if args.workers < 1:
+            raise CampaignError(f"workers deve essere almeno 1, non {args.workers}")
         tasks = _carica_task(args.tasks, args.only.split(",") if args.only else None)
         ensure_image_available(config.DOCKER_IMAGE, attempts=config.DOCKER_TENTATIVI_AVVIO,
                                delay=config.DOCKER_ATTESA_AVVIO_S,
@@ -517,7 +592,8 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
             factory, tasks, role=args.role, repetitions=args.repetitions,
             campaign_id=campaign_id, campaigns_dir=campaigns_dir, shell=shell_docker,
             max_total_usd=args.max_total_usd, max_iterations=args.max_iterations,
-            environment=sandbox_environment(config.DOCKER_IMAGE, args.network))
+            environment=sandbox_environment(config.DOCKER_IMAGE, args.network),
+            workers=args.workers, reserve_per_run_usd=args.budget_usd)
     except CampaignError as errore:
         print(f"errore: {errore}", file=sys.stderr)
         return 2

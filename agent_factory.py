@@ -31,25 +31,41 @@ Nota di design (tesi):
 """
 
 import copy
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 from uuid import uuid4
 
+import httpx
 import openai
 
 import config
 from accounting import InMemoryAccountant, ModelRegistry
+from accounting.base import Accountant
+from accounting.current_run import CurrentRun
 from accounting.ledger import RunLedger
 from accounting.ledger_accountant import LedgerAccountant
 from agent import Agent, RunResult
 from budget_guard import BudgetGuard
+from generation_lookup import OpenRouterGenerationLookup
+from llm_contracts import GenerationLookup
 from llm_gateway import ChatGatewayBase, OpenAIChatGateway
 from run_reporter import RunReporter
 from run_session import RunSession
 from tools import build_default_tools
+
+
+class ToolsBuilder(Protocol):
+    """Costruisce gli strumenti di un agente.
+
+    Riceve il percorso del suo workspace e il suo `CurrentRun`, dove gli strumenti
+    annotano i propri eventi (per esempio l'esecutore Docker, le attese per un posto).
+    """
+
+    def __call__(self, workspace: str, /, *, event_sink: CurrentRun) -> list: ...
 
 
 class UnsupportedProvider(Exception):
@@ -72,10 +88,17 @@ class Backend(NamedTuple):
         gateway: classe di gateway che traduce fra il progetto e il provider.
         make_client: funzione che costruisce il client dell'SDK a partire dalle
             credenziali del fornitore.
+        gateway_options: parametri di costruzione che il gateway di questo
+            fornitore accetta e gli altri no (oggi `stream`, solo per i gateway
+            `chat.completions`).
+        make_lookup: come rileggere il costo di una generazione interrotta, se il
+            fornitore lo permette; `None` se non lo permette.
     """
 
     gateway: type[ChatGatewayBase]
     make_client: Callable[[config.ProviderCredentials], Any]
+    gateway_options: Mapping[str, Any] = {}
+    make_lookup: Callable[[config.ProviderCredentials], GenerationLookup | None] | None = None
 
 
 def _client_openai(credenziali: config.ProviderCredentials) -> Any:
@@ -83,9 +106,25 @@ def _client_openai(credenziali: config.ProviderCredentials) -> Any:
 
     OpenRouter espone i modelli nel formato `chat.completions`: cambia solo
     `base_url`.
+
+    I ritentativi interni dell'SDK sono spenti: li fa solo il gateway, cosi'
+    ogni richiesta inviata passa dal suo conteggio e dal ledger.
     """
+    # Connessione e scrittura restano larghe; la lettura e' breve perche' con lo
+    # streaming misura il silenzio fra un pezzo e il successivo, non la richiesta
+    # intera (vedi `STREAM_READ_TIMEOUT_S`). Il client e' pensato per l'uso in
+    # streaming: una risposta intera non in streaming scadrebbe dopo quel tempo.
     return openai.OpenAI(
-        api_key=credenziali.api_key, base_url=credenziali.base_url)
+        api_key=credenziali.api_key, base_url=credenziali.base_url,
+        timeout=httpx.Timeout(config.REQUEST_TIMEOUT_S, read=config.STREAM_READ_TIMEOUT_S),
+        max_retries=0)
+
+
+def _lookup_openrouter(credenziali: config.ProviderCredentials) -> GenerationLookup | None:
+    """La rilettura del costo di una generazione, sulla stessa chiave e lo stesso indirizzo."""
+    if credenziali.base_url is None:
+        return None
+    return OpenRouterGenerationLookup(credenziali.api_key, credenziali.base_url)
 
 
 #: Per ogni fornitore, come raggiungerlo. Le chiavi sono i nomi dichiarati in
@@ -93,7 +132,7 @@ def _client_openai(credenziali: config.ProviderCredentials) -> Any:
 #: Gli altri backend (Anthropic, Moonshot, MiniMax, OpenAI) sono scollegati: vedi
 #: `docs/INFRASTRUTTURE_SCOLLEGATE.md` per come rimetterli.
 BACKEND_PER_PROVIDER: dict[str, Backend] = {
-    "openrouter": Backend(OpenAIChatGateway, _client_openai),
+    "openrouter": Backend(OpenAIChatGateway, _client_openai, {"stream": True}, _lookup_openrouter),
 }
 
 
@@ -108,8 +147,7 @@ class BuiltAgent:
 
     Attributes:
         agent: l'agente, con la sua conversazione che persiste.
-        gateway: il suo gateway verso il fornitore (serve a ricollegare gli
-            eventi tecnici al ledger dell'incarico in corso).
+        gateway: il suo gateway verso il fornitore.
         accountant: il suo contabile: somma la spesa di tutta la sua vita.
         agent_id: identificativo dell'agente, uguale in tutti i suoi ledger.
         role: il ruolo per cui e' stato costruito.
@@ -117,6 +155,8 @@ class BuiltAgent:
         workspace: cartella in cui l'agente puo' scrivere, solo sua e valida
             per tutta la sua vita.
         open_ledger: crea il ledger di un nuovo incarico dato il task.
+        current_run: l'unico punto da ricollegare a ogni incarico: contabile,
+            gateway e strumenti scrivono tutti attraverso di lui.
         reporter: chi emette il rapporto a fine incarico; `None` usa quello
             di default.
         ledgers: i ledger degli incarichi svolti finora, in ordine. E' il
@@ -132,6 +172,7 @@ class BuiltAgent:
     model: str
     workspace: Path
     open_ledger: Callable[[str], RunLedger] = field(repr=False)
+    current_run: CurrentRun = field(repr=False)
     reporter: RunReporter | None = field(default=None, repr=False)
     ledgers: list[RunLedger] = field(default_factory=list)
     dismissed: bool = False
@@ -164,14 +205,17 @@ class BuiltAgent:
 
         ledger = self.open_ledger(task)
         self.ledgers.append(ledger)
-        # Il contabile e il gateway scrivono nel ledger di QUESTO incarico: il
-        # primo i consumi, il secondo gli eventi tecnici (errori del provider,
-        # soglie di budget). Senza ricollegarli finirebbero in quello del
-        # precedente, gia' chiuso.
-        self.accountant.attach(ledger)
-        self.gateway.event_sink = ledger
-        return RunSession(self.agent, ledger, self.reporter).run(
-            task, max_iterations=max_iterations)
+        # Contabile (consumi), gateway (errori del fornitore, soglie di budget) e
+        # strumenti (attese per la sandbox) scrivono tutti attraverso `current_run`:
+        # basta ricollegare lui perche' tutto finisca nel ledger di QUESTO incarico.
+        self.current_run.attach(ledger)
+        try:
+            return RunSession(self.agent, ledger, self.reporter).run(
+                task, max_iterations=max_iterations)
+        finally:
+            # In ogni esito, eccezioni comprese: il ledger e' chiuso, e un evento in
+            # ritardo deve dare errore invece di finire fuori dal riepilogo.
+            self.current_run.detach()
 
     def dismiss(self) -> dict[str, Any]:
         """Elimina l'agente: non accettera' altri incarichi.
@@ -213,7 +257,7 @@ class AgentFactory:
         *,
         budget_usd: float | None = None,
         backends: dict[str, Backend] | None = None,
-        tools_builder: Callable[[str], list] = build_default_tools,
+        tools_builder: ToolsBuilder = build_default_tools,
         reporter: RunReporter | None = None,
     ):
         """Registra cio' che e' comune a tutti gli agenti costruiti.
@@ -250,6 +294,87 @@ class AgentFactory:
         self.backends = BACKEND_PER_PROVIDER if backends is None else backends
         self.tools_builder = tools_builder
         self.reporter = reporter
+        # Una rilettura del costo per fornitore, condivisa da tutti gli agenti: ognuna
+        # tiene un client HTTP, e uno per agente (mai chiuso) si accumulerebbe in una
+        # campagna lunga. `build` puo' girare su piu' thread insieme: da qui il lock.
+        self._lookups: dict[str, GenerationLookup | None] = {}
+        self._lookups_lock = threading.Lock()
+
+    def _lookup_condiviso(
+            self, provider: str,
+            crea: Callable[[config.ProviderCredentials], GenerationLookup | None],
+            credenziali: config.ProviderCredentials) -> GenerationLookup | None:
+        """La rilettura del costo del fornitore, creata una volta sola per fabbrica."""
+        with self._lookups_lock:
+            if provider not in self._lookups:
+                self._lookups[provider] = crea(credenziali)
+            return self._lookups[provider]
+
+    def make_gateway(self, model: str, accountant: Accountant,
+                     budget_guard: BudgetGuard | None, *, role: str | None = None) -> ChatGatewayBase:
+        """Il gateway di un modello: fornitore fissato, parametri propri, streaming e rilettura dei costi.
+
+        Lo usa `build` per gli agenti; chi deve soltanto interrogare un modello (per
+        esempio il giudice frontier di M2b.5) lo chiede qui e riceve gli stessi
+        accorgimenti, senza ricostruirli.
+
+        Args:
+            model: chiave del modello nel registro.
+            accountant: dove si registrano i consumi.
+            budget_guard: tetto di spesa, o `None` per nessun tetto.
+            role: il ruolo per cui si costruisce, solo per i messaggi d'errore.
+
+        Raises:
+            UnsupportedProvider: se il fornitore del modello non ha un gateway di chat.
+            RuntimeError: se mancano le credenziali del fornitore.
+        """
+        provider = self.registry.models[model]["provider"]
+        backend = self.backends.get(provider)
+        if backend is None:
+            raise UnsupportedProvider(
+                f"il modello '{model}'{f" (ruolo '{role}')" if role else ""} appartiene al fornitore "
+                f"'{provider}', che non ha un gateway di chat; "
+                f"supportati: {', '.join(sorted(self.backends)) or '(nessuno)'}"
+            )
+        ordine = self.registry.provider_order_for(model)
+        # Dietro un aggregatore il vincolo dice quale fornitore deve servire la
+        # richiesta e vieta il ripiego su un altro: senza, lo stesso modello
+        # puo' arrivare da fornitori diversi (anche quantizzati) fra una run e
+        # l'altra, e il confronto di costo non misurerebbe piu' la stessa cosa.
+        corpo: dict[str, Any] = {}
+        if ordine:
+            corpo["provider"] = {"order": list(ordine), "allow_fallbacks": False}
+        # I parametri propri del modello (per Opus, `cache_control`) si uniscono
+        # al vincolo. Si copiano: due agenti dello stesso modello non devono
+        # condividere lo stesso dizionario, e il registro e' condiviso da tutti.
+        corpo.update(copy.deepcopy(self.registry.extra_body_for(model) or {}))
+        opzioni: dict[str, Any] = {"extra_body": corpo} if corpo else {}
+        opzioni.update(backend.gateway_options)
+        if opzioni.get("stream"):
+            # La soglia di stallo ha senso solo in streaming: per modello se la
+            # dichiara, altrimenti quella di default.
+            opzioni["stall_timeout_s"] = (
+                self.registry.stall_timeout_for(model) or config.STALL_TIMEOUT_S)
+        credenziali = config.credenziali_fornitore(
+            provider, self.registry.providers[provider])
+        if backend.make_lookup is not None:
+            lookup = self._lookup_condiviso(provider, backend.make_lookup, credenziali)
+            if lookup is not None:
+                opzioni["generation_lookup"] = lookup
+        gateway = backend.gateway(
+            backend.make_client(credenziali), model, accountant,
+            api_model=self.registry.api_model_for(model),
+            **opzioni,
+            # Chi si chiama e chi fattura e' l'aggregatore. Va dichiarato: il
+            # default della classe e' "openai", sbagliato per OpenRouter che ne
+            # usa il formato. Il fornitore che ha davvero risposto sta in
+            # `served_by` del record.
+            api_provider=provider,
+            billing_provider=provider,
+            budget_guard=budget_guard,
+        )
+        return gateway
+
 
     def build(self, role: str) -> BuiltAgent:
         """Costruisce un agente persistente per il ruolo dato.
@@ -277,48 +402,18 @@ class AgentFactory:
         agent_id = f"{role}-{uuid4().hex[:8]}"
         # Un guardiano e un contabile per agente: vedi la nota di design.
         guardiano = BudgetGuard(self.budget_usd)
-        accountant = LedgerAccountant(InMemoryAccountant(self.registry))
+        # Il punto unico verso il ledger dell'incarico in corso: vedi `accounting/current_run.py`.
+        corrente = CurrentRun()
+        accountant = LedgerAccountant(InMemoryAccountant(self.registry), corrente)
 
-        backend = self.backends.get(provider)
-        if backend is None:
-            raise UnsupportedProvider(
-                f"il modello '{model}' (ruolo '{role}') appartiene al fornitore "
-                f"'{provider}', che non ha un gateway di chat; "
-                f"supportati: {', '.join(sorted(self.backends)) or '(nessuno)'}"
-            )
-        ordine = self.registry.provider_order_for(model)
-        # Dietro un aggregatore il vincolo dice quale fornitore deve servire la
-        # richiesta e vieta il ripiego su un altro: senza, lo stesso modello
-        # puo' arrivare da fornitori diversi (anche quantizzati) fra una run e
-        # l'altra, e il confronto di costo non misurerebbe piu' la stessa cosa.
-        corpo: dict[str, Any] = {}
-        if ordine:
-            corpo["provider"] = {"order": list(ordine), "allow_fallbacks": False}
-        # I parametri propri del modello (per Opus, `cache_control`) si uniscono
-        # al vincolo. Si copiano: due agenti dello stesso modello non devono
-        # condividere lo stesso dizionario, e il registro e' condiviso da tutti.
-        corpo.update(copy.deepcopy(self.registry.extra_body_for(model) or {}))
-        opzioni: dict[str, Any] = {"extra_body": corpo} if corpo else {}
-        credenziali = config.credenziali_fornitore(
-            provider, self.registry.providers[provider])
-        gateway = backend.gateway(
-            backend.make_client(credenziali), model, accountant,
-            api_model=self.registry.api_model_for(model),
-            **opzioni,
-            # Chi si chiama e chi fattura e' l'aggregatore. Va dichiarato: il
-            # default della classe e' "openai", sbagliato per OpenRouter che ne
-            # usa il formato. Il fornitore che ha davvero risposto sta in
-            # `served_by` del record.
-            api_provider=provider,
-            billing_provider=provider,
-            budget_guard=guardiano,
-        )
+        gateway = self.make_gateway(model, accountant, guardiano, role=role)
+        gateway.event_sink = corrente
 
         # Il workspace porta l'id dell'agente, non quello di una run: vale per
         # tutta la sua vita, incarichi compresi.
         workspace = self.workspaces_root / agent_id
         try:
-            strumenti = self.tools_builder(str(workspace))
+            strumenti = self.tools_builder(str(workspace), event_sink=corrente)
         except BaseException:
             # Il costruttore degli strumenti crea il workspace e poi puo'
             # fallire (per esempio Docker assente): non si lascia una cartella
@@ -338,5 +433,5 @@ class AgentFactory:
         return BuiltAgent(
             agent=agent, gateway=gateway, accountant=accountant,
             agent_id=agent_id, role=role, model=model, workspace=workspace,
-            open_ledger=open_ledger, reporter=self.reporter,
+            open_ledger=open_ledger, current_run=corrente, reporter=self.reporter,
         )

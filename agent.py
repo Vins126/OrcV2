@@ -13,8 +13,9 @@ from typing import Any
 import config
 from alerts import Alerts
 from budget_guard import BudgetExceeded
-from llm_contracts import AssistantTurn, ChatGateway
+from llm_contracts import AssistantTurn, ChatGateway, TurnOutcome
 from loop_detector import RilevatoreLoop
+from run_status import RunStatus
 
 # Un logger per modulo. Il nome segue la gerarchia dei moduli (__name__).
 log = logging.getLogger(__name__)
@@ -34,6 +35,22 @@ SYSTEM_PROMPT = (
 #: a meta': il modello li legge come qualsiasi altra osservazione.
 NOTA_TOOL_INTERROTTO = "esecuzione interrotta prima che il risultato fosse registrato"
 NOTA_INCARICO_INTERROTTO = "Incarico precedente interrotto prima di concludersi."
+
+#: Lo stato di run che corrisponde a ogni esito anomalo del turno. Gli esiti
+#: normali (`COMPLETE`, `TOOL_REQUEST`) non compaiono: li gestisce il ciclo.
+_STATO_PER_ESITO: dict[TurnOutcome, RunStatus] = {
+    TurnOutcome.TRUNCATED: RunStatus.OUTPUT_TRUNCATED,
+    TurnOutcome.REFUSED: RunStatus.REFUSED,
+    TurnOutcome.ERROR: RunStatus.PROVIDER_ERROR,
+}
+
+#: Cosa si dice al chiamante quando la run si ferma per uno di questi stati.
+_MESSAGGIO_PER_STATO: dict[RunStatus, str] = {
+    RunStatus.OUTPUT_TRUNCATED: "Risposta interrotta dal limite di token: il lavoro non e' concluso.",
+    RunStatus.REFUSED: "Il modello ha rifiutato di proseguire.",
+    RunStatus.PROVIDER_ERROR: "Il fornitore ha segnalato un errore nel turno.",
+    RunStatus.EMPTY_RESPONSE: "Il modello ha chiuso il turno senza rispondere.",
+}
 
 
 class AgentFailure(Exception):
@@ -77,7 +94,7 @@ class RunResult:
     senza analizzare testo destinato a un essere umano.
     """
 
-    status: str
+    status: RunStatus
     iterations: int
     final_message: str | None = None
 
@@ -171,7 +188,7 @@ class Agent:
 
         log.error("Raggiunto il limite di %d iterazioni", max_iterations)
         return RunResult(
-            status="max_iterations", iterations=max_iterations,
+            status=RunStatus.MAX_ITERATIONS, iterations=max_iterations,
             final_message=f"Limite di {max_iterations} iterazioni raggiunto.",
         )
 
@@ -222,7 +239,7 @@ class Agent:
 
     def _esegui_iterazione(
         self, messages, rilevatore, iterazione
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[RunStatus | None, str | None]:
         """Esegue un passo ReAct e restituisce l'esito terminale, se presente.
 
         Concentra le tre condizioni che possono chiudere un task — servizio
@@ -252,24 +269,37 @@ class Agent:
             msg = self._chiama_llm(messages)
         except BudgetExceeded:
             log.warning("Interrompo il task: budget esaurito")
-            return "budget_exhausted", "Budget della run esaurito: nessuna nuova chiamata effettuata."
+            return RunStatus.BUDGET_EXHAUSTED, "Budget della run esaurito: nessuna nuova chiamata effettuata."
         except RuntimeError as e:
             log.error("Interrompo il task: %s", e)
-            return "service_unavailable", "Servizio LLM non raggiungibile. Riprova più tardi."
+            return RunStatus.SERVICE_UNAVAILABLE, "Servizio LLM non raggiungibile. Riprova più tardi."
 
-        # L'AI non chiede tool -> ha finito
+        # Un turno anomalo (tagliato, rifiutato, in errore) si ferma qui: prima di
+        # guardare le tool call, che potrebbero essere tagliate a meta', e senza
+        # entrare nella storia, dove inquinerebbe l'incarico successivo.
+        stato_anomalo = _STATO_PER_ESITO.get(msg.outcome)
+        if stato_anomalo is not None:
+            log.error("Turno anomalo (%s): interrompo", msg.outcome.value)
+            return stato_anomalo, _MESSAGGIO_PER_STATO[stato_anomalo]
+
+        # Nessuna tool call: il modello dichiara di aver finito. Ma una risposta
+        # senza testo non e' una conclusione, e rimandata al fornitore sarebbe
+        # rifiutata da alcuni: non entra nella storia.
         if not msg.tool_calls:
+            if not (msg.content or "").strip():
+                log.error("Il modello ha chiuso il turno senza rispondere: interrompo")
+                return RunStatus.EMPTY_RESPONSE, _MESSAGGIO_PER_STATO[RunStatus.EMPTY_RESPONSE]
             # La risposta finale entra nella storia: se l'agente riceve un altro
             # incarico, deve ricordare cosa ha concluso per questo.
             messages.append(msg)
             log.info("Task completato in %d iterazioni", iterazione)
-            return "completed", msg.content
+            return RunStatus.COMPLETED, msg.content
 
         # Rilevo loop per evitare sprechi
         verdetto = rilevatore.in_loop_verdict(msg.tool_calls)
         if verdetto == Alerts.FERMA:
             log.error("Loop persistente (%d ripetizioni): interrompo", rilevatore.ripetizioni)
-            return "loop_detected", "Loop persistente: non sono riuscito a risolvere il problema."
+            return RunStatus.LOOP_DETECTED, "Loop persistente: non sono riuscito a risolvere il problema."
 
         # L'AI chiede tool -> li eseguo
         messages.append(msg)

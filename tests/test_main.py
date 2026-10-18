@@ -8,6 +8,7 @@ import config
 import main as modulo_main
 from agent import RunResult
 from main import build_parser, main
+from run_status import RunStatus
 
 
 def test_parser_esprime_un_task_e_opzioni_di_run_isolate():
@@ -140,7 +141,7 @@ class FabbricaFinta:
 
     def assign(self, task, max_iterations=None):
         self.incarichi.append((task, max_iterations))
-        return RunResult(status=FabbricaFinta.esito, iterations=1)
+        return RunResult(status=RunStatus(FabbricaFinta.esito), iterations=1)
 
 
 @pytest.fixture

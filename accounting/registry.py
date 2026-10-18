@@ -240,6 +240,23 @@ class ModelRegistry:
         """
         return self._modello(model).get("provider_order")
 
+    def stall_timeout_for(self, model: str) -> float | None:
+        """La soglia di stallo dichiarata dal modello, se c'e'.
+
+        Nota di design (tesi):
+            Quanto puo' tacere uno stream senza essere bloccato dipende dal
+            **modello**: uno che mostra il ragionamento ha pause brevi, uno che lo
+            nasconde puo' tacere a lungo. Vive quindi in `models.toml` (campo
+            facoltativo `stall_timeout_s`) e non in una condizione nel codice.
+
+        Returns:
+            I secondi, oppure `None` se il modello usa la soglia di default.
+
+        Raises:
+            ModelNotFound: se il modello non e' a registro.
+        """
+        return self._modello(model).get("stall_timeout_s")
+
     def extra_body_for(self, model: str) -> dict | None:
         """I parametri di richiesta aggiuntivi che il modello vuole, se dichiarati.
 
@@ -452,6 +469,14 @@ class ModelRegistry:
                     f"testo, booleani, liste, tabelle), altrimenti la prima richiesta "
                     f"fallirebbe dopo aver gia' creato la run: {errore}"
                 ) from errore
+
+        soglia = dati.get("stall_timeout_s")
+        if soglia is not None and (not self._is_finite_number(soglia) or soglia <= 0):
+            raise MalformedRegistry(
+                f"{etichetta}: stall_timeout_s dev'essere un numero positivo di "
+                f"secondi (la soglia oltre la quale uno stream muto si considera "
+                f"bloccato), trovato {soglia!r}"
+            )
 
         prezzi = dati.get("prices", {})
         if not prezzi:

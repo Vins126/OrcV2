@@ -26,11 +26,11 @@
 |---|---|---|
 | M1 | Agente singolo | ✅ completata |
 | M2a | Infrastruttura di misura | ✅ completata |
-| **M2s** | **Routing statico role-based (stadio S1)** | 🟡 **aperta**: manca `f` su task difficili (misurato solo su un insieme facile per `minimax-m3`) e la CI verde |
+| **M2s** | **Routing statico role-based (stadio S1)** | 🟡 **aperta**: manca `f` su task difficili (misurato solo su un insieme facile per `minimax-m3`); M3 puo' partire |
 | UX1 | Sessione chat persistente | ⬜ (backlog prodotto) |
-| M3 | Parallelismo | ⬜ |
+| **M3** | **Parallelismo** | 🟡 **in corso**: M3.0-M3.3 fatti; codice chiuso, revisione fatta e corretta; resta il commit |
 | M4 | Swarm (Planner, Orchestratore, stato condiviso, Gate L1) | ⬜ |
-| M2b | Intelligenza di routing (Judge L2, Cascade S2, Router S3) | ⬜ |
+| M2b | Intelligenza di routing (Judge L2, Cascade S2, Router S3) | ⬜ (M2b.5 anticipato: esperimento chiuso il 14 ott 2026, esito inconcludente; conclusioni in M2b.5) |
 | M7 | Campagna sperimentale | ⬜ |
 
 **Percorso critico:** M2a → M2s → M3 → M4 → M2b(S2) → M7.
@@ -621,8 +621,13 @@ progetto (richiede proxy/API attivi e Docker acceso).
     $0,0005, stato `completed`). **Conclusione:** per `minimax-m3` questo insieme **non e' difficile**; la misura di `f` su
     task difficili, richiesta dalla Definition of Done, resta da fare. Opus e Kimi non sono stati misurati: con la regola
     di selezione scritta prima (fasce per riuscita di M3) la fascia 0/3 e' vuota e il confronto non distinguerebbe i modelli.
-    Possibile richiesta HTTP rimasta appesa per circa 10 minuti durante la campagna (client senza timeout esplicito):
-    da confrontare con la spesa sul pannello di OpenRouter.
+    **Confronto con il pannello di OpenRouter (Activity, `minimax-m3`, 12-13 ottobre):** $1,68 addebitati (cifra
+    arrotondata dal pannello) contro **$1,65719** di costo riportato in tutti i record di `minimax-m3` del ledger negli
+    stessi giorni (890 record, campagne e prove). Circa **$0,02 (1-2%) addebitati ma non registrati.** Causa probabile,
+    non dimostrata: una richiesta HTTP rimasta appesa circa 10 minuti durante la campagna (client senza timeout
+    esplicito; il client ritenta da solo e il ledger registra solo la risposta arrivata). La ripartizione per giorno non
+    coincide (pannello $0,96 / $0,722, ledger $0,920 / $0,737 per data UTC): il fuso orario del pannello non e' noto.
+    Da verificare confrontando i `request_id` del ledger con l'elenco delle generazioni di OpenRouter.
 - **Nuovo percorso verso i modelli (10 ottobre 2026), che sostituisce quello della 4b originale:**
   - **LiteLLM esce dalla tesi.** Era un sistema personale fuori dal repository, con una cache di
     risposte locale che replicava le richieste identiche (stesso `request_id`, 0,02 s) e falsava
@@ -735,7 +740,7 @@ progetto (richiede proxy/API attivi e Docker acceso).
 - [ ] ~~Cambiare fornitore per un ruolo non tocca codice.~~ *(non piu' applicabile dal 12 ottobre 2026: un solo fornitore, OpenRouter; l'assegnazione ruolo -> modello resta in configurazione, prima casella)*
 - [x] Due agenti con modelli diversi completano task con costi tracciati separati. *(12 ottobre 2026: tre modelli, tre run completate, un ledger e un `summary.json` per ciascuna; costo totale calcolato $0,0242)*
 - [ ] ~~Tassa dell'aggregatore~~ *(non piu' misurabile dal 12 ottobre 2026; sostituita dal confronto costo riportato contro costo calcolato su OpenRouter)*, `f` e quota di output misurati e annotati *(questi due: M2s.4a, task difficili)*. *(13 ottobre 2026: misurati e annotati per `minimax-m3` su Polyglot Python, f = 2,9%, quota di output 75,8% del costo; l'insieme non e' difficile per questo modello, quindi la parte «task difficili» resta aperta)*
-- [ ] Test e CI verdi.
+- [x] Test e CI verdi. *(13 ottobre 2026: 387 test e pyright senza errori in locale; CI verde sul commit `3aa7ad4`)*
 
 ---
 
@@ -775,38 +780,186 @@ attribuzione, costi o riproducibilita'. Non e' nel percorso critico M2a → M2s 
 **Prerequisiti:** M2s.
 
 ### Task principali (da dettagliare a inizio fase)
-- **M3.1** ⬜ Esecuzione concorrente di N agenti su **workspace separati**.
+- **M3.0a** ✅ Timeout esplicito del client (`REQUEST_TIMEOUT_S = 600`) e ritentativi
+  dell'SDK spenti (`max_retries=0`): ogni richiesta inviata passa dal conteggio del gateway e
+  dal ledger. Test in `test_llm_gateway.py` e `test_agent_factory.py`.
+- **M3.0b** ✅ **Streaming e rilevamento degli stalli.** Senza streaming un modello che
+  ragiona 640-740 s e una connessione appesa sono indistinguibili, e il timeout deve restare
+  largo. Si procede per passi, ciascuno con i test scritti prima:
+  1. ✅ **Esito del turno** (D23). `TurnOutcome` e `AssistantTurn.outcome`: il gateway traduce
+     il motivo di arresto del fornitore, l'agente decide sull'esito e non sulla sola assenza
+     di tool call. Stati di run in un'enumerazione (`run_status.py`); nuovi stati
+     `empty_response`, `output_truncated`, `refused`, `provider_error`. Una risposta vuota
+     **non** si ritenta (D23). Test: `tests/test_turn_outcome.py`.
+  2. ✅ **Assemblatore dei chunk** (D26). Componente nostro (~40 righe) che ricompone i chunk in
+     un turno e segnala la troncatura (`finish_reason` assente, flusso vuoto, tool call senza
+     `id` o nome). Non usa l'accumulatore dell'SDK: solleva `LengthFinishReasonError` su
+     `length`, `AssertionError` su flusso vuoto e non segnala la troncatura. Test sui flussi
+     veri catturati dalla sonda.
+  3. ✅ **Streaming nel gateway OpenAI**: `stream=True` (attivo per OpenRouter dalla fabbrica),
+     commenti SSE ignorati dall'SDK, `usage` letto dal chunk finale, `id` della generazione dal
+     primo chunk (coincide con l'header `X-Generation-Id`). Un flusso troncato, un errore di rete
+     o un evento di errore del fornitore sono `StreamInterrupted`/`httpx.TransportError`:
+     ritentabili. Provato con due richieste vere (testo e tool call): costo calcolato
+     0,000170 contro riportato 0,00016968.
+  4. ✅ **Budget e riconciliazione** (D25): controllo del budget a ogni tentativo; una
+     interruzione diventa un evento con l'id della generazione, e il costo reale si legge da
+     `GET /generation`. La prenotazione del caso peggiore e' rimandata a M3.4 (richiede un
+     `max_tokens` per modello).
+     Fatto: il budget si controlla a ogni tentativo; un tentativo interrotto lascia l'evento
+     `stream_interrupted` (id della generazione, cio' che era arrivato, intervallo massimo fra
+     chunk) e, se il costo si rilegge da `GET /generation` (`generation_lookup.py`, fino a 4
+     tentativi a 5 s), un record `status="interrupted"` che entra nei conti; altrimenti l'evento
+     `interrupted_cost_unknown`.
+  5. ✅ **Rilevamento degli stalli** su tre livelli (D27): (1) timeout di lettura del client,
+     60 s (`STREAM_READ_TIMEOUT_S`), connessione larga a 600 s; (2) l'intervallo massimo fra
+     chunk, i chunk e i caratteri di ragionamento finiscono in `dimensions` del record
+     (`max_chunk_gap_s`, `chunks`, `reasoning_chars`); (3) un controllo su un thread
+     (`stall_watchdog.py`) che dopo `stall_timeout_s` senza un chunk interpretato (120 s di
+     default, per modello in `models.toml`) interrompe la connessione e ritenta. **Trovato con
+     una prova locale:** `close()` da un altro thread NON sblocca la lettura (resta ferma fino
+     al timeout di rete); sblocca `shutdown` del socket sottostante, anche su TLS.
+  6. ✅ **Registro dell'esito** (D24): `summary.json` schema 4 con `last_finish_reason` (ultimo
+     motivo di arresto fra le risposte arrivate, i tentativi interrotti non contano) e
+     `final_message`. Lo schema 4 vale per tutti i file del ledger; i `runs/` esistenti (versione
+     3) non hanno i due campi e chi li legge deve tollerarne l'assenza.
+  - **Prova dal vivo di un'interruzione (14 ott 2026, `minimax-m3` su `minimax/fp8`, gateway di
+    produzione, $0,0004 riportati):** connessione tagliata a 3 s con `shutdown` del socket; il gateway
+    l'ha riconosciuta (9 chunk, 1134 caratteri di ragionamento), ha riletto il costo da `GET
+    /generation` in ~15 s (164 token di input, 293 di output, $0,0004008 riportati contro $0,000401
+    calcolati sul listino) e, con un tetto di $0,0003, il budget ha fermato il tentativo successivo:
+    una sola richiesta partita. I 293 token fatturati corrispondono a quelli ricevuti (secondo
+    campione: chiudere lo stream ferma la fatturazione).
+  - **Misure (sonda del 14 ott 2026, `minimax-m3` su `minimax/fp8`, 5 richieste, $0,0128
+    riportati dal fornitore):** i commenti SSE sono un battito che compare nelle pause (~0,4 s)
+    fra due chunk, non un avanzamento; le tool call arrivano intere alla fine (due chunk per
+    chiamata); il chunk finale ripete il `finish_reason` e porta l'`usage` dentro una `choice`;
+    un tetto di 8000 token e' stato consumato interamente dal ragionamento (`finish_reason:
+    length`, nessun testo); chiudere lo stream a 14 s ha fermato la fatturazione (1942 token,
+    $0,0023796) e il costo e' recuperabile da `GET /generation` circa 10 s dopo. Campione
+    singolo, un solo fornitore.
+  - **Ripresa di un ragionamento tagliato (14 ott 2026, stesso modello e fornitore, 2 richieste,
+    $0,0044 riportati):** rimandando il ragionamento parziale come messaggio `assistant`
+    (campo `reasoning`), il fornitore lo legge (2.427 token di input contro ~300 senza) ma il
+    modello **ricomincia da capo**; con in piu' un messaggio utente «Continua da dove ti eri
+    interrotto» riconosce il filo («stavo progettando la classe») ma apre un nuovo ragionamento
+    che ricapitola, non prosegue dalla frase interrotta. Entrambe a 1500 token non erano ancora
+    arrivate a una tool call. Nessun risparmio dimostrato. Non provata la variante con
+    `reasoning_details`. Campione singolo.
+- **M3.1** ✅ Esecuzione concorrente di N agenti su
+  **workspace separati**. Fatto (D28): `parallel_runner.py` (`run_parallel`: gruppo di thread, risultati
+  nell'ordine di partenza, errori isolati, partenze governate dal thread principale con `Admission`
+  START/WAIT/STOP; nessuna coda aggiuntiva: il gruppo ne ha gia' una) e `run_campaign(workers=N)` con
+  la run singola estratta in `_esegui_run`; il manifesto lo scrive solo il thread principale; il tetto
+  totale conta anche la spesa **prenotata** per le run in volo (`reserve_per_run_usd` = tetto per run,
+  `--budget-usd`); `--workers N` (predefinito 1, comportamento identico a prima). Con piu' operai e un
+  tetto totale senza tetto per run e' un errore. Test: `tests/test_parallel_runner.py` (15),
+  `tests/test_campaign.py` (13 nuovi; i 66 preesistenti passano invariati).
+  **Prova con un fornitore vero (14 ott 2026, campagna `m31-parallelo-prova`, `minimax-m3`, Docker,
+  3 esercizi Polyglot, `--workers 3`, `--budget-usd 0.05 --max-total-usd 0.15`):** le tre run sono
+  partite insieme (sovrapposizione massima 3; somma delle durate 108,3 s, durata totale 42,2 s, circa
+  2,6 volte piu' veloce); tutte completate e verificate; nessun evento oltre `budget_policy` (nessun
+  429, nessuna interruzione); costo calcolato = riportato = $0,01744 su 16 record, nessun
+  `request_id` duplicato; schema 4 con `last_finish_reason` e `final_message`; `max_chunk_gap_s` fra
+  0,33 e 1,33 s. Un solo campione, 3 run.
   **[SCELTA FATTA]:** `concurrent.futures.ThreadPoolExecutor`, non `asyncio`. Il
   lavoro è I/O-bound (attesa su HTTP), quindi il GIL non è un vincolo; `asyncio`
   imporrebbe di riscrivere gateway, tool ed executor Docker per reggere migliaia di
   agenti concorrenti, che non servono. I client sync restano invariati.
-- **M3.1b** ⬜ **Rendere sicuro ciò che oggi non lo è.** L'iniezione delle dipendenze
-  ha già risolto la parte grossa — `ModelRegistry` è di sola lettura dopo `_valida()`,
-  i contabili sono per istanza — ma tre punti restano scoperti:
-  - `RunLedger` condiviso: `_usage_sequence += 1` è leggi-modifica-scrivi, non
-    atomico, e due append concorrenti sullo stesso file si interlacciano. Serve un
-    lock se si vuole un ledger **di task** oltre a quelli di agente.
-  - `Workspace` condiviso: due agenti che scrivono la stessa cartella si corrompono.
-    Risolto in M2s.3 dando un workspace per agente; qui va verificato sotto carico.
-  - Docker: N agenti × il limite di memoria per container. Il pool va limitato.
-- **M3.2** ⬜ Aggregazione dei log/costi di più agenti in un riepilogo unico
-  (il contabile "di squadra" sopra i contabili individuali).
-- **M3.3** ⬜ Primo esperimento su **workspace condiviso**: convenzioni di
-  non-collisione (file distinti per agente), verifica che la guardia path e la
-  sandbox reggano la concorrenza.
-- **Test chiave:** N task in parallelo → nessun file corrotto, somma dei costi
-  individuali = costo aggregato, ogni log attribuibile al suo agente.
+- **M3.1b** ✅ **Rendere sicuro ciò che oggi non lo è** (17 ott 2026; analisi e piano prima del codice,
+  scelte di Vincenzo, test scritti prima dell'implementazione).
+  - **(a) `RunLedger` sicuro fra thread.** ✅ Un `threading.Lock` per istanza attorno a numerazione e
+    scrittura (`append_usage`, `append_event`) e attorno alle riletture (`close`, `read_events`): senza,
+    `close` poteva leggere una riga scritta a meta'. Oggi nessun ledger e' scritto da due thread (il
+    guardiano degli stalli chiude solo la connessione): serve da M4, quando un ledger potra' essere
+    condiviso. Protegge i thread di una stessa istanza, non processi diversi. Test:
+    `tests/test_ledger_concurrency.py` (8 thread x 50 scritture; chiusura durante le scritture).
+  - **(b) Link simbolico fra controllo e uso.** ✅ Il piano prevedeva un test di carico su
+    `Workspace.resolve`, ma e' una funzione pura: il rischio vero e' l'istante fra il controllo del
+    percorso e l'apertura del file (un comando nel container puo' mettere al posto del file un link verso
+    l'host). `read_file` apre con `O_NOFOLLOW`; `write_file` scrive in modo atomico (vedi M3.3), e
+    `os.replace` sostituisce un eventuale link invece di seguirlo. **Limite noto:** non copre una
+    cartella intermedia scambiata nello stesso istante (servirebbe `openat`). Test:
+    `tests/test_file_tools_safety.py`.
+  - **(c) Limite ai container Docker.** ✅ **[SCELTA L: soluzione ibrida, fra processi]**
+    `ContainerLimiter` con `slot()`; un'istanza unica di modulo (`shared_limiter()`) usata da ogni
+    `DockerExecutor` che non riceve un `limiter` proprio. I posti sono file bloccati con `fcntl.flock`
+    in `config.DOCKER_SLOTS_DIR` (`~/.cache/orcv2/docker-slots`, fuori da `runs/`): il limite
+    (`config.DOCKER_MAX_CONCURRENT`, 6) vale fra thread e fra processi diversi (piu' campagne
+    lanciate insieme), e un processo che muore libera i suoi posti. Il posto si tiene fino a container
+    fermo (`docker kill` compreso, con tempo massimo 10 s) e si rilascia su eccezione e su timeout.
+    Un'attesa oltre 0,1 s diventa l'evento `sandbox_wait` nel ledger. **Limiti noti:** attesa senza
+    tempo massimo; nessuna coda equa; processi con limiti diversi sulla stessa cartella rispettano il
+    piu' alto; `fcntl` non esiste su Windows; se un processo muore durante un `docker run` il posto si libera
+    ma il container (per esempio un ciclo infinito) resta vivo, perche' il `docker kill` non parte: il limite
+    viene superato. **Non provato con Docker vero** (Docker spento il 17 ott):
+    i test usano un `docker run` finto e tre processi Python veri. Test: `tests/test_docker_limiter.py`.
+  - **(d) Un solo punto di collegamento all'incarico (scelta iii).** ✅ Prima, a ogni incarico, si
+    ricollegavano a mano contabile e gateway (con l'esecutore sarebbero state tre righe da non
+    dimenticare: accoppiamento temporale). Ora `CurrentRun` (`accounting/current_run.py`) e' dato una
+    volta sola, alla costruzione, a contabile, gateway e strumenti, e `BuiltAgent.assign` ricollega solo
+    lui. `tools_builder` riceve ora anche `event_sink` (cambio di interfaccia scelto da Vincenzo). Test:
+    `tests/test_current_run.py`.
+- **M3.2** ✅ **Contabile di squadra** (17 ott 2026). **[SCELTA T: A]** contabile «vivo»; **[C2]** il
+  contratto e' diviso: `SpendReader` (`total_cost`, `call_count`) e `Accountant(SpendReader)` con
+  `register`; `TeamAccountant` (`accounting/team.py`) e' solo `SpendReader`, perche' non ha consumi
+  propri. **[C-b]** si conta dall'ingresso in squadra (il contabile di un agente somma tutta la vita):
+  all'ingresso si annota la spesa gia' fatta e la si sottrae a ogni lettura. Nessun contatore parallelo;
+  `breakdown()` per membro; doppio ingresso dello stesso contabile, nome ripetuto o squadra dentro se
+  stessa sono `TeamMembershipError`. **Limite:** un agente in una squadra alla volta (vedi «C-c» in M4).
+  Test chiave: con 6 agenti concorrenti il totale di squadra coincide con i riepiloghi riletti dai file
+  dei ledger (due fonti indipendenti; il «somma individuali = aggregato» del piano era vero per
+  definizione). Test: `tests/test_team_accountant.py`.
+- **M3.3** ✅ **Workspace condiviso, versione minima** (17 ott 2026). Ridotto per scelta di Vincenzo:
+  `write_file` scrive in un file temporaneo e lo sostituisce con `os.replace`, quindi chi legge vede
+  sempre un file intero e fra due scrittori vince l'ultimo. Un file esistente conserva i permessi, uno
+  nuovo nasce 0644 (il container gira come utente 1000). La scelta fra cartella condivisa e copie
+  separate con merge e' di M4 (sotto).
+- **M3.4** ✅ (17 ott 2026, testo approvato da Vincenzo e inserito in `TESI_master.md` §9.6 e nel glossario) **Aggiornare il limite del budget guard in tesi.** In sequenziale lo sforamento massimo e'
+  il costo di *una* chiamata (`TESI_master.md` §9.6). In parallelo N agenti possono leggere «sotto
+  soglia» prima che uno qualsiasi registri la spesa: **lo sforamento massimo diventa N volte** quel
+  costo. Mitigazione gia' in `run_campaign` (D28): prenotazione per run. Restano da dichiarare i casi
+  senza prenotazione (tetto di squadra, M3.2). Il costo di una chiamata va dato come intervallo
+  (frontier $0,007-0,040, misurato). Il testo e' dell'autore della tesi: bozza neutra da approvare.
+- **Test chiave:** N task in parallelo -> nessun file corrotto, somma dei costi individuali = costo
+  aggregato, ogni log attribuibile al suo agente.
 
-- **M3.4** ⬜ **Aggiornare il limite del budget guard in tesi.** In sequenziale lo
-  sforamento massimo è il costo di *una* chiamata (`TESI_master.md` §9.6). In
-  parallelo N agenti possono leggere «sotto soglia» prima che uno qualsiasi registri
-  la spesa: **lo sforamento massimo diventa N volte** quel costo. Non è un bug da
-  correggere, è un limite che si aggrava e va ri-dichiarato.
+- **Correzioni dopo la revisione indipendente** (18 ott 2026; quattro revisori separati su tutto M3, rilievi
+  verificati prima di correggere, un test per ciascuno):
+  - `write_file` rifiuta una cartella **prima** di creare il temporaneo (con la radice nasceva fuori dal
+    workspace) e lascia protetto un file in sola lettura; `read_file` su una cartella nomina il percorso.
+  - `LedgerAccountant` controlla che ci sia un incarico **prima** di contare (si contava una spesa che poi
+    non finiva in nessun ledger); `BuiltAgent.assign` stacca `CurrentRun` a fine incarico, in ogni esito
+    (un evento in ritardo finiva nel ledger gia' chiuso).
+  - `TeamAccountant`: due squadre che si contengono (anche attraverso altre) sono `TeamMembershipError`
+    invece di un blocco reciproco; la spesa di partenza si legge fuori dal lock.
+  - Limitatore: nessun descrittore aperto su un errore inatteso di `flock`; un `sandbox_wait` che non si
+    riesce a scrivere va nel log e il comando parte lo stesso.
+  - **Prenotazione delle campagne:** si prenota anche la run che parte (`spent + (in_volo+1) x riserva`),
+    quindi lo sforamento resta una chiamata per run, come scritto in `TESI_master.md` §9.6. Prima, con tetto
+    0,05 e 0,02 per run, partivano 3 run. Vale anche in serie: l'ultima run parte solo se il suo tetto ci
+    sta. Un tetto per run piu' alto del totale e' un errore all'avvio.
+  - `last_finish_reason` ignora i tentativi interrotti; un errore insolito durante lo stream (ne' rete ne'
+    API) rilegge il costo e non ritenta; conteggi negativi da `/generation` valgono come costo non
+    leggibile; un errore di `admit`/`on_done` o un Ctrl+C in parallelo registra comunque le run in volo nel
+    manifesto; una sola rilettura del costo (un client HTTP) per fornitore e per fabbrica.
+  - **Interruzione prima del primo chunk** ✅ (prima non veniva riconciliata: `llm_gateway.py`,
+    «nessuna generazione da pagare»). **Prova dal vivo del 18 ott** (4 chiamate, $0,00125 misurati da
+    `/generation`): l'header `X-Generation-Id` c'e' sempre e coincide con l'id del primo chunk; chiudendo
+    appena arrivati gli header, MiniMax m3 ha fatturato $0,0000255 (13 token, `cancelled: false`), Opus 5.5
+    $0 (`cancelled: true`). Quindi una generazione chiusa prima del primo chunk **puo' essere fatturata**,
+    e dipende dal fornitore. In entrambi i modelli il primo chunk e' arrivato entro 4 s (Opus dopo 4
+    commenti SSE): il caso «120 s muti senza chunk» non e' stato riprodotto. Correzione (scelta di
+    Vincenzo): l'id dell'header (`Stream.response` dell'SDK) quando l'assemblatore non ne ha uno; senza
+    chunk ne' header resta il solo evento. Non riprovato dal vivo attraverso l'SDK (solo con httpx).
 
 ### Definition of Done — M3
-- [ ] N agenti in parallelo, workspace integri, costi aggregati corretti.
-- [ ] Deciso e documentato il meccanismo di concorrenza.
-- [ ] Ledger di task protetto da lock; sforamento massimo ri-dichiarato in §9.6.
+- [x] N agenti in parallelo (provato con fornitore e Docker veri, 3 run): workspace separati, manifesto sicuro, tetto con prenotazione.
+- [x] Workspace integri (M3.1b-b, M3.3) e costi aggregati corretti con il contabile di squadra (M3.2).
+- [x] Deciso e documentato il meccanismo di concorrenza (`ThreadPoolExecutor`, partenze governate dal thread principale: D28).
+- [x] Ledger protetto da lock (M3.1b-a).
+- [x] Sforamento massimo ri-dichiarato in §9.6 (M3.4).
+- [x] Revisione indipendente di tutto M3 (quattro sottoagenti separati) e correzioni.
 
 ---
 
@@ -836,6 +989,29 @@ Worker su workspace condiviso, con checkpoint L1.
 > costi di coordinamento misurati in M4.
 > Corollario da tenere presente: «decomponi il più possibile» è sbagliato quanto «non
 > decomporre».
+
+### Da decidere a inizio M4 (emersi in M3, 17 ott 2026)
+- **Cartella condivisa o copie separate con merge.** Orientamento (non ancora decisione): ogni agente
+  lavora su una propria copia (git worktree) e i risultati rientrano con un merge, che rende un conflitto
+  dichiarato invece di una sovrascrittura silenziosa; resta da decidere chi risolve i conflitti e come.
+  Da leggere per intero prima di decidere: CAID (arXiv 2603.21489, worktree + merge con agente capo),
+  AgentRoom (ICML 2026, file condivisi con prenotazioni: il guadagno viene dal coordinamento), lo studio
+  ESEM 2026 su agenti nello stesso repository (circa -20% di costo per task risolto, ma interferenze in
+  forte crescita oltre due agenti: tocca direttamente il claim), STORM (arXiv 2605.20563). Le cifre sono
+  tratte dagli abstract, non verificate sui testi completi.
+- **C-c: consumi etichettati con la squadra.** Se un agente potra' spendere per due squadre nello stesso
+  momento, il conteggio di M3.2 (dall'ingresso in squadra) attribuisce a ciascuna anche la spesa
+  dell'altra: servira' scrivere nel consumo per quale squadra e' stato fatto.
+- **Container orfani.** Se un processo muore durante un `docker run`, il container resta vivo con il posto gia'
+  libero. Rimedio: all'avvio fermare i container `orc-sandbox-*` rimasti senza padrone.
+- **Container vivi con il posto gia' libero.** Oltre al processo che muore: Ctrl+C durante un `docker run`,
+  e tempo scaduto prima che Docker abbia avviato il container (il `kill` non lo trova). Stesso rimedio dei
+  container orfani. Da provare con Docker acceso.
+- **Client del modello per agente.** La rilettura del costo ora e' condivisa per fabbrica; il client
+  `openai.OpenAI` resta uno per agente e non si chiude: in una campagna lunga va condiviso o chiuso.
+- **Tempo massimo di attesa per la sandbox.** Oggi l'attesa di un posto non ha limite; se gli eventi
+  `sandbox_wait` mostrano code lunghe, aggiungere un tempo massimo con un'eccezione del progetto
+  restituita all'agente come osservazione.
 
 ### Task principali
 - **M4.0** ⬜ **Infrastruttura capability-to-tool**: `ModelRegistry.capabilities`
@@ -1117,45 +1293,237 @@ contributo della tesi (D13), non un traguardo facoltativo.
     +12-15 punti di Route-AUC su 100 task SWE-bench (p. 4, p. 9), senza conferma sul
     secondo dataset. Costo: i turni economici si pagano anche quando si scala, e serve
     un dataset di traiettorie (~1.700 per modello economico nel loro caso, p. 8).
-- **M2b.5** ⬜ **Competenze morbide apprese** — capacità a due livelli:
+  - **Seconda alternativa da valutare in D6 (ott 2026): LLM piccolo open source come
+    classificatore, informato dagli esiti del pool.** Una testa su embedding che legge
+    solo la descrizione risulta quasi casuale su SWE-bench Verified (AUROC 0,48-0,57,
+    SWE-Router 2607.00053, Tab. 2) e sotto il caso su task fuori distribuzione
+    (2606.22902). Un LLM interrogato senza esempi non basta: nello stesso lavoro fa
+    meno di una regressione logistica, e migliora del 15% relativo quando riceve le
+    statistiche di esito del pool ("il collo di bottiglia e' l'informazione"). Schema da
+    confrontare: l'LLM classifica categoria e complessita' del sotto-task, una tabella
+    appresa dagli esiti dice quanto ogni modello riesce in quella categoria (M2b.5), e
+    piu' avanti l'LLM si affina sugli esiti. Il classificatore senza addestramento
+    entra in M7 come stadio di confronto. **Da verificare sui testi originali** prima
+    di citare le cifre; costo fisso di un modello ospitato in proprio da dichiarare (D12).
+- **M2b.5** ⬜ **Stimatore di qualita' a basso costo (modello decisionale).** Il vincolo
+  della tesi e' `qualita' >= tau`: per rispettarlo in una cascade serve una stima economica
+  della qualita' di un risultato. Un modello decisionale (non generativo: restituisce la
+  probabilita' di ogni risposta possibile, senza produrre testo) e' un candidato, con due usi:
+  giudice (M2b.1) e **innesco dell'escalation** (probabilita' che il lavoro del worker sia
+  corretto). Non serve a continuare un testo, ne' come worker.
+  - **Candidati:** d1 di Liquid AI (API: $0,02 per milione di input misurato su 30 richieste, il
+    blog dichiara $0,04; pesi aperti `d1-3B` e `d1-omni-600M`, rilasciati il 7 ott 2026); Jev
+    (TypeSafe AI, chiuso, accesso anticipato). **Stimatori a confronto (D10):** nucleo a tre,
+    modello decisionale, giudice frontier (concorrente costoso, non metro: il metro sono i test o i
+    giudizi umani) ed euristica banale (pavimento); un LLM piccolo con probabilita' dai logprob
+    solo se i risultati lo rendono utile.
+  - **Due usi, con etichette diverse.** (1) *Assoluto*: una soluzione, probabilita' che sia
+    corretta; per il codice con test l'etichetta e' gratuita (passa o no), ed e' il primo banco di
+    prova. (2) *A confronto*: due risultati dello stesso compito (worker economico e modello
+    forte) e una domanda `choice` con etichette A / B / pari, da ripetere scambiando l'ordine per
+    misurare il bias di posizione. E' l'uso che serve dove i test non bastano (gusto, interfacce,
+    prompt poco esplicativi, cose complesse): li' l'etichetta e' il giudizio degli annotatori con
+    la griglia di M2b.1, e la domanda e' «dove basta il modello economico?». Limite: confrontare
+    richiede **entrambi** i risultati, quindi non e' un controllo in linea ma uno strumento per
+    etichettare e misurare; in linea servono uno stimatore sul solo risultato economico o il
+    router appreso (M2b.4), addestrato su queste etichette. Rischio: i giudici sono deboli
+    sull'estetica (vedi M2b.1: 26,5% contro 68,9% degli esperti; `d1-3B` fa 36,7 su HelpSteer2):
+    e' l'ipotesi piu' rischiosa del piano.
+  - **Pesi aperti (verificato sul testo della licenza):** LFM Open License v1.0; uso commerciale
+    solo sotto 10.000.000 di dollari di ricavi annui, soglia non applicata a ricerca e non-profit;
+    obblighi: copia della licenza, nota sui file modificati, conservazione delle attribuzioni.
+    Uso per la tesi: consentito. `d1-3B`: 3,12 miliardi di parametri, contesto 32.768 token
+    (dichiarato dalla scheda), GGUF Q8 ~2,9 GB; gira su Apple Silicon (MPS, llama.cpp, MLX).
+    Nessuna fonte dice che il d1 ospitato coincida con `d1-3B`.
+  - **Come nasce la probabilita' (verificato sul codice dei pesi):** il prompt termina con «Reply
+    with yes or no only»; si legge la distribuzione sul primo token della risposta, si prende il
+    massimo fra le forme «yes/Yes/YES» e fra «no/No/NO», e una softmax a due. Per le domande
+    si'/no i criteri sono `criteria = {"true": ..., "false": ...}`.
+  - **Misure nostre sull'API ospitata (14 ott 2026, 10 soluzioni di `is_prime`, scritte da noi, 5
+    giuste e 5 sbagliate):** P(si') giuste 0,96-0,99; sbagliate 0,002-0,13 salvo una (esclude il
+    2) a 0,953. AUROC 1,0 per un soffio, campione minuscolo. Latenza 0,2-0,5 s. Il campo
+    `criteria` con chiavi `true`/`false` e' accettato e sposta le probabilita' di poco (da 0,9627 a
+    0,9241 nel caso piu' ampio) senza correggere il caso sbagliato; con chiavi `yes`/`no` non e'
+    stato rifiutato. La stessa richiesta ripetuta puo' dare numeri leggermente diversi fra una
+    sessione e l'altra (0,1128 e 0,1330 sul caso 6): non e' deterministica a lungo termine.
+  - **Il modello locale NON riproduce l'API ospitata (verificato due volte il 14 ott 2026, stessi 10
+    casi, stesso prompt):** `d1-3B` Q8_0 in locale dà P(si') medie 0,72 sulle soluzioni giuste e 0,50
+    sulle sbagliate; l'API ospitata 0,98 e 0,22. Caso 6 (limite spostato di uno): locale 0,83,
+    ospitata 0,07. Non e' la quantizzazione: BF16 e Q8_0 differiscono al massimo di 0,008 (Q4_K_M
+    0,021). L'ospitata conta 4 token di input in piu' (prompt diverso) e potrebbe avere una
+    calibrazione o un checkpoint diverso: non si sa. Conseguenza: sono **due stimatori diversi**, da
+    riportare separatamente; i risultati del locale non dicono nulla sul `d1` ospitato. Il locale e'
+    bit-identico fra ripetizioni; l'ospitato e' quasi deterministico ma non bit a bit (0,988313 poi
+    0,986777; sul caso 6 0,1128, 0,1330 e 0,0716 in tre sessioni): servono ripetizioni.
+  - **Esecuzione locale:** `llama-server` di Homebrew (0.6.0, build 11429) **non** supporta d1
+    (`unsupported decision model type: lfm2-d1`); il supporto e' nella PR llama.cpp #30110, unita il
+    7 ott dopo il tag 0.6.0. Serve almeno la build b11617 (binario ufficiale prerelease, non
+    installato dal pacchetto). Latenza locale a caldo 0,106 s (mediana), memoria ~4 GB (Q8_0).
+    Il campo `criteria` accetta solo le chiavi `true`/`false`; `yes`/`no` sono ignorate in
+    silenzio, sia in locale sia sull'API ospitata, e l'effetto di `true`/`false` e' piccolo.
+  - **Cosa dice la letteratura sul codice (fonti secondarie, da rileggere):** nessuna valutazione di
+    d1 su «questa soluzione passa i test?». Una scheda di un fine-tune per code review riporta per
+    `d1-3B` senza addestramento accuratezza 0,726, F1 macro 0,220, ECE 0,142, e dopo LoRA
+    accuratezza 0,940 ed ECE 0,017 (etichette prodotte da modelli, frammenti sintetici). Sul
+    sottoinsieme che giudica risposte di modelli (HelpSteer2) `d1-3B` fa 36,7, il punteggio piu'
+    basso fra quelli elencati. Un test di terzi sul tracciamento di stato ottiene 26,7%, non sopra
+    il caso. Atteso: segnale debole senza calibrazione, forse anche senza fine-tune.
+  - **Etichette gratuite, ma squilibrate:** i test nascosti danno l'etichetta. Nella campagna M3
+    i fallimenti sono 3 su 102: troppo pochi per misurare un AUROC. Servono negativi: (a) compiti
+    piu' duri o un worker piu' debole; (b) **mutanti**: si introducono errori tipici (limite
+    spostato di uno, condizione invertita) in soluzioni corrette e si etichetta con gli stessi
+    test; sono errori meno «naturali» di quelli di un modello, e va dichiarato. Le cartelle di
+    lavoro degli agenti (`workspace/`) conservano le soluzioni prodotte.
+  - **Procedura:** (1) dataset (compito, soluzione, esito dei test) da `workspace/` e dai mutanti,
+    con insiemi di addestramento/validazione/prova separati; (2) **due stimatori distinti**: `d1` ospitato (circa $0,02 per milione di input: 300 esempi
+    costano frazioni di centesimo) e `d1-3B` in locale (ripetibile bit a bit, contesto noto), con solo
+    `instructions` e con `instructions` + `criteria`; (3) confronto sugli stessi esempi con un giudice frontier e
+    un'euristica banale (lunghezza, iterazioni), e se serve un LLM piccolo con logprob; (4) metriche: AUROC, Brier,
+    ECE, curva di affidabilita', ripetizione 3 volte; (5) calibrazione (temperatura o isotonica) in
+    validazione incrociata, soglia di escalation scelta sul compromesso costo/richiamo;
+    (6) verifica su 20-50 chiamate all'API per vedere se coincide col modello locale; (7) effetto
+    sulla cascade (costo e qualita' con lo stimatore come innesco) contro S1 e S2 (M2b.2).
+  - **Protocollo dell'esperimento anticipato (fissato il 14 ott 2026, prima dei risultati; D29).**
+    Dati: le 102 soluzioni degli agenti della campagna M3 (3 sbagliate) piu' **mutanti** (errori tipici
+    introdotti nelle soluzioni corrette con operatori sull'albero sintattico; etichetta dai test
+    nascosti eseguiti nella sandbox). Lo stimatore vede **solo istruzioni dell'esercizio e codice**,
+    mai test ne' esito. Stimatori: `d1` ospitato, `d1-3B` locale, giudice frontier (Opus 5.5,
+    probabilita' verbalizzata 0-100, 1 ripetizione, preventivo calcolato circa $2,2 per 300 esempi,
+    tetto $4), euristica banale (debole per costruzione sui mutanti: vale circa 0,5). Metriche: AUROC,
+    Brier, ECE con intervalli al 95% per cluster (esercizio), scritte in Python standard, nessuna
+    libreria nuova. **Regola di decisione:** *promettente* se il limite inferiore dell'intervallo
+    dell'AUROC di `d1` ospitato e' >= 0,70 e il suo AUROC non e' piu' di 0,10 sotto quello del frontier;
+    *negativo* se il limite superiore e' <= 0,65; altrimenti *inconcludente*. ECE e Brier grezzi si
+    riportano soltanto. Poi **stop**: niente calibrazione, cascade, uso a confronto, LoRA, quinto
+    stimatore. Codice nel pacchetto `quality/`; testo di domande e criteri in
+    `quality/protocol.toml` (scritto dall'autore della tesi).
+  - **CONCLUSIONI dell'esperimento anticipato e della cascata (14 ott 2026).** (1) `d1` ospitato,
+    zero-shot, **ordina** bene le soluzioni corrette e sbagliate (AUROC 0,83 [0,76; 0,89]) ma meno del
+    giudice frontier (0,99 [0,97; 1,00]); con la regola scritta prima il verdetto e' *inconcludente*
+    (scarto 0,16 contro il massimo di 0,10). (2) **I suoi numeri non sono probabilita' utilizzabili come
+    soglie:** ECE grezzo 0,11-0,29 e Brier appena migliore di dire sempre 0,5 sul dataset intero; una
+    soglia di qualita' τ richiede prima una calibrazione. (3) `d1-3B` locale **non e' equivalente**
+    all'API ospitata (AUROC 0,62, quasi il caso sui mutanti, anche con BF16): non vale come sostituto.
+    (4) I criteri non migliorano (solo le chiavi `true`/`false` hanno effetto). (5) **Cascata `d1` ->
+    Opus:** chiedere a Opus solo i casi dubbi dimezza costo e latenza (-53%, 46% di richieste) ma porta
+    le soluzioni sbagliate accettate da 1 a 8 su 95: si scambia costo con errori pericolosi lungo una
+    curva (3, 8, 10 a 58%, 46%, 38%), e sugli esempi esclusi l'errore e' peggiore di quello garantito
+    sull'addestramento. (6) **Cosa suggerisce per la tesi:** un giudice «economico prima, costoso sui
+    dubbi» e' un componente plausibile del giudice L2 e della cascata S2, a condizione di calibrarlo, di
+    misurarlo su un dominio reale (non solo mutanti di esercizi con test) e di esprimere il livello τ come
+    tasso massimo di errori pericolosi accettati. **Per la parte completa di M2b.5 (dopo M4):** calibrazione
+    (temperatura o isotonica, validata per esercizi), uso a confronto fra due risultati dello stesso
+    compito (serve uno swarm vero), dominio frontend con annotatori umani e griglia di M2b.1, gestione
+    dell'etichetta rumorosa dei mutanti equivalenti, errori piu' naturali (fallimenti veri su task piu'
+    duri), LoRA solo se `d1` calibrato resta sotto il riferimento. **Lezioni di metodo:** un preventivo
+    su un modello che ragiona va misurato su 15-20 chiamate prima di fidarsi (il primo era 3 volte
+    sotto); i test non devono poter spendere nemmeno se il codice si rompe; protocollo e dataset si
+    fissano con un'impronta (sha256) prima di guardare i risultati.
+  - **Stato dell'esperimento anticipato (14 ott 2026, sera).** Costruito il pacchetto `quality/` con
+    i test (metriche, mutanti, dataset, etichettatura nella sandbox, stimatori, protocollo,
+    esecutore riprendibile con tetto di spesa, rapporto con la regola di decisione). **Dataset v1**
+    (`runs/quality/m3-dataset-v1`, seme 0, 4 mutanti per soluzione corretta): 498 esempi in 34
+    esercizi; soluzioni degli agenti 99 corrette e 3 sbagliate; mutanti 396, di cui 363 sbagliati e 33
+    corretti per i test; operatori: constant 181, boolean 88, return 58, compare 43, arithmetic 26;
+    2 mutanti non terminano e valgono "sbagliato". Positivi 132 su 498 (26,5%). Le misure vere non
+    sono ancora state fatte: il protocollo (`quality/protocol.toml`) e' una bozza da fissare.
+    Preventivo calcolato: frontier circa $3,14 per 498 giudizi (1 ripetizione); `d1` ospitato circa
+    $0,08 (2.988 richieste, 3,8 milioni di token a $0,02 per milione); locale gratuito.
+  - **Fase 1 dell'esperimento (14 ott 2026; protocollo fissato prima, sha256 `7b59b903...`, dataset
+    sha256 `eaa2d160...`; euristica, `d1` locale e `d1` ospitato; il frontier non e' ancora stato eseguito).**
+    498 esempi, 3 ripetizioni per `d1`, nessun giudizio senza risposta. Spesa riportata dal fornitore
+    $0,067 (calcolata $0,076). AUROC con intervallo al 95% (blocchi: esercizi): euristica 0,50 [0,50;
+    0,51]; `d1-3B` locale 0,61 [0,56; 0,67] (senza criteri) e 0,61 [0,57; 0,67] (con criteri); `d1`
+    ospitato 0,84 [0,79; 0,88] in entrambe le varianti. Solo mutanti: 0,52 (locale) e 0,76 / 0,74
+    (ospitato). Brier 0,236 e ECE grezzo 0,286 per l'ospitato (dire sempre 0,5 vale 0,25): l'ordine
+    e' buono, i numeri non sono probabilita' utilizzabili come soglie senza calibrazione. Ripetibilita':
+    locale identico fra ripetizioni; ospitato scarto medio 0,063 fra ripetizione piu' alta e piu' bassa.
+    I criteri non migliorano ne' l'ospitato ne' il locale. Il verdetto della regola e' *non
+    valutabile* finche' manca il riferimento (frontier).
+  - **Controlli esplorativi, non previsti dal protocollo (da riportare come tali).** Fra le sole
+    soluzioni corrette, `d1` ospitato da' punteggi piu' alti agli originali degli agenti (medio
+    0,81) che ai mutanti equivalenti (0,72), AUROC 0,68 invece di 0,5: **una parte del segnale
+    complessivo e' il riconoscimento del codice «strano» dei mutanti**, non della scorrettezza (le
+    corrette sono quasi tutte originali, le sbagliate quasi tutte mutanti). La misura piu' pulita
+    e' quella sui soli mutanti (0,76). Per operatore (mutanti sbagliati contro tutte le corrette,
+    stessa avvertenza): ospitato boolean 0,92, return 0,87, compare 0,84, arithmetic 0,82,
+    constant 0,79; locale 0,50-0,71. La latenza del locale nel rapporto (3,5 s) e' un artefatto
+    di 4 richieste in coda su un solo slot (misurata da sola: circa 0,1 s).
+  - **Giudice frontier: avviato e fermato dopo 17 giudizi (14 ott 2026).** Costo medio riportato
+    $0,0207 per giudizio contro $0,0063 calcolati nel preventivo: il modello ragiona prima di
+    rispondere (output implicito medio circa 640 token, da 81 a 1.488; in una prova isolata 209 di
+    219 erano di ragionamento) e la richiesta scrive in cache ogni esempio a 5 dollari per milione
+    anche se non lo riusa. Stima per 498 giudizi: circa $9-10 (da 17 campioni, incerta), contro
+    $3,14 preventivati e un tetto di $4. Fermato a mano: speso $0,35 piu' $0,005 di una prova di
+    diagnosi. L'esecuzione e' riprendibile dallo stesso file.
+  - **Frontier su campione (D28), interrotto per credito esaurito (14 ott 2026).** Campione
+    bilanciato di 190 esempi (seme 0: 95 corretti e 95 sbagliati, con tutti i 3 sbagliati degli agenti
+    e tutti i 33 mutanti equivalenti), tetto dell'esperimento $5,0. Dopo circa 52 giudizi validi nel
+    campione (60 in tutto) le richieste sono fallite con **HTTP 402** (il credito dell'account
+    OpenRouter non bastava piu'; le chiamate passano da OpenRouter, non direttamente da Anthropic,
+    D21). Spesa registrata dell'esperimento $1,49 ($1,43 frontier, $0,07 d1). Resta da fare il resto
+    del campione, circa 138 giudizi, circa $2,9 a $0,0207. Per il futuro un 402 ferma l'esecuzione
+    invece di contare giudizi falliti.
+  - **ESITO dell'esperimento anticipato (14 ott 2026): verdetto *inconcludente* secondo la regola
+    fissata prima (D21 con soglia negativa 0,65).** Misure sugli stessi 190 esempi (campione
+    bilanciato, seme 0: 95 corretti e 95 sbagliati, 34 esercizi), 190 giudizi validi per stimatore:
 
-  | | domanda | dove vive |
-  |---|---|---|
-  | **dure**, binarie | *può* farlo? vision, image_gen, video_gen | `models.toml`, scritte a mano, verificate al caricamento — **già fatto in M2s.1** |
-  | **morbide**, graduate | *quanto bene* lo fa in quella categoria? | tabella appresa, scritta dal flywheel, letta dal router |
+    | Stimatore | AUROC [IC 95%] | Solo mutanti | Brier | ECE grezzo | Costo ogni 1.000 giudizi | Latenza |
+    |---|---|---|---|---|---|---|
+    | euristica | 0,51 [0,50; 0,53] | 0,50 | 0,247 | 0,006 | $0 | 0 s |
+    | `d1-3B` locale | 0,62 [0,55; 0,70] | 0,53 | 0,258 | 0,142 | $0 | circa 0,1 s da solo |
+    | `d1` ospitato (primario) | **0,83 [0,76; 0,89]** | 0,77 | 0,178 | 0,107 | $0,023 | 0,22 s |
+    | `d1` ospitato con criteri | 0,84 [0,78; 0,90] | 0,77 | 0,175 | 0,114 | $0,024 | 0,22 s |
+    | giudice frontier (Opus 5.5, ragiona) | **0,99 [0,97; 1,00]** | 0,99 | 0,063 | 0,085 | $20,62 | 7,7 s |
 
-  La premessa è che la preferenza soggettiva ha **struttura a livello di popolazione**
-  — non è rumore individuale — che è la stessa assunzione su cui poggia Bradley-Terry
-  (§5.6) e il motivo per cui RLHF funziona.
-  ⚠️ La tabella morbida **non va scritta a mano**, o è un'opinione hardcoded travestita
-  da configurazione. Va misurata, e va tenuta separata dal listino per la stessa
-  ragione per cui listino e politica sono separati: uno è un fatto, l'altra una stima.
-  **Prior (letti ott 2026).** FlyRoute (2605.22057) aggiorna profili *testuali* di
-  agenti di dominio con un flywheel e un giudice LLM, senza misurare alcun costo.
-  Per i compiti di codice verificabili la tabella numerica «qualita' per categoria»
-  e' gia' usata: Agent-as-a-Router (2606.22902) e Which LLM for Which Work?
-  (2608.29560), letti solo nell'abstract. Il delta difendibile e' la tabella
-  **numerica, legata al prezzo, su categorie estetiche soggettive**, con il costo del
-  giudizio che la produce messo nel conto.
-- **M2b.6** ⬜ **Riuso dei piani fra task simili** (agentic plan caching, 2506.14852).
-  Non è una micro-ottimizzazione: nel sistema ottimizzato **l'orchestratore è l'87%
-  della spesa** (calcolo in `docs/`, artefatto «Le leve di costo»), quindi
-  qualunque leva sul planner domina tutte le altre. Limite dichiarato: dipende dalla
-  somiglianza fra i task — che su una campagna con task volutamente omogenei è alta
-  per costruzione.
+    Regola: limite inferiore di `d1` ospitato 0,76 >= 0,70 (soddisfatto), ma l'AUROC e' 0,16 sotto
+    il riferimento (massimo ammesso 0,10): *inconcludente*. Il giudice frontier costa circa 900
+    volte di piu' ed e' quasi perfetto sui mutanti. Brier ed ECE su questo campione (classi
+    bilanciate) non sono confrontabili con quelli sul dataset intero della fase 1. Controllo di
+    origine (esplorativo): `d1` ospitato 0,63, frontier 0,65: anche il frontier da' punteggi piu'
+    bassi ai mutanti equivalenti; **non si puo' distinguere** fra «lo stimatore riconosce il codice
+    strano» e «i mutanti equivalenti sono davvero scorretti su casi che i test non coprono»
+    (etichetta rumorosa: equivalente per i test non vuol dire equivalente). Spesa totale
+    dell'esperimento $4,12 riportati ($4,05 frontier, $0,07 `d1`), piu' circa $0,06 non registrati;
+    la prima stima del costo del frontier ($0,0063 a giudizio) era sbagliata: reale $0,0207-0,0231.
+    Limiti: un solo dominio (esercizi Polyglot Python con test), guasti da manuale, 3 sbagliati fra
+    gli agenti, un campione per il frontier, `d1` e' zero-shot e senza calibrazione. **Esperimento
+    chiuso secondo la regola di arresto; calibrazione, cascade, uso a confronto e LoRA non fatti.**
+  - **Analisi esplorativa della cascata (14 ott 2026, via libera esplicito fuori dalla regola di
+    arresto; solo dati gia' raccolti, nessuna chiamata a pagamento).** `d1` ospitato decide i casi in
+    cui e' sicuro (due soglie sul suo punteggio) e Opus solo i dubbi (decisione a 0,5). Soglie scelte
+    sui blocchi di addestramento (5 blocchi per esercizio, seme 0) e valutate su quelli esclusi;
+    tolleranza fissata prima: errore bilanciato non oltre quello di Opus da solo piu' 0,02. Su 190
+    esempi (95 sbagliati, 95 corretti):
 
-- **M2b.7** ⬜ **Controllo del costo, versione 2 (stime e punteggi)** — la parte che richiede
-  dati (ottobre 2026):
-  - **Stima del costo per sotto-task** dal ledger, con riserva per l'incertezza (B1).
-  - **Routing sotto vincolo**: dato B, scelta di modelli, numero di candidati ed escalation
-    (B2). Dipende dal router (S3) e dalle competenze morbide (M2b.5).
-  - **Livelli di qualita' numerici**: i livelli grossolani di M4.2c diventano punteggi
-    stimati dal giudice; stessa interfaccia verso l'utente, piu' precisa.
-  - **Analisi preventiva del budget** (B6): dato il compito e l'obiettivo (qualita' o
-    prezzo), proposta di budget alternativi con la qualita' attesa di ciascuno; il suo costo
-    conta nel tetto.
-  - Test: la stima si confronta con il costo reale su task tenuti fuori; con tetto stretto il
-    routing sceglie configurazioni piu' economiche e il costo finale resta nel tetto.
+    | Politica | Richieste a Opus | Sbagliate accettate | Corrette scartate | Errore bilanciato | Costo per esempio | Latenza |
+    |---|---|---|---|---|---|---|
+    | Opus da solo | 100% | 1/95 | 13/95 | 0,074 | $0,02062 | 7,7 s |
+    | `d1` da solo | 0% | 35/95 | 14/95 | 0,258 | $0,00007 | 0,22 s |
+    | cascata, tolleranza 0,00 (sensibilita') | 58% | 3/95 | 15/95 | 0,095 | $0,01201 | 4,7 s |
+    | **cascata, tolleranza 0,02 (fissata prima)** | **46%** | **8/95** | 13/95 | 0,111 | **$0,00962** | 3,8 s |
+    | cascata, tolleranza 0,05 (sensibilita') | 38% | 10/95 | 14/95 | 0,126 | $0,00788 | 3,1 s |
+
+    Lettura: con la tolleranza fissata la cascata dimezza il costo e la latenza (-53%) ma le
+    soluzioni sbagliate accettate passano da 1 a 8 su 95; sul blocco escluso l'errore bilanciato
+    (0,111) supera quello di addestramento (tolleranza 0,02): le soglie non si trasferiscono
+    perfettamente con un campione cosi' piccolo. Le 13 «corrette scartate» sono le stesse per Opus
+    e per la cascata: probabilmente i mutanti equivalenti con etichetta rumorosa. Conteggi piccoli,
+    un solo dominio, esplorativo. Nessun costo e' un pasto gratis: si scambia costo con errori
+    pericolosi lungo una curva (3, 8, 10 sbagliate accettate a 58%, 46%, 38% di richieste a Opus).
+  - **Difetto trovato e corretto durante la costruzione del dataset:** un comando che superava il
+    tempo nella sandbox fermava il programma `docker` ma lasciava **vivo il container** (un ciclo
+    infinito restava in esecuzione, e occupava risorse). Ora ogni container ha un nome e, allo
+    scadere del tempo, si ferma con `docker kill` (`executors/docker.py`). Il difetto era presente
+    anche per gli agenti. Verificato dal vivo: nessun container resta attivo dopo il timeout.
+  - **Soglia di ingresso:** lo stimatore entra nella cascade solo se, dopo calibrazione, batte
+    l'euristica banale per AUROC con ECE accettabile (soglia fissata prima di guardare i
+    risultati). Un risultato negativo si riporta in tesi come tale.
+  - **Estensione possibile, non decisa:** LoRA su `d1-3B` con le etichette dei test.
+  - **Rischi:** dipendenza da un'API chiusa in accesso anticipato (per questo il confronto include
+    un'alternativa aperta); stimatore calibrato su codice che non si trasferisce all'estetica
+    (M2b.1 ha un protocollo suo con annotatori umani); mutanti non rappresentativi degli errori
+    reali.
 
 ### Definition of Done — M2b
 - [ ] Escalation osservabile nei log con delta di costo quantificato (S2).

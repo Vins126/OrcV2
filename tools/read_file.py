@@ -11,6 +11,10 @@ Nota di design (tesi):
         economico in latenza per l'operazione più frequente di un coding agent.
 """
 
+import errno
+import os
+import stat
+
 from tools.base import Tool
 from workspace import Workspace
 
@@ -66,7 +70,8 @@ class ReadFileTool(Tool):
 
         Raises:
             ValueError: se il percorso esce dal workspace (sollevata da `resolve`).
-            OSError: se il file non esiste o non è leggibile.
+            OSError: se il file non esiste, non e' leggibile, e' una cartella o e'
+                diventato un link simbolico dopo il controllo del percorso.
 
         Nota:
             Le eccezioni non vengono catturate qui di proposito: l'Agent le
@@ -74,6 +79,16 @@ class ReadFileTool(Tool):
             (es. "file inesistente") e può correggersi da solo.
         """
         path = self.workspace.resolve(args["path"])
-        with open(path, "r") as f:
+        # `O_NOFOLLOW`: se fra il controllo e l'apertura qualcuno ha messo al posto
+        # del file un link simbolico, l'apertura fallisce invece di seguirlo fuori dal
+        # workspace. `resolve` ha gia' risolto i link legittimi, quindi qui un link non
+        # dovrebbe esserci. Limite noto: non copre una cartella intermedia scambiata.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        # Una cartella si apre, ma l'errore successivo nominerebbe il numero del
+        # descrittore invece del percorso: il modello non capirebbe.
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise IsADirectoryError(errno.EISDIR, "e' una cartella, non un file", args["path"])
+        with os.fdopen(fd, "r") as f:
             contenuto = f.read()
         return {"content": contenuto}

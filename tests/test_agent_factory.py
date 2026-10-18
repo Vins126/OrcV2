@@ -15,7 +15,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from accounting import ModelRegistry, RoleNotFound
+import config
+from accounting import InMemoryAccountant, ModelRegistry, RoleNotFound
 from agent_factory import (
     BACKEND_PER_PROVIDER,
     AgentDismissed,
@@ -43,6 +44,15 @@ class ClientOpenAIFinto:
 
     def _crea(self, **kwargs):
         self.richieste.append(kwargs)
+        if kwargs.get("stream"):
+            # Come un fornitore vero: stessa risposta, ma a chunk (due, con usage in coda).
+            id_ = f"chat_{len(self.richieste)}"
+            return iter([
+                {"id": id_, "choices": [{"index": 0, "delta": {"content": self.testo},
+                                         "finish_reason": None}]},
+                {"id": id_, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                 "usage": {"prompt_tokens": self.prompt, "completion_tokens": self.completion}},
+            ])
         return NS(
             id=f"chat_{len(self.richieste)}",
             usage=NS(prompt_tokens=self.prompt, completion_tokens=self.completion,
@@ -67,7 +77,7 @@ def percorsi_workspace():
 @pytest.fixture
 def fabbrica(tmp_path, chiavi, percorsi_workspace):
     """Fabbrica sul registro reale, con strumenti finti e cartelle temporanee."""
-    def strumenti_finti(percorso):
+    def strumenti_finti(percorso, **_):
         percorsi_workspace.append(percorso)
         return []
 
@@ -278,7 +288,7 @@ def test_ogni_agente_riceve_un_guardiano_del_budget_distinto(tmp_path, chiavi):
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        budget_usd=0.05, tools_builder=lambda percorso: [],
+        budget_usd=0.05, tools_builder=lambda percorso, **_: [],
     )
     a = fabbrica.build("planner")
     b = fabbrica.build("worker")
@@ -292,7 +302,7 @@ def test_la_policy_di_budget_e_registrata_in_ogni_ledger_all_avvio(tmp_path, chi
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        budget_usd=0.05, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+        budget_usd=0.05, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )
     worker = fabbrica.build("worker")
     worker.gateway.client = ClientOpenAIFinto(prompt=1, completion=1)
@@ -315,7 +325,7 @@ def test_il_tetto_vale_per_tutta_la_vita_dell_agente_non_per_incarico(tmp_path, 
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        budget_usd=0.001, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+        budget_usd=0.001, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )
     worker = fabbrica.build("worker")
     client = ClientOpenAIFinto(prompt=1000, completion=1000)  # $0.0012 a chiamata
@@ -355,7 +365,7 @@ def test_fornitore_senza_gateway_e_un_errore_parlante_e_non_crea_nulla(
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        backends={}, tools_builder=lambda percorso: costruiti.append(percorso) or [],
+        backends={}, tools_builder=lambda percorso, **_: costruiti.append(percorso) or [],
     )
 
     with pytest.raises(UnsupportedProvider) as errore:
@@ -404,6 +414,20 @@ def test_il_client_usa_l_indirizzo_dichiarato_nel_registro(fabbrica):
     assert str(worker.gateway.client.base_url).startswith("https://openrouter.ai")
 
 
+def test_il_client_ha_un_timeout_esplicito_e_nessun_ritentativo_interno(fabbrica):
+    """Il timeout viene dalla configurazione e i retry li fa solo il gateway.
+
+    L'SDK, se lasciato ai suoi default, ritenta due volte in silenzio: il
+    gateway vedrebbe una sola chiamata dove il fornitore ne ha ricevute tre, e
+    il ledger perderebbe una spesa possibile.
+    """
+    client = fabbrica.build("worker").gateway.client
+
+    assert config.REQUEST_TIMEOUT_S > 0
+    assert client.timeout.connect == config.REQUEST_TIMEOUT_S
+    assert client.max_retries == 0
+
+
 # ── Eventi nel ledger dell'incarico corrente ──────────────────────────────
 
 def _tipi_evento(ledger):
@@ -419,7 +443,7 @@ def test_gli_eventi_del_gateway_vanno_nel_ledger_dell_incarico_in_corso(tmp_path
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        budget_usd=0.001, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+        budget_usd=0.001, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )
     worker = fabbrica.build("worker")
     worker.gateway.client = ClientOpenAIFinto(prompt=1000, completion=1000)
@@ -446,7 +470,7 @@ def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_
         # Un incarico costa $0.0018 (100 token in input e 100 in output sul
         # listino del worker, kimi-k3: $3 e $15 per milione): il tetto lascia almeno due incarichi completati
         # nella zona dell'avviso, fra l'80% e il 100%.
-        budget_usd=0.015, tools_builder=lambda percorso: [], reporter=ReporterMuto(),
+        budget_usd=0.015, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )
     worker = fabbrica.build("worker")
     worker.gateway.client = ClientOpenAIFinto(prompt=100, completion=100)
@@ -466,7 +490,7 @@ def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_
 
 def test_se_gli_strumenti_falliscono_il_workspace_non_resta_orfano(tmp_path, chiavi):
     """Il costruttore degli strumenti crea il workspace e poi puo' fallire (Docker)."""
-    def strumenti_che_falliscono(percorso):
+    def strumenti_che_falliscono(percorso, **_):
         from pathlib import Path
         Path(percorso).mkdir(parents=True)
         raise RuntimeError("Docker non disponibile")
@@ -481,3 +505,53 @@ def test_se_gli_strumenti_falliscono_il_workspace_non_resta_orfano(tmp_path, chi
         fabbrica.build("worker")
 
     assert list((tmp_path / "ws").iterdir()) == []
+
+
+def test_il_client_legge_con_un_timeout_breve_perche_misura_il_silenzio_fra_i_chunk(fabbrica):
+    """Livello 1: connessione larga, lettura breve."""
+    timeout = fabbrica.build("worker").gateway.client.timeout
+
+    assert timeout.read == config.STREAM_READ_TIMEOUT_S
+    assert timeout.connect == config.REQUEST_TIMEOUT_S
+
+
+def test_il_gateway_riceve_la_soglia_di_stallo_di_default(fabbrica):
+    assert fabbrica.build("worker").gateway.stall_timeout_s == config.STALL_TIMEOUT_S
+
+
+def test_un_modello_con_la_sua_soglia_di_stallo_la_porta_al_gateway(fabbrica):
+    """La soglia e' una proprieta' del modello (`stall_timeout_s` in `models.toml`)."""
+    modello = fabbrica.registry.model_for("worker")
+    fabbrica.registry.models[modello]["stall_timeout_s"] = 30.0
+
+    assert fabbrica.build("worker").gateway.stall_timeout_s == 30.0
+
+
+# ── make_gateway: un gateway senza agente ─────────────────────────────────
+
+def test_make_gateway_da_a_chi_deve_solo_interrogare_un_modello_gli_stessi_accorgimenti_della_fabbrica(fabbrica):
+    """Il giudice frontier di M2b.5 non e' un agente, ma chiama lo stesso modello nello stesso modo."""
+    contabile = InMemoryAccountant(fabbrica.registry)
+
+    gateway = fabbrica.make_gateway("opus-5-5", contabile, None)
+
+    assert gateway.model == "opus-5-5" and gateway.api_model == "anthropic/claude-opus-5.5"
+    assert gateway.extra_body == {"provider": {"order": ["anthropic"], "allow_fallbacks": False},
+                                  "cache_control": {"type": "ephemeral"}}
+    assert gateway.stream is True and gateway.generation_lookup is not None
+    assert gateway.accountant is contabile and gateway.budget_guard is None
+
+
+def test_make_gateway_porta_il_tetto_di_budget_che_gli_si_da(fabbrica):
+    from budget_guard import BudgetGuard
+    guardiano = BudgetGuard(1.5)
+
+    assert fabbrica.make_gateway("kimi-k3", InMemoryAccountant(fabbrica.registry), guardiano).budget_guard is guardiano
+
+
+def test_gli_agenti_della_stessa_fabbrica_condividono_la_rilettura_del_costo(fabbrica):
+    """Un client HTTP per agente, mai chiuso, si accumulerebbe in una campagna lunga."""
+    a, b = fabbrica.build("worker"), fabbrica.build("planner")
+
+    assert a.gateway.generation_lookup is not None
+    assert a.gateway.generation_lookup is b.gateway.generation_lookup

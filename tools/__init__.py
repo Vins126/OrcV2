@@ -17,19 +17,22 @@ ricevere workspace distinti.
 """
 
 import config
-from executors.docker import DockerExecutor
+from executors.docker import DockerExecutor, EventSink
 from tools.bash import BashTool
 from tools.read_file import ReadFileTool
 from tools.write_file import WriteFileTool
 from workspace import Workspace
 
-def build_default_tools(workspace_path: str, *, network: str = "none") -> list:
+def build_default_tools(workspace_path: str, *, network: str = "none",
+                        event_sink: EventSink | None = None) -> list:
     """Costruisce i tool standard, tutti confinati nello stesso workspace.
 
     Args:
         workspace_path: cartella di lavoro dell'agente.
         network: rete della sandbox, `none` (predefinita) o `bridge`. Vale per
             tutta la vita degli strumenti, quindi per tutta quella dell'agente.
+        event_sink: dove l'esecutore annota i propri eventi (attese per un posto
+            nella sandbox). Dalla fabbrica arriva il `CurrentRun` dell'agente.
     """
     workspace = Workspace(workspace_path)
     executor = DockerExecutor(
@@ -39,5 +42,6 @@ def build_default_tools(workspace_path: str, *, network: str = "none") -> list:
         memory=config.DOCKER_MEMORY,
         pids_limit=config.DOCKER_PIDS_LIMIT,
         network=network,
+        event_sink=event_sink,
     )
     return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace)]

@@ -284,8 +284,8 @@ def test_l1_il_ledger_e_alla_versione_3_e_scrive_i_campi_nuovi(tmp_path):
 
     riga = json.loads((ledger.run_dir / "usage.jsonl").read_text().splitlines()[0])
 
-    assert RunLedger.SCHEMA_VERSION == 3
-    assert riga["schema_version"] == 3
+    assert RunLedger.SCHEMA_VERSION == 4
+    assert riga["schema_version"] == 4
     assert riga["record"]["reported_cost"] == 0.25
     assert riga["record"]["served_by"] == "Moonshot AI"
 
@@ -302,7 +302,7 @@ def fabbrica(tmp_path, monkeypatch):
     monkeypatch.setenv("CHIAVE_OR", "chiave-finta")
     return AgentFactory(
         ModelRegistry(CONFIG), runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        tools_builder=lambda percorso: [], reporter=ReporterMuto())
+        tools_builder=lambda percorso, **_: [], reporter=ReporterMuto())
 
 
 def test_f1_il_ruolo_va_su_openrouter_col_nome_del_modello_e_il_fornitore_fissato(fabbrica):
@@ -341,7 +341,7 @@ def test_f5_un_fornitore_senza_backend_e_un_errore_parlante(tmp_path, monkeypatc
     dati["models"]["piccolo"]["provider"] = "altro"
     monkeypatch.setenv("CHIAVE_ALTRO", "x")
     fabbrica = AgentFactory(ModelRegistry(dati), runs_root=tmp_path / "runs",
-                            workspaces_root=tmp_path / "ws", tools_builder=lambda p: [])
+                            workspaces_root=tmp_path / "ws", tools_builder=lambda p, **_: [])
 
     with pytest.raises(UnsupportedProvider, match="altro"):
         fabbrica.build("leggero")
@@ -546,7 +546,7 @@ def test_p7_la_richiesta_di_opus_porta_fornitore_fissato_e_cache(tmp_path, monke
     monkeypatch.setenv("ORC2_OPENROUTER_KEY", "chiave-finta")
     fabbrica_reale = AgentFactory(
         ModelRegistry.from_file("models.toml"), runs_root=tmp_path / "runs",
-        workspaces_root=tmp_path / "ws", tools_builder=lambda percorso: [], reporter=ReporterMuto())
+        workspaces_root=tmp_path / "ws", tools_builder=lambda percorso, **_: [], reporter=ReporterMuto())
 
     planner = fabbrica_reale.build("planner").gateway
     worker = fabbrica_reale.build("worker").gateway

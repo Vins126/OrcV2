@@ -5,6 +5,7 @@ from typing import Any
 from accounting.ledger import RunLedger
 from agent import AgentFailure
 from run_reporter import RunReporter
+from run_status import RunStatus
 
 
 class RunSession:
@@ -39,7 +40,7 @@ class RunSession:
                 {"error_type": error.cause_type, "iterations": error.iterations},
             )
             summary = self.ledger.close(
-                status="unexpected_error", iterations=error.iterations,
+                status=RunStatus.UNEXPECTED_ERROR, iterations=error.iterations,
             )
             self._report(summary)
             raise
@@ -50,16 +51,19 @@ class RunSession:
                 "unexpected_error",
                 {"error_type": type(error).__name__},
             )
-            summary = self.ledger.close(status="unexpected_error", iterations=0)
+            summary = self.ledger.close(status=RunStatus.UNEXPECTED_ERROR, iterations=0)
             self._report(summary)
             raise
 
-        if result.status != "completed":
+        if result.status != RunStatus.COMPLETED:
             self.ledger.append_event(
                 "run_terminated",
                 {"status": result.status, "iterations": result.iterations},
             )
-        summary = self.ledger.close(status=result.status, iterations=result.iterations)
+        summary = self.ledger.close(
+            status=result.status, iterations=result.iterations,
+            final_message=result.final_message,
+        )
         self._report(summary, result.final_message)
         return result
 

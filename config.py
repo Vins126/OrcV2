@@ -124,6 +124,22 @@ def credenziali_fornitore(provider: str, dati_provider: dict) -> ProviderCredent
 MAX_ITERAZIONI = 30
 RETRY_MAX = 3
 RETRY_DELAY = 2
+# Attesa massima di una singola richiesta al fornitore, in secondi. Con la
+# risposta non in streaming, un modello che ragiona a lungo e una connessione
+# appesa sono indistinguibili: il valore e' quindi largo (le chiamate piu'
+# lunghe misurate durano 640-740 s) e si accorcia solo con lo streaming.
+REQUEST_TIMEOUT_S = 600
+# Con lo streaming il tempo si misura fra un pezzo e il successivo, non sull'intera
+# richiesta. Livello 1 (rete): secondi massimi senza ricevere **alcun byte**. I
+# commenti keep-alive del fornitore contano come byte: questo livello scopre una
+# connessione morta, non un modello che tace.
+STREAM_READ_TIMEOUT_S = 60
+# Livello 3 (contenuto): secondi massimi senza un chunk **interpretato**; i commenti
+# non contano. Largo di proposito: minimax-m3 ha mostrato al massimo 0,95 s fra due
+# chunk in 88 s di ragionamento (un campione), ma un modello che non mostra il
+# ragionamento puo' tacere a lungo. Si stringe per modello con `stall_timeout_s`
+# in `models.toml`, sui dati di `max_chunk_gap_s` del ledger.
+STALL_TIMEOUT_S = 120
 
 # -- LOOP DETECTION --
 # Due soglie per una escalation graduale "prima avvisa, poi ferma": alla 4ª
@@ -150,6 +166,11 @@ DOCKER_ATTESA_AVVIO_S = 5.0
 DOCKER_ATTESA_AVVIO_MAX_S = 60.0
 DOCKER_MEMORY = "512m"
 DOCKER_PIDS_LIMIT = "256"
+# Container Docker contemporanei (limitatore unico, executors/docker.py). Il limite vale
+# fra tutti i processi che usano la stessa cartella dei posti: due campagne lanciate da due
+# terminali lo rispettano insieme. Fuori dal progetto e da `runs/` (che e' il dataset).
+DOCKER_MAX_CONCURRENT = 6
+DOCKER_SLOTS_DIR = "~/.cache/orcv2/docker-slots"
 EXEC_TIMEOUT = 60
 
 # -- LOGGING --

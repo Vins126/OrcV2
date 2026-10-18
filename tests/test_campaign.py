@@ -214,6 +214,7 @@ def test_ripetizioni_non_valide_non_creano_ne_agenti_ne_cartelle(tmp_path, ripet
                      campaign_id="c1", campaigns_dir=tmp_path / "campagne",
                      shell=shell_che_registra(fabbrica.eventi))
     assert fabbrica.costruiti == []
+    assert not (tmp_path / "campagne" / "c.jsonl").exists()
     assert not (tmp_path / "campagne").exists()
 
 
@@ -844,3 +845,238 @@ def test_z4_la_riga_di_comando_stampa_le_chiamate_non_prezzabili(tmp_path, monke
     campaign.main(["report", "x"])
 
     assert "chiamate non prezzabili: 1" in capsys.readouterr().out
+
+
+# ── M3.1: piu' run insieme ────────────────────────────────────────────────
+
+import threading  # noqa: E402
+import time  # noqa: E402
+
+from run_status import RunStatus  # noqa: E402
+
+# Il fixture della suite sostituisce `time.sleep`: le pause che fanno parte della prova usano questa.
+dormi = time.sleep
+
+
+class AgenteConcorrente:
+    """Un agente che, durante l'incarico, scrive nel proprio workspace e misura la concorrenza."""
+
+    def __init__(self, indice, workspace, costo, fabbrica):
+        self.agent_id = f"conc-{indice}"
+        self.model = "minimax-m3"
+        self.workspace = workspace
+        self.accountant = NS(total_cost=costo)
+        self.ledgers = []
+        self._fabbrica = fabbrica
+
+    def assign(self, task, max_iterations=None):
+        f = self._fabbrica
+        self.ledgers.append(NS(run_id=f"run-{self.agent_id}", run_dir=Path("x")))
+        with f.lock:
+            f.attivi += 1
+            f.massimo = max(f.massimo, f.attivi)
+        try:
+            if f.barriera is not None:
+                f.barriera.wait(timeout=5)
+            dormi(f.ritardi.get(task, 0.0))
+            if task in f.solleva_per:
+                raise f.solleva_per[task]
+            (self.workspace / "marcatore.txt").write_text(self.agent_id)
+        finally:
+            with f.lock:
+                f.attivi -= 1
+        return RunResult(status=RunStatus.COMPLETED, iterations=1)
+
+
+class FabbricaConcorrente:
+    """Come `FabbricaFinta`, ma sicura fra thread: due `build` insieme non si pestano."""
+
+    def __init__(self, tmp_path, costo=0.0, costi=None, barriera=None, ritardi=None, solleva_per=None):
+        self.tmp_path, self.costo, self.costi = tmp_path, costo, costi
+        self.barriera, self.ritardi, self.solleva_per = barriera, ritardi or {}, solleva_per or {}
+        self.lock = threading.Lock()
+        self.costruiti, self.attivi, self.massimo = [], 0, 0
+
+    def build(self, role):
+        with self.lock:
+            indice = len(self.costruiti)
+            workspace = self.tmp_path / "ws" / f"conc-{indice}"
+            workspace.mkdir(parents=True)
+            costo = self.costi[indice] if self.costi else self.costo
+            agente = AgenteConcorrente(indice, workspace, costo, self)
+            self.costruiti.append(agente)
+        return agente
+
+
+def _task(n):
+    return [Task(id=f"t{i}", prompt=f"p{i}", setup=None, verify=f"VERIFY {i}") for i in range(n)]
+
+
+def _lancia(fabbrica, tasks, tmp_path, **kwargs):
+    kwargs.setdefault("repetitions", 1)
+    return run_campaign(fabbrica, tasks, role="worker", campaign_id="c", campaigns_dir=tmp_path / "campagne",
+                        shell=shell_che_registra([]), **kwargs)
+
+
+def test_con_piu_operai_le_run_partono_insieme_e_ognuna_ha_il_suo_workspace(tmp_path):
+    """La barriera si supera solo se le tre run sono in corso nello stesso momento."""
+    fabbrica = FabbricaConcorrente(tmp_path, barriera=threading.Barrier(3))
+
+    manifesto = _lancia(fabbrica, _task(3), tmp_path, workers=3)
+
+    assert [r["success"] for r in manifesto] == [True, True, True]
+    assert len({a.workspace for a in fabbrica.costruiti}) == 3
+    for agente in fabbrica.costruiti:
+        # Isolamento: nel workspace di ognuno c'e' solo il file scritto da lui.
+        assert [p.name for p in agente.workspace.iterdir()] == ["marcatore.txt"]
+        assert (agente.workspace / "marcatore.txt").read_text() == agente.agent_id
+
+
+def test_il_manifesto_resta_jsonl_valido_con_molte_run_concorrenti(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path)
+
+    _lancia(fabbrica, _task(12), tmp_path, workers=6)
+
+    scritte = righe(tmp_path / "campagne" / "c.jsonl")      # ogni riga si legge come JSON
+    assert len(scritte) == 12
+    assert len({r["agent_id"] for r in scritte}) == 12
+
+
+def test_la_somma_dei_costi_delle_righe_e_la_somma_dei_contabili(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path, costi=[0.01 * (i + 1) for i in range(8)])
+
+    manifesto = _lancia(fabbrica, _task(8), tmp_path, workers=4)
+
+    assert sum(r["total_cost"] for r in manifesto) == pytest.approx(
+        sum(a.accountant.total_cost for a in fabbrica.costruiti))
+    # Attribuzione: ogni riga porta il costo del *suo* agente.
+    per_agente = {a.agent_id: a.accountant.total_cost for a in fabbrica.costruiti}
+    assert all(r["total_cost"] == per_agente[r["agent_id"]] for r in manifesto)
+
+
+def test_le_righe_tornano_nell_ordine_dei_task_anche_se_le_run_finiscono_al_contrario(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path, ritardi={"p0": 0.2, "p1": 0.0})
+
+    manifesto = _lancia(fabbrica, _task(2), tmp_path, repetitions=2, workers=4)
+
+    assert [(r["task_id"], r["rep"]) for r in manifesto] == [("t0", 1), ("t0", 2), ("t1", 1), ("t1", 2)]
+
+
+def test_un_errore_in_una_run_concorrente_non_ferma_le_altre(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path, solleva_per={"p1": RuntimeError("guasto")})
+
+    manifesto = _lancia(fabbrica, _task(4), tmp_path, workers=3)
+
+    assert [r["status"] for r in manifesto] == [
+        RunStatus.COMPLETED, RunStatus.UNEXPECTED_ERROR, RunStatus.COMPLETED, RunStatus.COMPLETED]
+    assert manifesto[1]["error_type"] == "RuntimeError"
+
+
+# -- Il tetto di spesa con piu' run in volo -------------------------------------
+
+def test_il_tetto_conta_anche_le_run_in_volo_con_la_prenotazione_del_tetto_per_run(tmp_path):
+    """Tetto 0,05 e 0,02 prenotati per run: si conta anche la run che parte, quindi ne partono 2
+    (0,02 e 0,04 <= 0,05); una terza porterebbe la prenotazione a 0,06. Prima ne partivano 3
+    (si contavano solo quelle gia' in volo) e lo sforamento poteva arrivare a un tetto per run."""
+    fabbrica = FabbricaConcorrente(tmp_path, ritardi={f"p{i}": 0.05 for i in range(6)})
+
+    manifesto = _lancia(fabbrica, _task(6), tmp_path, workers=5,
+                        max_total_usd=0.05, reserve_per_run_usd=0.02)
+
+    assert fabbrica.massimo == 2                 # mai piu' di due insieme, anche con cinque operai
+    assert len(manifesto) == 6                   # ma alla fine le run costano 0 e partono tutte
+
+
+def test_il_tetto_ferma_le_nuove_partenze_e_aspetta_le_run_in_corso(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path, costo=0.03, ritardi={"p0": 0.05})
+
+    manifesto = _lancia(fabbrica, _task(1), tmp_path, repetitions=6, workers=2,
+                        max_total_usd=0.05, reserve_per_run_usd=0.01)
+
+    assert 2 <= len(fabbrica.costruiti) <= 3     # il tetto ferma le partenze quando la spesa lo supera
+    assert manifesto[-1]["stopped"] == "max_total_usd"
+    assert all("task_id" in r for r in manifesto[:-1])     # ogni run partita ha la sua riga
+
+
+def test_la_spesa_prenotata_non_supera_mai_il_tetto_totale(tmp_path):
+    """Con il tetto pari a una sola prenotazione parte una run alla volta."""
+    fabbrica = FabbricaConcorrente(tmp_path, ritardi={f"p{i}": 0.03 for i in range(4)})
+
+    _lancia(fabbrica, _task(4), tmp_path, workers=4, max_total_usd=0.02, reserve_per_run_usd=0.02)
+
+    assert fabbrica.massimo == 1
+
+
+def test_con_piu_operai_e_un_tetto_totale_serve_il_tetto_per_run(tmp_path):
+    fabbrica = FabbricaConcorrente(tmp_path)
+
+    with pytest.raises(CampaignError, match="reserve_per_run_usd"):
+        _lancia(fabbrica, _task(2), tmp_path, workers=2, max_total_usd=1.0)
+
+    assert fabbrica.costruiti == []
+    assert not (tmp_path / "campagne" / "c.jsonl").exists()
+    assert not (tmp_path / "campagne").exists()
+
+
+@pytest.mark.parametrize("n", [0, -2])
+def test_un_numero_di_operai_non_valido_e_un_errore_prima_di_ogni_effetto(tmp_path, n):
+    fabbrica = FabbricaConcorrente(tmp_path)
+
+    with pytest.raises(CampaignError, match="workers"):
+        _lancia(fabbrica, _task(2), tmp_path, workers=n)
+
+    assert fabbrica.costruiti == [] and not (tmp_path / "campagne").exists()
+
+
+# -- Riga di comando ---------------------------------------------------------
+
+def test_la_riga_di_comando_ha_workers_con_default_uno():
+    parser = campaign.build_parser()
+    base = ["run", "--budget-usd", "1", "--max-total-usd", "2"]
+
+    assert parser.parse_args(base).workers == 1
+    assert parser.parse_args(base + ["--workers", "4"]).workers == 4
+
+
+def test_da_main_workers_e_il_tetto_per_run_arrivano_alla_campagna(tmp_path, monkeypatch):
+    import campaign as modulo
+    from tests.test_polyglot import _scrivi_esercizio
+
+    radice = tmp_path / "practice"
+    _scrivi_esercizio(radice, "uno")
+    viste = {}
+    monkeypatch.setattr(modulo, "run_campaign", lambda factory, tasks, **kw: viste.update(**kw) or [])
+    monkeypatch.setattr(modulo, "AgentFactory", lambda *a, **kw: NS())
+
+    codice = modulo.main(
+        ["run", "--tasks", str(radice), "--budget-usd", "0.01", "--max-total-usd", "1.0",
+         "--workers", "3", "--campaign-id", "x"], dotenv_path=tmp_path / ".env")
+
+    assert codice == 0
+    assert viste["workers"] == 3 and viste["reserve_per_run_usd"] == 0.01
+
+
+def test_da_main_un_numero_di_operai_non_valido_da_errore_e_codice_2(tmp_path, monkeypatch, capsys):
+    import campaign as modulo
+    from tests.test_polyglot import _scrivi_esercizio
+
+    radice = tmp_path / "practice"
+    _scrivi_esercizio(radice, "uno")
+    monkeypatch.setattr(modulo, "AgentFactory", lambda *a, **kw: NS())
+
+    codice = modulo.main(
+        ["run", "--tasks", str(radice), "--budget-usd", "0.01", "--max-total-usd", "1.0",
+         "--workers", "0"], dotenv_path=tmp_path / ".env")
+
+    assert codice == 2 and "workers" in capsys.readouterr().err
+
+
+def test_un_tetto_per_run_piu_alto_del_totale_e_un_errore_prima_di_creare_il_manifesto(tmp_path):
+    """Ogni run prenota il proprio tetto: non ne partirebbe nessuna, e senza errore non si capirebbe."""
+    fabbrica = FabbricaConcorrente(tmp_path)
+
+    with pytest.raises(CampaignError):
+        _lancia(fabbrica, _task(2), tmp_path, workers=1, max_total_usd=0.01, reserve_per_run_usd=0.02)
+
+    assert fabbrica.costruiti == []
+    assert not (tmp_path / "campagne" / "c.jsonl").exists()

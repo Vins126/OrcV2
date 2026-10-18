@@ -15,21 +15,64 @@ Nota di design (tesi):
 
 import json
 import logging
+import socket
 import time
+from collections.abc import Mapping
 from typing import Any, Protocol
 
 import anthropic
+import httpx
 import openai
 
 import config
 from accounting.base import Accountant
-from accounting.errors import RegistryError
+from accounting.errors import InvalidUsage, RegistryError
 from accounting.mappers.anthropic import AnthropicMessagesUsageMapper
+from accounting.mappers.base import non_zero
 from accounting.mappers.openai import OpenAIChatCompletionsUsageMapper
+from accounting.record import UsageRecord
 from budget_guard import BudgetExceeded, BudgetGuard, BudgetVerdict
-from llm_contracts import AssistantTurn, ChatGateway, ToolCall
+from llm_contracts import AssistantTurn, ChatGateway, GenerationLookup, ToolCall, TurnOutcome
+from stall_watchdog import StallWatchdog
+from stream_assembler import StreamAssembler, StreamInterrupted
 
 log = logging.getLogger(__name__)
+
+
+def _outcome_openai(finish_reason: Any, has_tool_calls: bool) -> TurnOutcome:
+    """Traduce il `finish_reason` di `chat.completions` nell'esito del progetto.
+
+    Un motivo assente o sconosciuto e' `ERROR`: non si presume che il modello
+    abbia finito. `stop` con tool call vale come richiesta di strumenti, perche'
+    alcuni fornitori usano `stop` anche in quel caso; `tool_calls` senza tool
+    call e' incoerente.
+    """
+    if finish_reason == "length":
+        return TurnOutcome.TRUNCATED
+    if finish_reason == "content_filter":
+        return TurnOutcome.REFUSED
+    if finish_reason == "stop":
+        return TurnOutcome.TOOL_REQUEST if has_tool_calls else TurnOutcome.COMPLETE
+    if finish_reason == "tool_calls":
+        return TurnOutcome.TOOL_REQUEST if has_tool_calls else TurnOutcome.ERROR
+    return TurnOutcome.ERROR
+
+
+def _outcome_anthropic(stop_reason: Any, has_tool_calls: bool) -> TurnOutcome:
+    """Traduce lo `stop_reason` dell'API Messages nell'esito del progetto.
+
+    `pause_turn` e' `ERROR`: serve a riprendere un turno con strumenti lato
+    server, che non usiamo.
+    """
+    if stop_reason in ("max_tokens", "model_context_window_exceeded"):
+        return TurnOutcome.TRUNCATED
+    if stop_reason == "refusal":
+        return TurnOutcome.REFUSED
+    if stop_reason == "tool_use":
+        return TurnOutcome.TOOL_REQUEST if has_tool_calls else TurnOutcome.ERROR
+    if stop_reason in ("end_turn", "stop_sequence"):
+        return TurnOutcome.TOOL_REQUEST if has_tool_calls else TurnOutcome.COMPLETE
+    return TurnOutcome.ERROR
 
 
 class RunEventSink(Protocol):
@@ -70,7 +113,8 @@ class ChatGatewayBase:
                  billing_provider: str | None = None,
                  event_sink: RunEventSink | None = None,
                  budget_guard: BudgetGuard | None = None,
-                 api_model: str | None = None):
+                 api_model: str | None = None,
+                 generation_lookup: GenerationLookup | None = None):
         """Registra le dipendenze del gateway.
 
         Args:
@@ -91,6 +135,9 @@ class ChatGatewayBase:
                 `ModelRegistry.api_model_for`; `None` usa `model`. Va nella
                 richiesta, mentre record e ledger continuano a usare `model`:
                 la contabilita' non deve cambiare se il fornitore rinomina.
+            generation_lookup: come rileggere il costo di una generazione dato il
+                suo id; serve a dare un costo a un tentativo interrotto. `None`
+                lascia l'interruzione senza costo (solo un evento).
         """
         if retry_max < 1:
             raise ValueError(
@@ -111,20 +158,24 @@ class ChatGatewayBase:
         )
         self.event_sink = event_sink
         self.budget_guard = budget_guard
+        self.generation_lookup = generation_lookup
 
     # -- Il contratto ------------------------------------------------------
 
     def complete(self, messages: list[Any], tools: list[dict[str, Any]]) -> AssistantTurn:
         """Restituisce il turno prodotto dal modello, gia' contabilizzato."""
-        self._check_budget_before_request()
-
         for attempt in range(1, self.retry_max + 1):
+            # Il budget si controlla a ogni tentativo, non una volta sola: un
+            # tentativo interrotto puo' aver gia' speso (vedi `_registra_interruzione`).
+            self._check_budget_before_request()
             try:
                 started = time.perf_counter()
                 response = self._invoke(messages, tools)
                 latency_s = time.perf_counter() - started
                 break
             except Exception as error:
+                if isinstance(error, StreamInterrupted):
+                    self._registra_interruzione(error, attempt)
                 if attempt == self.retry_max or not self._is_retryable(error):
                     self._record_provider_error(error, attempt)
                     log.error("LLM non disponibile dopo %d tentativi", attempt)
@@ -146,6 +197,7 @@ class ChatGatewayBase:
             response, model=self.model, latency_s=latency_s, attempt=attempt,
             api_provider=self.api_provider, billing_provider=self.billing_provider,
         )
+        self._annota_record(record, response)
         try:
             self.accountant.register(record)
         except RegistryError as error:
@@ -158,6 +210,9 @@ class ChatGatewayBase:
         return turn
 
     # -- Da implementare nelle sottoclassi ---------------------------------
+
+    def _annota_record(self, record: UsageRecord, response: Any) -> None:
+        """Gancio per aggiungere al record misure proprie del fornitore; di default nessuna."""
 
     def _invoke(self, messages: list[Any], tools: list[dict[str, Any]]) -> Any:
         """Esegue la chiamata remota e restituisce la risposta grezza."""
@@ -182,12 +237,79 @@ class ChatGatewayBase:
         ritarderebbe inutilmente la diagnosi. Connessione, timeout, rate limit e
         5xx sono invece tipicamente temporanei.
         """
+        if isinstance(error, StreamInterrupted) and not error.retryable:
+            return False
         if self.RETRYABLE and isinstance(error, self.RETRYABLE):
             return True
         status_code = getattr(error, "status_code", None)
         return isinstance(status_code, int) and (
             status_code in {408, 409, 429} or status_code >= 500
         )
+
+    def _registra_interruzione(self, errore: StreamInterrupted, tentativo: int) -> None:
+        """Lascia traccia di un flusso interrotto e, se possibile, ne registra il costo.
+
+        Il fornitore fattura quanto ha generato fino all'interruzione, ma il
+        ledger registra solo le risposte arrivate: senza questo la spesa
+        resterebbe invisibile e il budget non la vedrebbe. L'evento porta
+        l'id della generazione (per riconciliare a mano con il pannello) e cio'
+        che era arrivato; mai il testo dell'errore remoto.
+        """
+        if self.event_sink is not None:
+            s = errore.stats
+            dettagli: dict[str, Any] = {
+                "model": self.model,
+                "api_provider": self.api_provider,
+                "billing_provider": self.billing_provider,
+                "attempt": tentativo,
+                "reason": errore.reason,
+                "generation_id": errore.generation_id,
+                "chunks": s.chunk_count,
+                "reasoning_chars": s.reasoning_chars,
+                "content_chars": s.content_chars,
+                "tool_fragments": s.tool_fragments,
+                "max_gap_s": round(s.max_gap_s, 3),
+            }
+            codice = (errore.provider_error or {}).get("code")
+            if isinstance(codice, int):
+                dettagli["provider_error_code"] = codice
+            self.event_sink.append_event("stream_interrupted", dettagli)
+        if errore.generation_id is None:
+            # Ne' un chunk ne' l'header: non c'e' modo di chiedere il costo. Resta
+            # l'evento sopra, con quanto era arrivato.
+            return
+        self._riconcilia(errore.generation_id, tentativo)
+
+    def _riconcilia(self, generation_id: str, tentativo: int) -> None:
+        """Rilegge il costo di un tentativo interrotto e lo porta nei conti."""
+        costo = None
+        if self.generation_lookup is not None:
+            try:
+                costo = self.generation_lookup(generation_id)
+            except Exception as errore:  # il costo e' un miglioramento dei conti, non una condizione
+                log.warning("Rilettura del costo fallita per %s: %s", generation_id, errore)
+        if costo is None:
+            if self.event_sink is not None:
+                self.event_sink.append_event("interrupted_cost_unknown", {
+                    "model": self.model, "attempt": tentativo, "generation_id": generation_id})
+            return
+        try:
+            # Dentro il `try`: un record non valido (per esempio `InvalidUsage`) non deve
+            # uscire da qui, che gira gia' dentro la gestione di un errore di `complete`.
+            record = UsageRecord(
+                model=self.model,
+                quantities=non_zero(input_tokens=costo.prompt_tokens,
+                                    output_tokens=costo.completion_tokens),
+                api_provider=self.api_provider, billing_provider=self.billing_provider,
+                operation="chat_completion", request_id=generation_id, status="interrupted",
+                measurement_source="reported", finish_reason=costo.finish_reason,
+                attempt=tentativo, reasoning_tokens=costo.reasoning_tokens,
+                reported_cost=costo.total_cost,
+                notes="costo riletto da GET /generation dopo un'interruzione",
+            )
+            self.accountant.register(record)
+        except (RegistryError, InvalidUsage) as errore:
+            log.warning("Tentativo interrotto non prezzabile (%s): %s", type(errore).__name__, errore)
 
     def _check_budget_before_request(self) -> None:
         """Ferma prima della rete quando il costo gia' osservato e' al tetto."""
@@ -243,9 +365,16 @@ class OpenAIChatGateway(ChatGatewayBase):
     MAPPER = OpenAIChatCompletionsUsageMapper
     DEFAULT_API_PROVIDER = "openai"
     DEFAULT_BILLING_PROVIDER = "openai"
-    RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError)
+    # Con lo streaming un guasto puo' arrivare a meta' della risposta: un flusso
+    # troncato o con un evento di errore (`StreamInterrupted`), o una connessione
+    # che cade durante la lettura (`httpx.TransportError`). Sono transitori: il
+    # turno non e' stato consegnato, quindi ripeterlo non ha effetti collaterali.
+    RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError,
+                 StreamInterrupted, httpx.TransportError)
 
-    def __init__(self, *args: Any, extra_body: dict[str, Any] | None = None, **kwargs: Any):
+    def __init__(self, *args: Any, extra_body: dict[str, Any] | None = None,
+                 stream: bool = False, stall_timeout_s: float | None = None,
+                 **kwargs: Any):
         """Args aggiuntivi rispetto alla base.
 
         Args:
@@ -254,30 +383,172 @@ class OpenAIChatGateway(ChatGatewayBase):
                 servire il modello (`{"provider": {"order": [...],
                 "allow_fallbacks": False}}`). `None` lascia la richiesta
                 com'e'.
+            stream: se vero la risposta si legge a pezzi (`stream=True`) e si
+                ricompone prima di restituirla. Il resto del progetto non lo
+                vede; cambia il modo in cui un guasto a meta' si manifesta.
+            stall_timeout_s: con lo streaming, secondi senza un chunk interpretato
+                dopo i quali il flusso si considera bloccato e si interrompe;
+                `None` non controlla. I commenti keep-alive non contano.
         """
         super().__init__(*args, **kwargs)
         self.extra_body = extra_body
+        self.stream = stream
+        self.stall_timeout_s = stall_timeout_s
 
     def _invoke(self, messages: list[Any], tools: list[dict[str, Any]]) -> Any:
         """Esegue la chiamata remota e restituisce la risposta grezza."""
         extra = {} if self.extra_body is None else {"extra_body": self.extra_body}
-        return self.client.chat.completions.create(
+        richiesta: dict[str, Any] = dict(
             model=self.api_model,
             messages=self._to_wire(messages),
             tools=tools,
             **extra,
         )
+        if not self.stream:
+            return self.client.chat.completions.create(**richiesta)
+        return self._consuma(self.client.chat.completions.create(stream=True, **richiesta))
+
+    def _consuma(self, flusso: Any) -> Any:
+        """Legge tutti i chunk e restituisce la risposta ricomposta.
+
+        Il flusso si chiude sempre, anche su un errore: una connessione lasciata
+        aperta continuerebbe a far generare (e pagare) il modello. Se c'e' una
+        soglia di stallo, un controllo su un thread interrompe la connessione
+        quando per troppo tempo non arriva un chunk interpretato.
+
+        Raises:
+            StreamInterrupted: il flusso non e' arrivato a una conclusione valida,
+                e' rimasto muto oltre la soglia, o il fornitore ha scritto un
+                errore dentro il flusso.
+        """
+        assemblatore = StreamAssembler()
+        id_header = self._id_dall_header(flusso)
+        guardiano: StallWatchdog | None = None
+        if self.stall_timeout_s:
+            guardiano = StallWatchdog(
+                self.stall_timeout_s, lambda: self._interrompi_connessione(flusso))
+            guardiano.start()
+
+        def id_generazione() -> str | None:
+            # L'id del primo chunk, se e' arrivato; altrimenti quello dell'header. Senza,
+            # un flusso chiuso prima del primo chunk sembrava "nessuna generazione da
+            # pagare", ma il fornitore puo' averla fatturata (prova dal vivo, 18 ott 2026).
+            return assemblatore.generation_id or id_header
+
+        def stallo() -> StreamInterrupted:
+            return StreamInterrupted(
+                f"stallo: nessun chunk interpretato da {self.stall_timeout_s} s",
+                generation_id=id_generazione(), stats=assemblatore.stats)
+
+        try:
+            for chunk in flusso:
+                if guardiano is not None:
+                    guardiano.touch()
+                assemblatore.feed(chunk if isinstance(chunk, Mapping) else chunk.model_dump())
+        except StreamInterrupted as errore:
+            errore.generation_id = errore.generation_id or id_header
+            raise
+        except Exception as errore:
+            # Dopo l'interruzione voluta la lettura fallisce in modi diversi a
+            # seconda del trasporto: la causa e' lo stallo, qualunque sia l'eccezione.
+            if guardiano is not None and guardiano.fired:
+                raise stallo() from errore
+            if isinstance(errore, httpx.TransportError):
+                raise StreamInterrupted(
+                    "connessione caduta durante il flusso",
+                    generation_id=id_generazione(), stats=assemblatore.stats) from errore
+            if isinstance(errore, openai.APIError):
+                # Lo stato HTTP e' noto all'apertura del flusso: un `APIError` che
+                # arriva durante la lettura e' un errore scritto dentro il flusso
+                # (HTTP gia' 200), e l'SDK lo solleva.
+                corpo = errore.body if isinstance(errore.body, Mapping) else None
+                raise StreamInterrupted(
+                    "errore del fornitore dentro il flusso",
+                    generation_id=id_generazione(), stats=assemblatore.stats,
+                    provider_error=corpo) from errore
+            # Ne' rete ne' API (per esempio un evento malformato o un difetto nostro):
+            # la generazione e' gia' stata fatturata, quindi il costo va riletto, ma
+            # senza ritentare. L'errore originale resta nella catena (`from`).
+            raise StreamInterrupted(
+                f"errore inatteso durante la lettura del flusso ({type(errore).__name__})",
+                generation_id=id_generazione(), stats=assemblatore.stats,
+                retryable=False) from errore
+        finally:
+            if guardiano is not None:
+                guardiano.stop()
+            chiudi = getattr(flusso, "close", None)
+            if callable(chiudi):
+                chiudi()
+        try:
+            return assemblatore.result()
+        except StreamInterrupted as errore:
+            # Dopo lo `shutdown` la lettura puo' finire senza errore: il flusso
+            # incompleto e' comunque uno stallo, non una chiusura qualunque.
+            if guardiano is not None and guardiano.fired:
+                raise stallo() from errore
+            errore.generation_id = errore.generation_id or id_header
+            raise
+
+    @staticmethod
+    def _id_dall_header(flusso: Any) -> str | None:
+        """L'id della generazione dall'header `X-Generation-Id`, se il flusso lo espone.
+
+        Lo stream dell'SDK OpenAI tiene la risposta HTTP in `response`. L'header
+        arriva prima di qualsiasi chunk e coincide con l'id del primo (verificato
+        dal vivo su MiniMax m3 e Opus 5.5). Un flusso che non lo espone (un finto,
+        un altro trasporto) da' `None`, come prima.
+        """
+        risposta = getattr(flusso, "response", None)
+        intestazioni = getattr(risposta, "headers", None)
+        if intestazioni is None:
+            return None
+        valore = intestazioni.get("x-generation-id")
+        return valore if isinstance(valore, str) and valore else None
+
+    @staticmethod
+    def _interrompi_connessione(flusso: Any) -> None:
+        """Rompe la connessione di un flusso da un altro thread, sbloccando chi legge.
+
+        `close()` da un altro thread NON sblocca la lettura (il thread resta fermo
+        fino al timeout di rete: verificato con un server locale, anche su TLS).
+        Sblocca `shutdown` del socket sottostante. Per un flusso che non espone la
+        connessione (i finti dei test) si ripiega su `close()`.
+        """
+        try:
+            rete = flusso.response.extensions["network_stream"]
+            rete.get_extra_info("socket").shutdown(socket.SHUT_RDWR)
+            return
+        except Exception:  # struttura diversa da quella attesa: ripiego
+            pass
+        chiudi = getattr(flusso, "close", None)
+        if callable(chiudi):
+            chiudi()
+
+    def _annota_record(self, record: UsageRecord, response: Any) -> None:
+        """Aggiunge al record le misure del flusso, per tarare le soglie di stallo."""
+        stats = getattr(response, "stats", None)
+        if stats is not None:
+            record.dimensions = {
+                **record.dimensions,
+                "chunks": stats.chunk_count,
+                "max_chunk_gap_s": round(stats.max_gap_s, 3),
+                "reasoning_chars": stats.reasoning_chars,
+                "content_chars": stats.content_chars,
+            }
 
     @staticmethod
     def _to_turn(response: Any) -> AssistantTurn:
         """Converte la risposta del provider nel tipo del progetto."""
-        message = response.choices[0].message
+        choice = response.choices[0]
+        message = choice.message
+        tool_calls = tuple(
+            ToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments)
+            for tc in (getattr(message, "tool_calls", None) or ())
+        )
         return AssistantTurn(
             content=getattr(message, "content", None),
-            tool_calls=tuple(
-                ToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments)
-                for tc in (getattr(message, "tool_calls", None) or ())
-            ),
+            tool_calls=tool_calls,
+            outcome=_outcome_openai(getattr(choice, "finish_reason", None), bool(tool_calls)),
         )
 
     @classmethod
@@ -399,6 +670,7 @@ class AnthropicChatGateway(ChatGatewayBase):
         return AssistantTurn(
             content="\n".join(testi) or None,
             tool_calls=tuple(chiamate),
+            outcome=_outcome_anthropic(getattr(response, "stop_reason", None), bool(chiamate)),
         )
 
     @classmethod

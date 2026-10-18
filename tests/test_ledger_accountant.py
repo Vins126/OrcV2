@@ -53,7 +53,7 @@ def test_usage_non_prezzabile_diventa_evento_ma_non_consumo(tmp_path):
     assert inner.call_count == 0
     assert not (ledger.run_dir / "usage.jsonl").exists()
     assert _read_jsonl(ledger.run_dir / "events.jsonl") == [{
-        "schema_version": 3,
+        "schema_version": 4,
         "event_type": "unpriced_usage",
         "run_id": "run-1",
         "sequence": 1,

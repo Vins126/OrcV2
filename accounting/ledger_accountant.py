@@ -6,6 +6,7 @@ la registrazione nel ledger dopo che il record ha ricevuto il suo costo.
 
 from accounting.base import Accountant
 from accounting.errors import RegistryError
+from accounting.current_run import CurrentRun
 from accounting.ledger import RunLedger
 from accounting.record import UsageRecord
 
@@ -19,7 +20,7 @@ class LedgerAccountant(Accountant):
     ledger si puo' cambiare con `attach`.
     """
 
-    def __init__(self, accountant: Accountant, ledger: RunLedger | None = None):
+    def __init__(self, accountant: Accountant, ledger: RunLedger | CurrentRun | None = None):
         """Avvolge un contabile e gli affianca il ledger della run.
 
         Args:
@@ -27,11 +28,13 @@ class LedgerAccountant(Accountant):
             ledger: dove persistere gli esiti e le anomalie. Facoltativo: un
                 agente appena creato non ha ancora un incarico, quindi nemmeno
                 un ledger; lo si collega con `attach` all'inizio di ogni incarico.
+                Gli agenti della fabbrica ricevono invece un `CurrentRun`, che segue
+                da solo l'incarico in corso: per loro `attach` non serve.
         """
         self.accountant = accountant
         self.ledger = ledger
 
-    def attach(self, ledger: RunLedger) -> None:
+    def attach(self, ledger: RunLedger | CurrentRun) -> None:
         """Collega il ledger dell'incarico che sta per iniziare.
 
         Da questo momento i consumi finiscono nel nuovo ledger. Il totale del
@@ -39,7 +42,7 @@ class LedgerAccountant(Accountant):
         """
         self.ledger = ledger
 
-    def _ledger_collegato(self) -> RunLedger:
+    def _ledger_collegato(self) -> RunLedger | CurrentRun:
         """Restituisce il ledger corrente, o fallisce con un messaggio chiaro.
 
         Registrare un consumo senza ledger vorrebbe dire perderlo: meglio un
@@ -50,6 +53,10 @@ class LedgerAccountant(Accountant):
                 "nessun ledger collegato: un consumo non si puo' registrare "
                 "fuori da un incarico (vedi LedgerAccountant.attach)"
             )
+        if isinstance(self.ledger, CurrentRun):
+            # Un `CurrentRun` esiste sempre ma puo' essere senza incarico: va
+            # controllato qui, PRIMA di contare, come il caso `None` sopra.
+            self.ledger.require_active()
         return self.ledger
 
     def register(self, record: UsageRecord) -> float:

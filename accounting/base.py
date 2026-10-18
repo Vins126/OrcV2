@@ -17,32 +17,20 @@ Nota di design (tesi):
     chiamata** vive nelle implementazioni concrete e non qui, perche' un
     contabile aggregante non ha record propri: somma quelli dei figli.
     Metterlo nel contratto lo obbligherebbe ad averli.
+
+    Per lo stesso motivo il contratto e' diviso in due (M3.2). `SpendReader`
+    dice solo quanto si e' speso; `Accountant` aggiunge `register`. Il
+    contabile di squadra (`accounting/team.py`) e' un `SpendReader` e non un
+    `Accountant`: non ha consumi propri, e un `register` che sapesse solo
+    sollevare un errore prometterebbe una cosa che non sa fare (principi di
+    segregazione delle interfacce e di sostituzione di Liskov).
 """
 
 from abc import ABC, abstractmethod
 from accounting.record import UsageRecord
 
-class Accountant(ABC):
-    """Cio' che ogni contabile dei costi deve saper fare."""
-
-    @abstractmethod
-    def register(self, record: UsageRecord) -> float:
-        """Contabilizza un consumo e ne restituisce il costo.
-
-        L'implementazione deve valorizzare il campo `cost` del record: chi lo
-        crea non conosce i prezzi, li conosce solo il contabile tramite il
-        registro.
-
-        Args:
-            record: la scheda della chiamata da contabilizzare.
-
-        Returns:
-            Il costo in dollari della **singola** chiamata registrata.
-            Restituirlo evita al chiamante di dover calcolare la differenza
-            fra due totali per sapere quanto e' costato l'ultimo passo:
-            informazione che serve al guardiano del budget (M2a.5).
-        """
-        ...
+class SpendReader(ABC):
+    """Chi sa dire quanto si e' speso: un contabile, o una squadra di contabili."""
 
     @property
     @abstractmethod
@@ -65,5 +53,28 @@ class Accountant(ABC):
         (`total_cost / call_count` = costo medio per chiamata). E' anche un
         controllo di coerenza: se non corrisponde alle iterazioni del ciclo
         ReAct, qualche consumo non sta venendo registrato.
+        """
+        ...
+
+
+class Accountant(SpendReader):
+    """Cio' che ogni contabile dei costi deve saper fare: leggere la spesa e registrarla."""
+
+    @abstractmethod
+    def register(self, record: UsageRecord) -> float:
+        """Contabilizza un consumo e ne restituisce il costo.
+
+        L'implementazione deve valorizzare il campo `cost` del record: chi lo
+        crea non conosce i prezzi, li conosce solo il contabile tramite il
+        registro.
+
+        Args:
+            record: la scheda della chiamata da contabilizzare.
+
+        Returns:
+            Il costo in dollari della **singola** chiamata registrata.
+            Restituirlo evita al chiamante di dover calcolare la differenza
+            fra due totali per sapere quanto e' costato l'ultimo passo:
+            informazione che serve al guardiano del budget (M2a.5).
         """
         ...

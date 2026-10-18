@@ -8,6 +8,7 @@ from accounting.ledger import RunLedger
 from agent import AgentFailure, RunResult
 from run_reporter import RunReporter
 from run_session import RunSession
+from run_status import RunStatus
 
 
 class AgentFinto:
@@ -39,13 +40,13 @@ class ReporterFinto(RunReporter):
 
 def test_chiude_il_ledger_con_l_esito_dell_agente(tmp_path):
     ledger = RunLedger(root=tmp_path, task="task", run_id="run-1")
-    agent = AgentFinto(RunResult(status="completed", iterations=2))
+    agent = AgentFinto(RunResult(status=RunStatus.COMPLETED, iterations=2))
 
     reporter = ReporterFinto()
     result = RunSession(agent, ledger, reporter).run("task", max_iterations=5)
 
     summary = json.loads((ledger.run_dir / "summary.json").read_text(encoding="utf-8"))
-    assert result == RunResult(status="completed", iterations=2)
+    assert result == RunResult(status=RunStatus.COMPLETED, iterations=2)
     assert agent.calls == [("task", 5)]
     assert summary["status"] == "completed"
     assert summary["iterations"] == 2
@@ -72,13 +73,13 @@ def test_registra_errore_inatteso_e_chiude_il_ledger(tmp_path):
 
 def test_registra_terminazione_non_completata_come_evento(tmp_path):
     ledger = RunLedger(root=tmp_path, task="task", run_id="run-1")
-    agent = AgentFinto(RunResult(status="max_iterations", iterations=30))
+    agent = AgentFinto(RunResult(status=RunStatus.MAX_ITERATIONS, iterations=30))
 
     RunSession(agent, ledger).run("task")
 
     events = [json.loads(line) for line in (ledger.run_dir / "events.jsonl").read_text().splitlines()]
     assert events == [{
-        "schema_version": 3,
+        "schema_version": 4,
         "event_type": "run_terminated",
         "run_id": "run-1",
         "sequence": 1,
@@ -107,3 +108,24 @@ def test_un_guasto_dell_agente_conserva_le_iterazioni_nel_summary(tmp_path):
     assert summary["iterations"] == 3
     # Nel ledger va la causa reale, non l'involucro che la trasporta.
     assert events[0]["details"] == {"error_type": "ZeroDivisionError", "iterations": 3}
+
+
+def test_il_messaggio_finale_dell_agente_finisce_nel_summary(tmp_path):
+    ledger = RunLedger(root=tmp_path, task="task", run_id="run-1")
+    agent = AgentFinto(RunResult(status=RunStatus.COMPLETED, iterations=1, final_message="Ho finito"))
+
+    RunSession(agent, ledger, ReporterFinto()).run("task")
+
+    summary = json.loads((ledger.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["final_message"] == "Ho finito"
+
+
+def test_anche_un_esito_anomalo_conserva_il_suo_messaggio(tmp_path):
+    ledger = RunLedger(root=tmp_path, task="task", run_id="run-1")
+    messaggio = "Risposta interrotta dal limite di token: il lavoro non e' concluso."
+    agent = AgentFinto(RunResult(status=RunStatus.OUTPUT_TRUNCATED, iterations=1, final_message=messaggio))
+
+    RunSession(agent, ledger, ReporterFinto()).run("task")
+
+    summary = json.loads((ledger.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert (summary["status"], summary["final_message"]) == ("output_truncated", messaggio)

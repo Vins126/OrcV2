@@ -74,3 +74,21 @@ class CapabilityUnavailable(RegistryError):
 class InvalidUsage(ValueError):
     """Un UsageRecord contiene quantita' non valide per la contabilita'."""
 
+
+class TeamMembershipError(Exception):
+    """Un membro non si puo' aggiungere alla squadra cosi' come richiesto.
+
+    Non discende da `RegistryError`: il listino non c'entra. Copre i casi che
+    falserebbero il totale di squadra: lo stesso contabile aggiunto due volte
+    (la sua spesa conterebbe doppia), due membri con lo stesso nome (il
+    dettaglio per membro non sarebbe piu' attribuibile), una squadra dentro se
+    stessa.
+    """
+
+
+class NoActiveRun(Exception):
+    """Si e' provato a scrivere un consumo o un evento senza un incarico in corso.
+
+    Andrebbe perso: nessun ledger lo conserverebbe. Meglio fermarsi subito con un
+    errore che avere una spesa che non compare da nessuna parte.
+    """
