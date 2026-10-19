@@ -26,14 +26,23 @@
 |---|---|---|
 | M1 | Agente singolo | ✅ completata |
 | M2a | Infrastruttura di misura | ✅ completata |
-| **M2s** | **Routing statico role-based (stadio S1)** | 🟡 **aperta**: manca `f` su task difficili (misurato solo su un insieme facile per `minimax-m3`); M3 puo' partire |
+| M2s | Routing statico role-based (stadio S1) | ✅ chiusa come **superata** (D43, 18 ott 2026): il dato su `f` lo dara' il braccio D sui siti web |
 | UX1 | Sessione chat persistente | ⬜ (backlog prodotto) |
-| **M3** | **Parallelismo** | 🟡 **in corso**: M3.0-M3.3 fatti; codice chiuso, revisione fatta e corretta; resta il commit |
-| M4 | Swarm (Planner, Orchestratore, stato condiviso, Gate L1) | ⬜ |
-| M2b | Intelligenza di routing (Judge L2, Cascade S2, Router S3) | ⬜ (M2b.5 anticipato: esperimento chiuso il 14 ott 2026, esito inconcludente; conclusioni in M2b.5) |
-| M7 | Campagna sperimentale | ⬜ |
+| M3 | Parallelismo | ✅ completata (commit `9c6f4dd`, decisioni D30-D34) |
+| M4 | Swarm (Planner, Orchestratore, stato condiviso, Gate L1) | ↪️ sostituita da R0-R7 (D43); la sezione resta come storia e fonte di dettagli |
+| M2b | Intelligenza di routing (Judge L2, Cascade S2, Router S3) | ↪️ sostituita da R0-R7 (D43): giudice in R1, cascata in R3, router in R7 facoltativo. M2b.5 chiuso il 14 ott 2026, inconcludente |
+| M7 | Campagna sperimentale | ↪️ diventa R6 (D43) |
+| **R0** | **Decisioni e protocollo** | 🟡 **in corso**: decisioni D35-D44 prese il 18 ott 2026; resta il protocollo con sha256 |
+| R1 | Banco di prova (compiti, rendering, controlli, giudice, voti umani) | ⬜ |
+| R2 | Baseline Opus 5.5 (pilota e preventivo misurato) | ⬜ |
+| R3 | OrcV2 minimo: sciame per sezioni | ⬜ |
+| R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ⬜ |
+| R5 | Ottimizzazione automatica (facoltativa) | ⬜ |
+| R6 | Campagna finale e ablazioni | ⬜ |
+| R7 | Router grossolano (facoltativo) | ⬜ |
 
-**Percorso critico:** M2a → M2s → M3 → M4 → M2b(S2) → M7.
+**Percorso critico (dal 18 ott 2026, D43):** R0 → R1 → R2 → R3 → R4.0 → R4 → (R5) → R6 → (R7).
+Percorso precedente, ora storia: M2a → M2s → M3 → M4 → M2b(S2) → M7.
 
 > **M2s con una casella aperta (13 ottobre 2026).** La prima misura di `f` (Polyglot Python, `minimax-m3`,
 > 3 fallite su 102) mostra che l'insieme non e' difficile per il modello economico, quindi `f` su task difficili
@@ -50,6 +59,85 @@ ingegneria, non di ricerca: un'uscita di emergenza, non un traguardo.
 > critico** M2a → M2s → M3 → M4 → M2b → M7: non blocca nessuna fase e nessuna fase
 > dipende da lei. Va realizzata senza confondere una sessione umana con una run ReAct
 > misurabile.
+
+## Riprogettazione del 18 ottobre 2026 (D35-D44)
+
+**Perche'.** Prima di aprire M4 e' stata fatta un'analisi della letteratura recente (STORM, CAID, AgentRoom,
+Kim et al. 2512.08296, AgentRouter, AgentCARD) e dei dati per tentativo pubblicati da DeepSWE v1.1 e Terminal-Bench
+4.0, senza spesa. Esiti principali: a parita' di modello un sistema multi-agente costa 1,5-4,4 volte l'agente singolo;
+il risparmio viene dai modelli economici, ma solo se il risultato viene **verificato** (prevedere in anticipo quale
+modello basta perde 8-14 punti fuori campione, per la casualita' dei singoli tentativi); il risparmio dipende dal tipo
+di compito; l'harness pesa quanto il modello. Da qui il riordino.
+
+**Cosa resta uguale.** La frase della tesi (`min costo s.t. qualita' >= τ`), il dominio dei siti web (D16, confermato da
+D35), l'architettura (planner, worker, verifica), tutto il codice di M1-M3.
+
+**Cosa cambia.** Contributo = il sistema e la scomposizione misurata del risparmio, router facoltativo (D36); modelli
+(D38); confronto equo con Opus dotato degli stessi strumenti (D39); valutazione a tre livelli verificata con voti umani
+(D41); una fase di ottimizzazione dell'harness (D42); l'ordine dei lavori (D43).
+
+### R0 — Decisioni e protocollo 🟡
+- [x] Decisioni D35-D44.
+- [ ] **Protocollo** in un file di dati versionato: compiti (divisione sviluppo/test), bracci A-D, metriche dei tre
+      livelli, domande della checklist del giudice, margine di non inferiorita' τ, numero di ripetizioni, analisi
+      statistica, versioni esatte dei modelli e fornitori. Impronta sha256 registrata prima di qualsiasi run.
+- [ ] `models.toml` con la nuova rosa (D38), versioni e fornitori fissati; verifica del supporto alle immagini per il
+      critico e per i giudici.
+- [ ] Condizione di convenienza (D37) scritta in tesi prima delle misure.
+
+### R1 — Banco di prova ⬜
+- Compiti: circa 10 WebGen-Bench (MIT), circa 10 pagine ArtifactsBench, alcuni nostri; caricamento nel formato del progetto.
+- Rendering con Playwright nella sandbox; screenshot a 375, 768 e 1440 px.
+- Controlli automatici: apertura senza errori, errori in console, axe-core, scorrimento orizzontale, script di
+  interazione scritti prima della generazione.
+- Giudice a coppie in entrambi gli ordini, checklist si'/no, famiglie non in gara; scelta fra Gemini 4 Argon e Gemini
+  3.8 Flash per accordo con i voti umani.
+- Strumento di voto alla cieca per 4-6 persone (circa 50 coppie a testa); accordo fra persone e fra persone e giudice.
+- Container orfani (`orc-sandbox-*` rimasti dopo un crash o un Ctrl+C): pulizia all'avvio (ex «Da decidere a inizio M4»).
+- Test: un compito d'esempio produce screenshot e metriche deterministiche; il giudice, con risposte finte, gestisce
+  l'inversione dell'ordine e il pareggio; nessuna chiamata a pagamento nei test.
+
+### R2 — Baseline ⬜
+- Braccio A (Opus 5.5 da solo) su 3 compiti pilota con `--budget-usd`; token e costo misurati; preventivo misurato per
+  la campagna.
+
+### R3 — OrcV2 minimo: sciame per sezioni ⬜
+- Planner (Opus): divisione in sezioni + sistema di stile (D5, D15), piano validato.
+- Worker per sezione in parallelo (modelli economici), un file per sezione: niente scritture sullo stesso file, quindi
+  le questioni «cartella condivisa o copie» e «consumi per squadra» non si pongono.
+- Critico su screenshot per sezione (modello economico con visione), al massimo 2 giri, si tiene la versione migliore.
+- Integratore deterministico (modello di pagina, non un LLM).
+- Verifica finale ed escalation a Opus (ex M2b.2).
+- Tetto globale del compito sulla somma dei contabili (ex M4.2c), contabile di squadra (D32).
+- Strumento di modifica dei file migliore (sostituzione esatta, lettura per intervalli): si decide se riprenderlo da un
+  harness aperto.
+
+### R4.0 — Studio delle ottimizzazioni ⬜
+- Sessione dedicata: skill (es. `frontend-design`), server MCP (es. Playwright), plugin, codice di harness aperti
+  (SWE-agent, OpenHands, mini-swe-agent, Aider, Codex CLI) con licenza, prove e costo. Scelta dell'autore.
+
+### R4 — Ottimizzazione manuale ⬜
+- Una ottimizzazione alla volta, misurata sui compiti di sviluppo; ogni strumento dato anche al braccio B (D42).
+  Candidati con prove: prompt stabili per la cache, gestione del contesto, arresti che consegnano il lavoro fatto,
+  strumento di piano per i modelli economici, Opus come consigliere, fotografia dell'ambiente, HTML + Tailwind, skill
+  di design, critico per sezione.
+
+### R5 — Ottimizzazione automatica (facoltativa) ⬜
+- Ottimizzazione dei prompt (GEPA) e adattamento automatico dell'harness per modello, con divisione di test congelata.
+
+### R6 — Campagna finale ⬜
+- Compiti di test, bracci A-D, 2-3 ripetizioni, ablazioni (uno strumento tolto alla volta), costo per pagina accettata,
+  curva costo-qualita', risultato in funzione del rapporto di prezzo (D37).
+
+### R7 — Router grossolano (facoltativo) ⬜
+- Solo se i dati mostrano tipi di pagina in cui conviene andare subito su Opus.
+
+### Dove finiscono le voci precedenti
+M4.1 planner, M4.2 orchestratore, M4.4 gate -> R3. M4.2c tetto globale -> R3. M4.2b vita degli agenti -> solo la
+gestione del contesto, in R4. M4.3 stato condiviso -> sezioni in file separati (R3). M4.7 best-of-N -> opzione in R4.
+M4.8 ottimo di scomposizione -> numero di sezioni come variabile in R6. M4.0 e M4.6 (immagini, altre capacita') ->
+rimandate; immagini solo se date anche al braccio B. M2b.1 giudice -> R1. M2b.2 cascata -> R3. M2b.4 router -> R7.
+M2b.5 e `quality/` -> metriche di R1.
 
 ## Regole operative permanenti
 
@@ -382,6 +470,9 @@ strutturato e un report; nessun task può spendere oltre il tetto.
 ---
 
 # FASE M2s — Routing statico role-based (stadio S1)
+
+> **Chiusa come superata il 18 ottobre 2026 (D43).** La misura di `f` su compiti difficili era pensata per
+> `minimax-m3` su esercizi Python; cambiano modelli (D38) e terreno (D35). Il dato equivalente lo da' il braccio D.
 
 **Obiettivo:** istanziare agenti con modelli diversi in base al ruolo, da tabella di
 configurazione, **chiamando ogni fornitore direttamente**. È lo stadio sperimentale S1.
@@ -965,6 +1056,9 @@ attribuzione, costi o riproducibilita'. Non e' nel percorso critico M2a → M2s 
 
 # FASE M4 — Swarm (il cuore)
 
+> **Sostituita il 18 ottobre 2026 dalle fasi R0-R7 (D43).** Il testo resta come storia e come fonte di dettagli:
+> la corrispondenza fra le voci e' in «Riprogettazione del 18 ottobre 2026».
+
 **Obiettivo:** task multi-file completato end-to-end da Planner + Orchestratore +
 Worker su workspace condiviso, con checkpoint L1.
 **Prerequisiti:** M3. Fase più lunga: dettagliarla a inizio fase, qui la spina dorsale.
@@ -1180,6 +1274,8 @@ Worker su workspace condiviso, con checkpoint L1.
 ---
 
 # FASE M2b — Intelligenza di routing
+
+> **Sostituita il 18 ottobre 2026 dalle fasi R0-R7 (D43):** giudice in R1, cascata in R3, router in R7 (facoltativo).
 
 **Obiettivo:** cascade funzionante (S2) e router appreso (S3). S3 e' dove sta il
 contributo della tesi (D13), non un traguardo facoltativo.
@@ -1538,6 +1634,8 @@ contributo della tesi (D13), non un traguardo facoltativo.
 ---
 
 # FASE M7 — Campagna sperimentale
+
+> **Diventa R6 il 18 ottobre 2026 (D43).**
 
 **Obiettivo:** i numeri della tesi. Da dettagliare a inizio fase.
 

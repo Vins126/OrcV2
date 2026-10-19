@@ -9,7 +9,7 @@
 ## 0. La tesi in una frase (e come ottimizzazione)
 
 > *Un **sistema multi-agente** con **cost-routing** ottiene una **riduzione di costo significativa**
-> **a parità di qualità** rispetto a una **baseline mono-modello**, su **task di software engineering**.*
+> **a parità di qualità** rispetto a una **baseline mono-modello** (Opus 5.5), nella **generazione di siti web**.*
 
 Formulata come problema: **minimizza il costo, soggetto a qualità ≥ soglia τ.**
 ```
@@ -21,6 +21,15 @@ Questa singola funzione obiettivo **unifica tutto il sistema**:
 - la **decomposizione** abbassa il costo necessario per raggiungere τ;
 - la **valutazione** è ciò che *definisce e misura* τ.
 Senza la metà "qualità ≥ τ", "minimizza il costo" è banale (scegli sempre il più scadente).
+
+> **Riprogettazione del 18 ottobre 2026 (D35-D44, `PIANO_completo.md` §10).** Il terreno sperimentale sono i siti web
+> (D35, conferma D16). Il contributo non è più il solo router appreso (D13, sostituita): è **il sistema** e **la
+> scomposizione misurata del risparmio** fra le leve (scomposizione in sezioni, modelli economici con verifica,
+> strumenti di design, ottimizzazione dell'harness), con un confronto equo in cui Opus 5.5 riceve gli stessi strumenti
+> (D36, D39). La valutazione resta co-centrale, a tre livelli e verificata con voti umani (D41). Il router appreso
+> diventa facoltativo. La condizione di convenienza `m / r + q < 1` è dichiarata prima delle misure (D37).
+> Da riscrivere di conseguenza: §1 (gerarchia dei pilastri), §3 (routing), §7 (posizionamento: AgentCARD, AgentRouter,
+> STORM, CAID, Kim et al., WebGen-Agent, WebDevJudge).
 
 ---
 
