@@ -31,6 +31,38 @@ Senza la metà "qualità ≥ τ", "minimizza il costo" è banale (scegli sempre 
 > Da riscrivere di conseguenza: §1 (gerarchia dei pilastri), §3 (routing), §7 (posizionamento: AgentCARD, AgentRouter,
 > STORM, CAID, Kim et al., WebGen-Agent, WebDevJudge).
 
+### 0.1 Quando lo sciame conviene (ipotesi dichiarata prima delle misure, D37)
+
+Scritta il 21 ottobre 2026, prima di qualunque esecuzione della campagna, perché la misura possa smentirla.
+
+Sia `C_B` il costo di un sito fatto da Opus 5.5 da solo con gli strumenti (braccio B). Lo sciame (braccio C)
+spende in due modi:
+- le **foglie** (worker economici) consumano `m` volte i token che consumerebbe il singolo forte, pagati a un prezzo
+  `r` volte più basso: costano `(m / r) · C_B`;
+- il **planner** e le **escalation** a Opus costano una quota `q` del singolo: `q · C_B`.
+
+Quindi `C_C = (m / r + q) · C_B`, e lo sciame costa meno del singolo se e solo se
+
+```
+   m / r + q < 1
+```
+
+Dove:
+- `m` = token delle foglie rispetto al singolo forte. A parità di modello un sistema multi-agente consuma da 1,5 a
+  4,4 volte l'agente singolo (letteratura, `ROADMAP.md` R0): ci si aspetta `m` in quell'intervallo;
+- `r` = rapporto di prezzo fra Opus 5.5 e il modello economico, **pesato sulla miscela reale** di input, input da
+  cache e output. Con i listini del 21 ottobre 2026 (Opus 5.5 4 / 20 $/M, lettura da cache 0,20; DeepSeek V4.1
+  Flash 0,15 / 0,60, cache 0,003) il rapporto vale circa 27 sull'input, 33 sull'output, 67 sulla cache;
+- `q` = quota di planner ed escalation sul costo del singolo.
+
+**Previsione.** Con `m ≤ 4,4` e `r ≈ 30`, il termine delle foglie vale al massimo circa 0,15: il risparmio dipende
+quasi solo da `q`. Lo sciame conviene finché planner ed escalation restano sotto circa l'85% del costo del singolo;
+la voce che può smentire l'ipotesi è la **frequenza delle escalation**, non il prezzo delle foglie.
+
+**Come si presenta il risultato.** I prezzi cambiano ogni mese: il risparmio si riporta **in funzione di `r`**,
+con i valori di `m` e `q` misurati nella campagna, così il lettore può ricalcolarlo con i listini del momento. La
+condizione riguarda solo il costo: la qualità si giudica a parte, con le regole di `PROTOCOLLO.md`.
+
 ---
 
 ## 1. Le parti fondamentali (gerarchia)

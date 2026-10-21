@@ -102,7 +102,7 @@ def test_due_ruoli_producono_agenti_con_modelli_diversi_sulla_stessa_infrastrutt
     planner = fabbrica.build("planner")
     worker = fabbrica.build("worker")
 
-    assert (planner.model, worker.model) == ("opus-5-5", "kimi-k3")
+    assert (planner.model, worker.model) == ("opus-5-5", "gpt-6-1-sol")
     assert isinstance(planner.gateway, OpenAIChatGateway)
     assert isinstance(worker.gateway, OpenAIChatGateway)
     assert planner.agent.llm is planner.gateway
@@ -120,13 +120,13 @@ def test_il_gateway_riceve_il_nome_di_openrouter_e_fissa_il_fornitore(fabbrica):
 
 
 def test_il_worker_economico_riceve_il_nome_di_openrouter_non_l_alias(fabbrica):
-    """OpenRouter chiama il modello `minimax/minimax-m3`: l'alias del progetto non esiste per lui."""
+    """OpenRouter chiama il modello `deepseek/deepseek-v4.1-flash-1017`: l'alias del progetto non esiste per lui."""
     economico = fabbrica.build("worker_cheap")
 
-    assert economico.gateway.model == "minimax-m3"
-    assert economico.gateway.api_model == "minimax/minimax-m3"
+    assert economico.gateway.model == "deepseek-v4-1-flash"
+    assert economico.gateway.api_model == "deepseek/deepseek-v4.1-flash-1017"
     assert economico.gateway.extra_body == {          # fornitore fissato: il listino resta vero
-        "provider": {"order": ["minimax/fp8"], "allow_fallbacks": False}}
+        "provider": {"order": ["deepseek"], "allow_fallbacks": False}}
 
 
 def test_chi_risponde_e_chi_fattura_e_openrouter(fabbrica):
@@ -182,7 +182,7 @@ def test_il_contabile_somma_tutta_la_vita_e_ogni_ledger_solo_il_suo_incarico(fab
     worker.assign("primo")
     worker.assign("secondo")
 
-    costo_incarico = 3.00  # un milione di token di input a $3.00 (kimi-k3)
+    costo_incarico = 2.00  # un milione di token di input a $2.00 (gpt-6-1-sol)
     totali = [json.loads((l.run_dir / "summary.json").read_text())["total_cost"]
               for l in worker.ledgers]
     assert totali == [pytest.approx(costo_incarico)] * 2
@@ -467,8 +467,8 @@ def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_
     fabbrica = AgentFactory(
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
-        # Un incarico costa $0.0018 (100 token in input e 100 in output sul
-        # listino del worker, kimi-k3: $3 e $15 per milione): il tetto lascia almeno due incarichi completati
+        # Un incarico costa $0.0012 (100 token in input e 100 in output sul
+        # listino del worker, gpt-6-1-sol: $2 e $10 per milione): il tetto lascia almeno due incarichi completati
         # nella zona dell'avviso, fra l'80% e il 100%.
         budget_usd=0.015, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )

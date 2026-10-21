@@ -128,16 +128,25 @@ api_key_env = "ORC2_OPENROUTER_KEY"
 #  che il modello non offre quel tipo di consumo.
 # ───────────────────────────────────────────────────────────────────────────
 
-# --- Fascia frontier: planner, escalation finale, giudice ---
+# ═══ ROSA DEI MODELLI (D38, 18 ott 2026) ═══
+# Forte: Opus 5.5. Intermedio: GPT-6.1 Sol. Economici: DeepSeek V4.1 Flash (D47, al posto di V4 Pro)
+# e GLM 5.3 Flash.
+# Candidati giudice (D41, scelta in R1): Gemini 4 Argon e Gemini 3.8 Flash.
+# Listini letti il 19 ott 2026 dall'elenco pubblico degli endpoint di OpenRouter
+# (`/api/v1/models/<modello>/endpoints`). Regola per il fornitore, la stessa di MiniMax:
+# l'endpoint della casa che ha fatto il modello, perche' i terzi possono servire pesi
+# quantizzati e il listino smetterebbe di descrivere cio' che si paga.
 
-# Listino dell'endpoint `anthropic` di OpenRouter (letto il 10 ott 2026, uguale a quello
-# ufficiale Anthropic): input 4, output 20, scrittura cache 5 minuti 5, lettura 0.20.
+# --- Fascia frontier: planner, escalation finale, bracci A e B ---
+
+# Listino dell'endpoint `anthropic` di OpenRouter (letto il 10 ott 2026 e riletto il 19 ott,
+# uguale a quello ufficiale Anthropic): input 4, output 20, scrittura cache 5 minuti 5, lettura 0.20.
 # Anthropic non mette in cache da solo: la richiesta deve contenere `cache_control`. Lo si
 # dichiara qui con `extra_body` (cache automatica, 5 minuti: il punto di taglio si sposta
 # sull'ultimo blocco ad ogni richiesta). Verificato il 12 ott 2026 con una prova isolata:
 # 2933 token scritti alla prima richiesta e letti alla seconda. Minimo cacheable di Opus 5.5:
-# 512 token. Kimi e MiniMax non lo richiedono (cache automatica). Il gateway non invia
-# `effort`.
+# 512 token. Gli altri modelli della rosa non lo richiedono (cache automatica). Il gateway
+# non invia `effort`.
 [models.opus-5-5]
 provider       = "openrouter"
 api_model      = "anthropic/claude-opus-5.5"
@@ -146,15 +155,81 @@ extra_body     = { cache_control = { type = "ephemeral" } }
 capabilities   = ["reasoning", "code", "text", "vision_input"]
 prices         = { input_tokens = 4.00, output_tokens = 20.00, cached_input_tokens = 0.20, cache_write_tokens = 5.00 }
 
-# --- Fascia media: worker su sotto-task complessi ---
+# --- Fascia media ---
+
+# Endpoint `openai` (19 ott 2026): 2.00 / 10.00 / lettura 0.10 / scrittura 2.50, trascritti
+# come li espone OpenRouter. Non si usa `openai/flex` (meta' prezzo, priorita' bassa e tempi
+# non garantiti): il listino deve descrivere il servizio normale. Accetta immagini.
+[models.gpt-6-1-sol]
+provider       = "openrouter"
+api_model      = "openai/gpt-6.1-sol"
+provider_order = ["openai"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.10, cache_write_tokens = 2.50 }
+
+# --- Fascia economica ---
+
+# DeepSeek V4.1 Flash, aggiornamento del 17 ott 2026 (`-1017`), endpoint `deepseek` (letto il 21 ott
+# 2026): 0.15 / 0.60 / lettura 0.003, nessun prezzo di scrittura in cache. ATTENZIONE: DeepSeek applica
+# una fascia oraria. Nei giorni feriali, dalle 01:00 alle 04:00 e dalle 06:00 alle 10:00 UTC, il
+# prezzo raddoppia (0.30 / 1.20 / 0.006). Qui c'e' il prezzo base: le run a pagamento si lanciano fuori
+# da quelle fasce. La versione di settembre (senza `-1017`) non ha un endpoint DeepSeek. Accetta
+# immagini (arXiv 2609.19969): puo' fare anche il critico su screenshot.
+[models.deepseek-v4-1-flash]
+provider       = "openrouter"
+api_model      = "deepseek/deepseek-v4.1-flash-1017"
+provider_order = ["deepseek"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 0.15, output_tokens = 0.60, cached_input_tokens = 0.003 }
+
+# DeepSeek V4 Pro, fuori ruolo da D47 (21 ott 2026). La versione base (`deepseek/deepseek-v4-pro`) NON ha un endpoint di
+# DeepSeek su OpenRouter, solo terzi (StreamLake e Baidu fp8 a 0.40 / 0.80). Per la regola
+# della casa si usa la versione `-0813` sull'endpoint `deepseek` (19 ott 2026): 0.66 / 1.98 /
+# lettura 0.022, nessun prezzo di scrittura in cache. E' la differenza di prezzo segnalata in
+# D38: scelta da confermare. NON accetta immagini: non puo' fare il critico su screenshot.
+[models.deepseek-v4-pro]
+provider       = "openrouter"
+api_model      = "deepseek/deepseek-v4-pro-0813"
+provider_order = ["deepseek"]
+capabilities   = ["reasoning", "code", "text"]
+prices         = { input_tokens = 0.66, output_tokens = 1.98, cached_input_tokens = 0.022 }
+
+# GLM 5.3 Flash sull'endpoint di Z.AI `z-ai/fp8` (19 ott 2026): 0.15 / 0.50 / lettura 0.03.
+# Il piu' economico in elenco (OpenInference fp4, 0.048 / 0.16) serve pesi a 4 bit. Accetta
+# immagini: candidato critico su screenshot (R3).
+[models.glm-5-3-flash]
+provider       = "openrouter"
+api_model      = "z-ai/glm-5.3-flash"
+provider_order = ["z-ai/fp8"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 0.15, output_tokens = 0.50, cached_input_tokens = 0.03 }
+
+# --- Candidati giudice (D41): famiglie non in gara, scelta in R1 ---
+
+# Endpoint `google-ai-studio` (19 ott 2026). Gemini 4 Argon: 2.00 / 10.00 / lettura 0.10 /
+# scrittura 0.1875. Gemini 3.8 Flash: 0.75 / 3.75 / lettura 0.075 / scrittura 0.0416666666666667
+# (trascritto com'e'). Non si usano gli endpoint `flex` (meta' prezzo, priorita' bassa).
+# Se la cache di Gemini richieda `cache_control` su OpenRouter non e' verificato: da provare in R1.
+[models.gemini-4-argon]
+provider       = "openrouter"
+api_model      = "google/gemini-4-argon"
+provider_order = ["google-ai-studio"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.10, cache_write_tokens = 0.1875 }
+
+[models.gemini-3-8-flash]
+provider       = "openrouter"
+api_model      = "google/gemini-3.8-flash"
+provider_order = ["google-ai-studio"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 0.75, output_tokens = 3.75, cached_input_tokens = 0.075, cache_write_tokens = 0.0416666666666667 }
+
+# --- Fuori rosa (D38): restano solo per prezzare le run gia' in `runs/` ---
+# Nessun ruolo li usa. Toglierli renderebbe non prezzabili i dati di M2s e M3.
 
 # Endpoint `moonshotai/mxfp4` di OpenRouter (letto il 10 ott 2026): 3.00 / 15.00 / lettura
-# cache 0.30, come il listino ufficiale Moonshot. Il fornitore e' fissato: l'elenco di
-# OpenRouter mostra 0.50 per un altro fornitore (fp4), di cui non si sa se serva i pesi
-# originali o una nuova compressione. Su questo endpoint la quantizzazione e' mxfp4, che e'
-# la precisione NATIVA di Kimi K3 (scheda ufficiale: pesi MXFP4 e attivazioni MXFP8, con
-# addestramento consapevole della quantizzazione): non e' una versione peggiorata. Nessun
-# prezzo di scrittura in cache: se OpenRouter ne riportasse, il consumo risulterebbe non
+# cache 0.30, come il listino ufficiale Moonshot. Quantizzazione mxfp4 = precisione nativa
+# di Kimi K3. Nessun prezzo di scrittura in cache: un consumo di quel tipo risulta non
 # prezzato, non coperto da un numero non verificato.
 [models.kimi-k3]
 provider       = "openrouter"
@@ -163,13 +238,9 @@ provider_order = ["moonshotai/mxfp4"]
 capabilities   = ["reasoning", "code", "text"]
 prices         = { input_tokens = 3.00, output_tokens = 15.00, cached_input_tokens = 0.30 }
 
-# --- Fascia economica: worker standard ---
 # Fornitore fissato su `minimax/fp8`, l'endpoint di MiniMax stesso (12 ott 2026): listino
-# 0.30 / 1.20 / 0.06 fino a 512k token di input (oltre, 0.60 / 2.40 / 0.12: non dichiarato, i
-# task non ci arrivano). Senza fissarlo OpenRouter instrada al piu' economico, CoreWeave
-# `fp4` (quantizzato, 0.23 / 0.96 / 0.05): in una run vera il costo riportato era il 21% sotto
-# il listino, cioe' il listino non descriveva piu' quello che si pagava. Scelto senza una
-# misura di confronto: l'unico indizio e' un confronto di siti aggregatori.
+# 0.30 / 1.20 / 0.06 fino a 512k token di input. Senza fissarlo OpenRouter instradava a
+# CoreWeave `fp4` (0.23 / 0.96 / 0.05) e il costo riportato era il 21% sotto il listino.
 [models.minimax-m3]
 provider       = "openrouter"
 api_model      = "minimax/minimax-m3"
@@ -177,7 +248,7 @@ provider_order = ["minimax/fp8"]
 capabilities   = ["reasoning", "code", "text"]
 prices         = { input_tokens = 0.30, output_tokens = 1.20, cached_input_tokens = 0.06 }
 
-# --- Infrastruttura: embedding per RAG e per il router appreso (S3) ---
+# --- Infrastruttura: embedding ---
 
 [models.text-embedding-3-small]
 provider     = "openrouter"
@@ -186,12 +257,12 @@ capabilities = ["embedding"]
 prices       = { input_tokens = 0.02 }
 
 # ───────────────────────────────────────────────────────────────────────────
-#  RUOLI  (stadio S1: assegnazione statica)
+#  RUOLI  (assegnazione statica)
 #
 #  requires — le capacita' che il MESTIERE richiede, non quelle che il modello
 #  assegnato possiede per caso. Il registro verifica al caricamento che il
 #  modello le abbia tutte: un ruolo mal assegnato fallisce all'avvio, non a
-#  meta' di una run gia' pagata.
+#  meta' di una run gia' pagata. I ruoli di critico e giudice nascono in R1/R3.
 # ───────────────────────────────────────────────────────────────────────────
 
 [roles.planner]
@@ -199,11 +270,11 @@ model    = "opus-5-5"
 requires = ["reasoning", "code"]
 
 [roles.worker]
-model    = "kimi-k3"
+model    = "gpt-6-1-sol"
 requires = ["code"]
 
 [roles.worker_cheap]
-model    = "minimax-m3"
+model    = "deepseek-v4-1-flash"
 requires = ["code"]
 
 

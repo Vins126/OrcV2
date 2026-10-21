@@ -425,11 +425,19 @@ def reale():
 
 
 def test_p1_il_pool_e_i_ruoli_sono_quelli_decisi(reale):
+    """Rosa di D38 e D47: Opus forte, GPT-6.1 Sol intermedio, DeepSeek V4.1 Flash economico.
+
+    Kimi K3 e MiniMax M3 restano nel registro solo per prezzare le run gia' fatte:
+    nessun ruolo li usa.
+    """
     assert reale.model_for("planner") == "opus-5-5"
-    assert reale.model_for("worker") == "kimi-k3"
-    assert reale.model_for("worker_cheap") == "minimax-m3"
+    assert reale.model_for("worker") == "gpt-6-1-sol"
+    assert reale.model_for("worker_cheap") == "deepseek-v4-1-flash"
     for tolto in ("opus-5", "minimax-m2-7"):
         assert tolto not in reale.models
+    for fuori_rosa in ("kimi-k3", "minimax-m3"):
+        assert fuori_rosa in reale.models
+        assert fuori_rosa not in {reale.model_for(r) for r in ("planner", "worker", "worker_cheap")}
 
 
 def test_p2_un_solo_fornitore_openrouter_con_la_sua_chiave(reale):
@@ -443,13 +451,25 @@ def test_p3_i_nomi_dei_modelli_su_openrouter_sono_quelli_verificati(reale):
     assert reale.api_model_for("opus-5-5") == "anthropic/claude-opus-5.5"
     assert reale.api_model_for("kimi-k3") == "moonshotai/kimi-k3"
     assert reale.api_model_for("minimax-m3") == "minimax/minimax-m3"
+    assert reale.api_model_for("gpt-6-1-sol") == "openai/gpt-6.1-sol"
+    assert reale.api_model_for("deepseek-v4-pro") == "deepseek/deepseek-v4-pro-0813"
+    assert reale.api_model_for("deepseek-v4-1-flash") == "deepseek/deepseek-v4.1-flash-1017"
+    assert reale.api_model_for("glm-5-3-flash") == "z-ai/glm-5.3-flash"
+    assert reale.api_model_for("gemini-4-argon") == "google/gemini-4-argon"
+    assert reale.api_model_for("gemini-3-8-flash") == "google/gemini-3.8-flash"
     assert reale.api_model_for("text-embedding-3-small") == "openai/text-embedding-3-small"
 
 
 def test_p4_listini_verificati_il_10_ottobre_2026_sull_endpoint_fissato(reale):
     # dollari per milione: (input, output, lettura cache)
     attesi = {"opus-5-5": (4.0, 20.0, 0.20), "kimi-k3": (3.0, 15.0, 0.30),
-              "minimax-m3": (0.30, 1.20, 0.06)}
+              "minimax-m3": (0.30, 1.20, 0.06),
+              # rosa D38, letti il 19 ottobre 2026
+              "gpt-6-1-sol": (2.0, 10.0, 0.10), "deepseek-v4-pro": (0.66, 1.98, 0.022),
+              "glm-5-3-flash": (0.15, 0.50, 0.03), "gemini-4-argon": (2.0, 10.0, 0.10),
+              "gemini-3-8-flash": (0.75, 3.75, 0.075),
+              # D47, letto il 21 ottobre 2026 (prezzo fuori dalla fascia oraria doppia)
+              "deepseek-v4-1-flash": (0.15, 0.60, 0.003)}
     for modello, (i, o, c) in attesi.items():
         assert reale.cost(modello, "input_tokens", 1_000_000) == pytest.approx(i)
         assert reale.cost(modello, "output_tokens", 1_000_000) == pytest.approx(o)
@@ -471,6 +491,12 @@ def test_p5_il_fornitore_e_fissato_per_tutti_i_modelli_di_chat_ma_non_per_l_embe
     assert reale.provider_order_for("opus-5-5") == ["anthropic"]
     assert reale.provider_order_for("kimi-k3") == ["moonshotai/mxfp4"]
     assert reale.provider_order_for("minimax-m3") == ["minimax/fp8"]
+    assert reale.provider_order_for("gpt-6-1-sol") == ["openai"]
+    assert reale.provider_order_for("deepseek-v4-pro") == ["deepseek"]
+    assert reale.provider_order_for("deepseek-v4-1-flash") == ["deepseek"]
+    assert reale.provider_order_for("glm-5-3-flash") == ["z-ai/fp8"]
+    assert reale.provider_order_for("gemini-4-argon") == ["google-ai-studio"]
+    assert reale.provider_order_for("gemini-3-8-flash") == ["google-ai-studio"]
     assert reale.provider_order_for("text-embedding-3-small") is None
 
 
@@ -557,7 +583,7 @@ def test_p7_la_richiesta_di_opus_porta_fornitore_fissato_e_cache(tmp_path, monke
         "cache_control": {"type": "ephemeral"},
     }
     assert worker.extra_body == {
-        "provider": {"order": ["moonshotai/mxfp4"], "allow_fallbacks": False}}
+        "provider": {"order": ["openai"], "allow_fallbacks": False}}
 
 
 # ── Rilievi della revisione: chiavi riservate e valori serializzabili ─────
@@ -598,3 +624,11 @@ def test_x9_un_extra_body_valido_con_valori_annidati_passa(registro):
     dati["models"]["solo_extra"]["extra_body"] = {"a": {"b": [1, 2.5, "x", None, True]}}
 
     assert ModelRegistry(dati).extra_body_for("solo_extra") == {"a": {"b": [1, 2.5, "x", None, True]}}
+
+
+def test_p8_vede_le_immagini_chi_dovra_fare_critico_o_giudice(reale):
+    """Critico su screenshot e giudice hanno bisogno della visione; DeepSeek V4 Pro non ce l'ha (D38), V4.1 Flash si' (D47)."""
+    for modello in ("opus-5-5", "gpt-6-1-sol", "glm-5-3-flash", "gemini-4-argon", "gemini-3-8-flash",
+                    "deepseek-v4-1-flash"):
+        assert "vision_input" in reale.models[modello]["capabilities"], modello
+    assert "vision_input" not in reale.models["deepseek-v4-pro"]["capabilities"]
