@@ -8,19 +8,36 @@
 
 ## 0. La tesi in una frase (e come ottimizzazione)
 
-> *Un **sistema multi-agente** con **cost-routing** ottiene una **riduzione di costo significativa**
-> **a parità di qualità** rispetto a una **baseline mono-modello** (Opus 5.5), nella **generazione di siti web**.*
+> *Un **sistema multi-agente** che affida il lavoro a **modelli economici** e decide quando passare al modello forte
+> **verificando il sito eseguito**, invece di prevederlo, ottiene una **riduzione di costo significativa** **a parità
+> di qualità** rispetto a una **baseline mono-modello** (Opus 5.5), nella **generazione di siti web**; e la tesi
+> misura **quanto del risparmio spiega ciascuna leva** rispetto a politiche più semplici con gli stessi modelli.*
+
+Formulazione del 23 ottobre 2026 (D48, D49). Quella precedente diceva «sistema multi-agente con **cost-routing**»:
+il routing che prevede in anticipo il modello sufficiente esce dal piano (§3, motivi in D48).
 
 Formulata come problema: **minimizza il costo, soggetto a qualità ≥ soglia τ.**
 ```
    min  Σ costo(modello_i)        s.t.   qualità(output) ≥ τ
 ```
 Questa singola funzione obiettivo **unifica tutto il sistema**:
-- il **router** sceglie il modello più economico con qualità attesa ≥ τ;
-- la **cascade** escala quando la qualità misurata < τ;
+- il **cancello eseguibile** (avvio, errori, test propri dell'agente: controlli gratuiti) dice se il lavoro
+  dell'economico regge;
+- l'**escalation** passa al forte solo quando il cancello o il critico lo rifiutano;
 - la **decomposizione** abbassa il costo necessario per raggiungere τ;
-- la **valutazione** è ciò che *definisce e misura* τ.
+- la **valutazione** è ciò che *definisce e misura* τ, ed è separata dal cancello: il cancello non vede mai gli
+  script né le domande del giudice.
 Senza la metà "qualità ≥ τ", "minimizza il costo" è banale (scegli sempre il più scadente).
+
+> **Revisione del 23 ottobre 2026 (D48-D50).** Un'analisi dei router già pronti (Switchyard, NadirClaw, Conduit,
+> RouteLLM, Not Diamond, Arch-Router, RouteFM, router di OpenRouter; §7.3) ha cambiato due cose. (1) **Meccanismo
+> (D48):** sul codice prevedere quale modello basta rende poco, verificare il risultato rende; il renderer di R1
+> diventa anche il cancello del sistema. (2) **Confronto (D49):** oltre a B, C e D si misurano due politiche
+> semplici che sono le obiezioni più prevedibili allo sciame, la cascata **V** (D, poi B se il cancello rifiuta) e
+> **Plan/Execute H** (Opus pianifica, l'economico esegue). La prova principale resta C contro B; le altre politiche
+> stanno sul piano costo-qualità con il loro intervallo. La tesi regge così qualunque esito: se vince una politica
+> semplice, il risultato è *quale* leva basta. Superati di conseguenza §2.2 (flywheel), la parte OFFLINE di §6 e la
+> decisione di §3; il loro testo resta come storia.
 
 > **Riprogettazione del 18 ottobre 2026 (D35-D44, `PIANO_completo.md` §10).** Il terreno sperimentale sono i siti web
 > (D35, conferma D16). Il contributo non è più il solo router appreso (D13, sostituita): è **il sistema** e **la
@@ -63,23 +80,67 @@ la voce che può smentire l'ipotesi è la **frequenza delle escalation**, non il
 con i valori di `m` e `q` misurati nella campagna, così il lettore può ricalcolarlo con i listini del momento. La
 condizione riguarda solo il costo: la qualità si giudica a parte, con le regole di `PROTOCOLLO.md`.
 
+### 0.2 Quando conviene una politica più semplice (ipotesi dichiarata prima delle misure, D49)
+
+Scritta il 23 ottobre 2026, prima di qualunque esecuzione, con la stessa notazione di §0.1. Sono calcoli su
+ipotesi, non misure: il pilota di R2 (D50) dà i primi valori.
+
+**Cascata V (prima D, poi B se il cancello rifiuta).** Sia `c_D = m_D / r` il costo del sito di D rispetto a
+quello di B (`m_D` = token di D rispetto a B) e `a` la quota di compiti in cui il sito di D supera il cancello.
+B ricomincia da zero, quindi
+
+```
+   C_V / C_B = c_D + (1 − a)        conviene se  a > c_D
+```
+
+Con `r ≈ 30` e `m_D ≤ 4,4`, `c_D ≤ 0,15`: V costa meno di B appena D supera il cancello in più del 15% dei
+compiti. Per esempio `a = 0,5` dà `C_V / C_B` fra 0,53 e 0,65. Il rischio di V non è il costo ma la qualità: il
+cancello vede l'avvio, gli errori e i test propri, non l'aspetto, quindi può accettare un sito che funziona e non
+piace. Lo misura la coppia D-B nei compiti in cui il cancello ha accettato.
+
+**Plan/Execute H.** Sia `q_H` la quota di spesa di Opus fino alla prima scrittura di un file e `m_H` i token
+dell'economico dopo il passaggio: `C_H / C_B = q_H + m_H / r`. Riferimento pubblicato: su DeepSWE v1.1 il
+Plan/Execute di Switchyard costa $180,51 contro $720,95 del forte da solo. Se la parte economica non costa più di
+una run intera dell'economico da solo ($50,02), la parte forte vale almeno $130,49, cioè `q_H ≥ 0,18` (calcolo
+con quell'ipotesi). **Previsione per i siti:** chi costruisce un sito scrive il primo file presto, quindi il
+passaggio arriva presto, `q_H` resta basso e la qualità di H si avvicina a quella di D («D con un piano di Opus»).
+Se è così, H è un riferimento e il rivale vero di C è V.
+
+**Lo sciame contro la cascata.** Confrontando §0.1 con V, C costa meno di V se `m / r + q < c_D + (1 − a)`. Con i
+termini delle foglie piccoli, in prima approssimazione:
+
+```
+   q < 1 − a
+```
+
+Cioè la spesa di Opus nello sciame (planner più escalation) deve restare sotto la quota di compiti in cui
+l'economico da solo non passa il cancello. Sulla qualità, C deve fare meglio di V proprio dove V accetta il sito di
+D: è lì che scomposizione e critico devono valere qualcosa. Il risultato si riporta, come in §0.1, in funzione di
+`r`, con `a`, `q`, `q_H`, `m` misurati.
+
 ---
 
 ## 1. Le parti fondamentali (gerarchia)
 
 ```
             ┌──────────────── LA TESI ────────────────┐
-   PILASTRI │ 1.Cost-routing   2.Valutazione   3.Validazione sperimentale │
+   PILASTRI │ 1.Economici + verifica eseguibile  2.Valutazione  3.Validazione │
    CO-CENTR.│        (stanno o cadono INSIEME)                            │
             └──────────────────────────────────────────────────────────┘
   SUBSTRATO │ 4.Architettura multi-agente  5.Decomposizione              │
             │ 6.Coordinamento/Blackboard   7.Resilienza (Pilastro C)     │
   SUPPORTI  │ 8.Sicurezza/isolamento  9.Contesto/RAG  10.Osservabilità   │
 ```
-- **Routing**: la parte intelligente e affascinante (il "cosa" della ricerca).
-- **Valutazione**: il "*a parità di qualità*" — co-centrale, la più difficile, dove il professore spingerà.
-- **Validazione**: baseline vs sistema, variabili controllate → rende il lavoro **scienza**.
-- L'errore classico: innamorarsi del routing e sotto-costruire la valutazione → claim infalsificabile.
+- **Modelli economici con verifica eseguibile** (fino al 22 ottobre 2026: «cost-routing»): il lavoro va
+  all'economico, un cancello gratuito che esegue il sito decide se tenerlo o passare al forte (D48). È il "come" del
+  risparmio.
+- **Valutazione**: il "*a parità di qualità*" — co-centrale, la più difficile, dove il professore spingerà. Usa lo
+  stesso renderer del cancello, ma con script e domande che il sistema non vede mai.
+- **Validazione**: baseline vs sistema, variabili controllate → rende il lavoro **scienza**. Dal 23 ottobre 2026
+  comprende la **scala di politiche** B, D, V, H, C (D49): il sistema si confronta anche con le alternative più
+  semplici, non solo col forte da solo.
+- L'errore classico: innamorarsi del meccanismo di scelta del modello e sotto-costruire la valutazione → claim
+  infalsificabile.
 
 ---
 
@@ -97,6 +158,11 @@ Lo stesso pattern "valuta qualità → agisci" riappare a **ogni scala** del sis
 segnale di qualità per il software open-ended* e usarlo per guidare routing/escalation/correzione.
 
 ### 2.2 Il FLYWHEEL: cascade → dati → router → cascade più economica
+
+> **Superata il 23 ottobre 2026 (D48).** Il flywheel serve ad addestrare un router predittivo, che esce dal piano:
+> con 5 compiti di sviluppo non c'è niente da imparare, e sul codice la previsione rende poco. Resta come lavoro
+> futuro (§3). La parte che sopravvive è la cascata stessa, ora con un cancello eseguibile (§0, §0.2).
+
 ```
    cascade (cheap-first, escala) ──► log (task, modello, qualità, costo)
         ▲                                     │
@@ -141,6 +207,16 @@ come "logging" è in realtà il substrato del flywheel di apprendimento.
 ---
 
 ## 3. Routing (pilastro 1)
+
+> **Decisione rivista il 23 ottobre 2026 (D48).** La «Decisione» in fondo a questa sezione (cascade → dati → router
+> appreso) è superata. Delle strategie sotto restano **cascata/escalation** (ora con cancello eseguibile),
+> **capability-aware** (filtro per capacità, già nel registro dei modelli) e **role-based** (planner forte, worker
+> economici). Il router appreso e il classificatore che prevede in anticipo diventano lavoro futuro, per tre
+> motivi: (1) le prove raccolte in §7.3 mostrano che sul codice la previsione separa male i casi (AUROC ≈ 0,62 per
+> un classificatore che legge solo la richiesta, NadirClaw) mentre la verifica del risultato rende; (2) con 5
+> compiti di sviluppo non ci sono dati per addestrare; (3) i router con pesi pronti leggono il primo turno e sono
+> addestrati su coppie di modelli del 2024 (RouteLLM), quindi andrebbero comunque riprovati sul dominio. La
+> granularità della scelta resta per pezzo (planner, worker, critico, escalation), non per turno.
 
 **Strategie** (con la lente swarm):
 - *Keyword/euristica* → fragile.
@@ -387,6 +463,10 @@ giudizio.
 
 ## 6. Pipeline completa (dal task al risultato + apprendimento)
 
+> **Aggiornata il 23 ottobre 2026 (D48).** Nella parte RUNTIME il «Router(per foglia)» è l'assegnazione per ruolo
+> del registro, e la «cascade» usa il cancello eseguibile prima del critico. La parte OFFLINE (dataset, DPO, reward
+> model, router) è lavoro futuro.
+
 ```
 RUNTIME:
   task → Planner(forte) → sotto-task (DAG) → Router(per foglia) → Worker(modello scelto, sandbox)
@@ -483,6 +563,39 @@ flywheel cascade→router e isolamento/sicurezza. Nessuno dei lavori letti combi
 artefatto condiviso, giudizio soggettivo e costo misurato in fattura. I singoli pezzi
 hanno invece vicini precisi: S1 → AgentCARD, S2 → SWE-Router, S3 e flywheel → Agentic
 Routing e FlyRoute, metrica → Cost-of-Pass, percorso → Harness Tokenomics.
+
+### 7.3 Router pronti e politiche agentiche (rassegna del 22 ottobre 2026)
+
+Domanda di partenza: esistono router già pronti o già addestrati da usare invece di costruirne uno? Sì; ma letti
+sul sorgente fissato a commit, cambiano soprattutto il **disegno della prova** (D48, D49), non il codice di OrcV2.
+Verifiche documentali e statiche, nessun router eseguito.
+
+| Lavoro (versione letta) | Cosa fa davvero | Cosa cambia per la tesi |
+|---|---|---|
+| **Switchyard** (NVIDIA-NeMo, commit `7558a1d`, Apache-2.0, pre-1.0) | Libreria e servizio di routing durante il lavoro di un agente. Politiche senza addestramento: **Plan/Execute** (il forte fino alla prima modifica di un file, poi l'economico; basta anche una modifica fallita, `plan_execute.rs:90`), **Stage** (regole su errori degli strumenti, modifiche e stallo), **Escalation** (turno economico, giudice, eventuale forte: si pagano tutti e tre), **Advisor** (il forte rilegge la trascrizione e propone una correzione), **VGR** (verifica del candidato prima di servirlo: sperimentale, mai misurata) | Su DeepSWE v1.1 (113 compiti, 3 esecuzioni) Plan/Execute GPT-5.6 Sol → Luna: 60,8% a $180,51 contro Sol 62,8% a $720,95 e Luna 51,0% a $50,02; Advisor 57,5% a $208; costi ricalcolati sul listino OpenRouter del 9 set 2026. È il braccio **H** (D49). Sul campione SWE-Atlas (40 compiti) economico, forte e router corretto risolvono tutti 15 compiti e il router costa il 77% in più dell'economico (prezzi sintetici): motivo per tenere D |
+| **Switchyard su OpenRouter** (`nvidia/switchyard`, pagina letta il 23 ott 2026) | Servizio ospitato: capability, stage, auto, composite, random, passthrough; **non** Plan/Execute, Advisor, Escalation. Al massimo tre candidati, livelli assegnati per prezzo | Il giudice riceve una proiezione ridotta della richiesta con le **immagini sostituite da segnaposto** e una scheda che dà l'economico per inaffidabile sui lavori di codice sostanziali: sui siti manderebbe quasi tutto al forte. Le chiamate del giudice sono generazioni a parte. Non adatto alla prova |
+| **NadirClaw** (v0.25.1, PolyForm Noncommercial) | Proxy con classificatore della richiesta, cascata economico → verificatore → forte in libreria (non collegata al server standard) | Classificatore che legge solo la richiesta: AUROC ≈ 0,62 fuori famiglia; verificatore testuale AUROC 0,65 sul codice, scavalcato dalle regole del prodotto appena compare `def `. Il 98,3% di qualità e il 60% di risparmio su RouterBench valgono con la risposta del forte già disponibile al verificatore (limite di ricerca, dichiarato nel README). Prova per D48 |
+| **Conduit** (ashita-ai, archiviato il 23 apr 2026, MIT) | Bandit (Thompson Sampling, LinUCB) che sceglie un modello per domanda e impara da un voto | Il default non usa il contenuto della richiesta; il premio è una somma pesata di qualità, costo e latenza, non un vincolo `qualità ≥ τ`; il voto automatico è un'euristica testuale. Utile solo come esempio di separazione fra scelta ed esito |
+| **RouteLLM** (2406.18665, commit `0b64fda`) | Router forte/economico appresi da preferenze, pesi pubblici | Il controller legge solo l'ultimo messaggio (addestrato sul primo turno); i pesi stimano la coppia GPT-4 / Mixtral. Sulla rosa del 2026 sarebbe una prova di trasferimento |
+| **RouteFM** (2609.37362, v1.0.1) | Router preaddestrato che riceve esiti osservati dei candidati e una nuova richiesta | «Senza riaddestramento» non vuol dire «senza dati»: servono esiti per candidato. Lo split dimostrativo è scelto a posteriori (dichiarato nel README) |
+| **Arch-Router-1.5B** (2506.16655, licenza Katanemo non commerciale) | Abbina la richiesta a rotte descritte a parole | Riconosce la categoria, non dice se l'economico ce la farà su quel compito |
+| **Not Diamond**, **OpenRouter Auto / Pareto Code** | Selettori commerciali via API | Rosa di OrcV2 non nel catalogo statico; comportamento che cambia nel tempo (Auto usa la spesa aggregata degli ultimi 7 giorni); non congelabili per una campagna |
+| **LangChain**, studio su Switchyard (145 compiti agentici) | Opus 86% a $11,45; routing 80% a $3; economico 77,7% a $0,72 | Il guadagno del router sull'economico è piccolo rispetto alla variazione fra prove; il giudice pesa il 21% del costo del braccio instradato |
+
+**Cosa se ne ricava.** (1) Lo schema «il forte pianifica, l'economico esegue» è un meccanismo già pubblicato e
+misurato: la tesi non lo rivendica e lo usa come rivale (H). (2) Sul codice, prevedere in anticipo rende poco e
+verificare il risultato rende: nessuno dei router esaminati esegue però il prodotto, il cancello di OrcV2 sì
+(D48). (3) Il modello economico da solo è spesso competitivo: D e V sono necessari. (4) Le spese interne di un
+router (giudici, risposte scartate, cache persa al cambio di modello) possono annullare il risparmio, e vanno nel
+ledger. (5) Il replay su tracce registrate ricalcola il costo di una scelta, non ciò che sarebbe successo con
+un'altra: non sostituisce l'esecuzione.
+
+**Gap difendibile (aggiornato al 23 ottobre 2026):** un confronto equo sul dominio dei siti web con server fra il
+forte da solo, l'economico da solo, due politiche semplici (cascata con cancello eseguibile, Plan/Execute) e uno
+sciame con verifica eseguibile, con qualità validata da voti umani e costo misurato per chiamata; più la
+scomposizione del risparmio fra le leve. Da controllare prima della stesura: la letteratura sulla generazione web
+con verifica a ciclo chiuso (WebGen-Agent e simili), per stabilire se il cancello eseguibile come criterio di
+escalation è già pubblicato.
 
 ---
 
@@ -688,11 +801,29 @@ Onestà metodologica — ciascuno è una risposta pronta a un'obiezione:
 11. **τ ha due significati** — soglia sul singolo output (§5.6.4) e non-inferiorità di campagna. Va ancorata alla baseline (§5.11).
 12. **Punti ciechi dello screenshot** — mobile, interazione, animazioni non compaiono in un'immagine ferma.
 13. **Varianza fra esecuzioni** — lo stesso modello produce pagine diverse: decide quante ripetizioni servono.
+14. **Una politica semplice raggiunge lo sciame** (D49) — se V o H costano quanto C a qualità pari, il risultato è
+    «basta la verifica» o «basta il piano»: la tesi lo riporta come esito, non come fallimento (§0.2).
+15. **Il cancello accetta siti che funzionano ma non piacciono** (D48) — un controllo eseguibile non vede
+    l'aspetto. Si misura sulle coppie D-B dei compiti accettati; se la perdita su «piace» è grande, il cancello
+    di C e V va completato con il critico visivo.
+16. **Originalità del cancello eseguibile** — da verificare sulla letteratura della generazione web con verifica
+    prima di rivendicarla (§7.3).
 
 ---
 
 ## 11. Glossario rapido
-- **Cost-routing**: instradare ogni (sotto-)task al modello più economico che soddisfa τ.
+- **Cost-routing**: instradare ogni (sotto-)task al modello più economico che soddisfa τ. Dal 23 ottobre 2026 la
+  tesi non lo fa prevedendo, ma verificando (D48).
+- **Cancello eseguibile**: controllo gratuito sul sito prodotto (si avvia, nessun errore JavaScript, i test scritti
+  dall'agente passano) che decide se tenere il lavoro dell'economico; non vede mai script né domande della
+  valutazione (D48).
+- **Cascata V**: politica «prima l'economico da solo, poi il forte da zero se il cancello rifiuta» (D49, §0.2).
+- **Plan/Execute (H)**: politica di un agente singolo: il forte lavora fino alla prima scrittura di un file, poi
+  passa all'economico con tutta la storia (D49, §7.3).
+- **Scala di politiche**: B, D, V, H, C riportati sullo stesso piano costo-qualità; la prova principale resta
+  C contro B (D49).
+- **Replay**: rigiocare scelte o prezzi su tracce già registrate. Ricalcola un costo, non dice cosa sarebbe
+  successo con un'altra scelta (§7.3).
 - **Cascade**: prova cheap → escala su qualità insufficiente (scopre, non predice).
 - **Reward model**: rete che assegna un punteggio di qualità appreso da preferenze.
 - **DPO**: preference tuning diretto sulle coppie (no reward model separato, no RL).

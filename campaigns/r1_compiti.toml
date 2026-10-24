@@ -1,0 +1,35 @@
+# Compiti di sviluppo di R1 (docs/PROTOCOLLO.md §2).
+#
+# Ogni fonte, dopo il pre-filtro, si ordina per identificativo e si mescola con
+# il seme. I compiti si leggono in quell'ordine: ciascuno riceve un verdetto,
+# tenuto (con il tipo) o scartato (con il motivo), finche' i tenuti arrivano al
+# numero richiesto. `webtasks.select` rifa' il percorso e rifiuta un compito
+# saltato senza verdetto o un verdetto dato fuori ordine.
+
+seed = 20261021
+
+[webgen]
+count = 3
+verdicts = [
+  { id = "000098", keep = true, kind = "applicazione" },
+  { id = "000068", keep = false, reason = "dati esterni con chiave (meteo e qualita' dell'aria in tempo reale)" },
+  { id = "000040", keep = true, kind = "sito" },
+  { id = "000058", keep = true, kind = "applicazione" },
+]
+
+[artifactsbench]
+count = 2
+verdicts = [
+  { id = "1100", keep = false, reason = "specifica insufficiente" },
+  { id = "569", keep = false, reason = "camera e microfono, non verificabili nella sandbox" },
+  { id = "225", keep = false, reason = "specifica insufficiente" },
+  { id = "909", keep = false, reason = "specifica insufficiente" },
+  { id = "1020", keep = false, reason = "specifica insufficiente" },
+  { id = "842", keep = true, kind = "applicazione" },
+  { id = "1594", keep = false, reason = "contenuto non verificabile da giudice e votanti (poesie cinesi con pinyin): revisione del 22 ott" },
+  { id = "1701", keep = false, reason = "contenuto non verificabile (dati statistici dello Shanxi)" },
+  { id = "1618", keep = false, reason = "programma desktop (Electron)" },
+  { id = "1236", keep = false, reason = "mini-program e AI" },
+  { id = "1024", keep = false, reason = "specifica insufficiente" },
+  { id = "684", keep = true, kind = "applicazione" },
+]

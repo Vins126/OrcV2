@@ -515,6 +515,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch = sotto.add_parser("fetch-polyglot", help="scarica gli esercizi polyglot al commit fissato")
     fetch.add_argument("--dest", type=Path, default=PROJECT_ROOT / "campaigns" / "data" / "polyglot-python")
 
+    web = sotto.add_parser("fetch-webtasks",
+                           help="scarica WebGen-Bench e ArtifactsBench ai commit fissati (R1)")
+    web.add_argument("--dest", type=Path, default=PROJECT_ROOT / "campaigns" / "data" / "webtasks")
+
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")
     return parser
@@ -536,6 +540,16 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
             print(f"errore: {errore}", file=sys.stderr)
             return 2
         print(f"esercizi scaricati in {cartella}")
+        return 0
+
+    if args.comando == "fetch-webtasks":
+        from webtasks import fetch_webtasks
+        try:
+            cartella = fetch_webtasks(args.dest)
+        except CampaignError as errore:
+            print(f"errore: {errore}", file=sys.stderr)
+            return 2
+        print(f"compiti dei siti scaricati in {cartella}")
         return 0
 
     if args.comando == "report":
