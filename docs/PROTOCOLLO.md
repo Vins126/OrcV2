@@ -4,7 +4,7 @@
 > volta durante R0-R1; prima della campagna finale (R6) il file si fissa con un commit pubblicato e
 > da quel momento non cambia. Una modifica dopo quel commit va dichiarata e la campagna rifatta.
 >
-> Legenda: ✅ deciso · 🔲 da decidere. Le sigle D35-D50 rimandano al registro in `PIANO_completo.md`.
+> Legenda: ✅ deciso · 🔲 da decidere. Le sigle D35-D51 rimandano al registro in `PIANO_completo.md`.
 
 ## 1. Ipotesi ✅
 
@@ -60,9 +60,23 @@ prima delle misure: `m / r + q < 1` (D37).
   `684` ✅. Verdetti in `campaigns/r1_compiti.toml`; il codice rifa' la scelta dai file veri.
 - ✅ **Testo dei compiti (22 ott 2026):** il testo arriva ai bracci com'e' nel benchmark, compreso il preambolo di
   ArtifactsBench («You are a code expert…»), uguale per tutti i bracci.
+- ✅ **Composizione del prompt (24 ott 2026):** testo del compito com'e', poi la cornice comune
+  (`campaigns/r1_prompt/cornice.md`: `start.sh` sulla porta 8080, dipendenze e build nel workspace con lockfile,
+  niente rete ne' CDN, `data-testid` obbligatori, `datetime-local`, contratto rispettato esattamente), poi il
+  materiale del compito (`campaigns/r1_prompt/<id>.md`: contratto delle rotte se c'e', marcatori, note). Il
+  materiale del prompt sta in file separati da quelli di valutazione e ammette solo tre sezioni; codice in
+  `webprompt.py`. Prompt in inglese, come i testi dei compiti: contratti e marcatori approvati in italiano sono
+  tradotti, con test che ne controllano l'allineamento (stessi marcatori, stesse rotte).
 - ✅ **Scelta:** prima si filtrano i compiti che rispettano le regole qui sopra, poi si estraggono a sorte con un
   seme scritto in questo file, separatamente per siti e applicazioni.
 - ✅ **Seme del sorteggio:** 20261021.
+- ✅ **Ordine registrato (24 ott 2026):** l'ordine di lettura estratto di ciascuna fonte sta in
+  `campaigns/r1_ordine.json` e il codice lo confronta con quello calcolato: un ordine diverso (per esempio con
+  un'altra versione di Python) e' un errore, non uno spostamento silenzioso.
+- ✅ **Compiti della calibrazione del giudice (24 ott 2026):** solo compiti di ArtifactsBench dalla 300ª posizione
+  dell'ordine registrato in poi; i compiti di test si prendono dall'inizio dello stesso ordine e non la raggiungono.
+  Coppie dalle risposte pubblicate di ArtifactsBench (CC BY 4.0, con attribuzione), solo HTML in un file, piu'
+  almeno 20 coppie dal pilota di R2 per i siti con server.
 - ✅ **Modo del filtro (21 ott 2026):** un pre-filtro per etichetta toglie le categorie che non sono siti ne'
   applicazioni nel browser; i candidati si mescolano con il seme e si leggono nell'ordine estratto, tenendo chi
   rispetta le regole fino al numero richiesto. E' equivalente a filtrare tutto e poi estrarre: in un ordine
@@ -119,9 +133,16 @@ H (D42).
 
 ## 4. Modelli ✅ (D38)
 
-Versioni, fornitori e listini in `models.toml` (letti il 19-21 ott 2026). Modello economico: DeepSeek V4.1 Flash
+Versioni, fornitori e listini in `models.toml` (letti il 19-24 ott 2026). Modello economico: DeepSeek V4.1 Flash
 `-1017` sull'endpoint DeepSeek (D47), usato dai worker di C e dal braccio D. Le run a pagamento si lanciano fuori
 dalla fascia oraria in cui DeepSeek raddoppia il prezzo (giorni feriali, 01-04 e 06-10 UTC).
+
+- ✅ **Intermedio (24 ott 2026, D51, modifica D38):** Kimi K3.1 Pro sostituisce GPT-6.1 Sol nella rosa e nel
+  ruolo `worker`. Identificativo OpenRouter `moonshotai/kimi-k3.1-pro`, endpoint standard Moonshot
+  `moonshotai/mxfp4`: input 2, output 10, lettura cache 0,20 dollari per milione di token, letti dal catalogo
+  pubblico degli endpoint il 24 ottobre. GPT-6.1 Sol e Kimi K3 restano nel registro senza ruolo per i dati
+  storici. La scelta non cambia DeepSeek di D47 ne' decide l'assegnazione finale dei worker di C (R2.3).
+  Nessun confronto di qualita' ne' costo per compito misurato con K3.1 Pro.
 
 ## 5. Ambiente ✅ (21 ott 2026)
 
@@ -136,7 +157,8 @@ tutti i bracci.
 
 - ✅ Tre livelli: controlli automatici, giudice a coppie in entrambi gli ordini con famiglie non in gara, voti
   umani alla cieca (4-6 persone) per verificare il giudice. Giudice scelto in R1 fra Gemini 4 Argon e Gemini 3.8
-  Flash per accordo con i voti umani.
+  Flash per accordo con i voti umani. **Rivisto il 24 ott 2026 (D52):** giudice GPT-6.1 Sol via Codex CLI con
+  l'abbonamento dell'autore (famiglia non in gara dopo D51); si usa solo se l'accordo con i voti umani regge.
 - ✅ **Controlli automatici (livello 1, 21 ott 2026):** Playwright apre il sito e verifica: (1) apertura senza
   errori JavaScript in console; (2) nessuno scorrimento orizzontale a 375, 768 e 1440 px; (3) problemi gravi di
   accessibilita' secondo axe-core; (4) uno script di interazione scritto prima della generazione (per le

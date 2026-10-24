@@ -108,7 +108,8 @@ def test_e5_tempo_scaduto_ferma_il_container_ed_e_un_guasto(tmp_path):
     with pytest.raises(RenderError, match="tempo"):
         evaluate_site(_workspace(tmp_path), tmp_path / "s.py", runner=run, timeout=1)
     nome = _valore(chiamate[0], "--name")
-    assert ["docker", "kill", nome] in [c[:3] for c in chiamate]
+    # P19-D2 (24 ott): `rm -f` toglie anche un container mai partito, `kill` no.
+    assert ["docker", "rm", "-f", nome] in [c[:4] for c in chiamate]
 
 
 def test_e6_il_workspace_non_viene_toccato(tmp_path):

@@ -16,7 +16,7 @@ from typing import Any, Callable, Sequence
 
 import config
 from run_status import RunStatus
-from task_model import CampaignError, Task
+from task_model import CampaignError, Task, VerificationError, as_verifier
 from accounting import ModelRegistry
 from accounting.errors import ModelNotFound, RegistryError, UnitNotFound
 from agent_factory import AgentFactory
@@ -153,8 +153,11 @@ def shell_docker(workspace: Path, command: str) -> int:
 
 def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
                 shell: Callable[[Path, str], int],
-                max_iterations: int | None) -> dict[str, Any]:
+                max_iterations: int | None, out_dir: Path) -> dict[str, Any]:
     """Una run: agente nuovo, setup, incarico, verifica. Restituisce la riga del manifesto.
+
+    `out_dir` e' la cartella in cui il verificatore puo' scrivere i suoi file
+    (per un sito: valutazione.json e screenshot); un comando shell non la usa.
 
     Gira su un thread del gruppo quando la campagna e' concorrente: non scrive
     nel manifesto e non tocca stato condiviso, restituisce solo la riga. E' la
@@ -199,7 +202,15 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
         # I file da ripristinare (i test originali) si riscrivono PRIMA di
         # verificare: se l'agente li ha toccati, cio' non conta.
         _scrivi_file(built.workspace, task.restore)
-        verified = shell(built.workspace, task.verify) == 0
+        verifica = as_verifier(task.verify)(built.workspace, out_dir, shell)
+        verified = verifica.verified
+        row.update(verifica.summary)
+    except VerificationError as errore:
+        # Guasto della valutazione (esito illeggibile, tempo scaduto): non dice
+        # nulla sul lavoro del modello. Il report lo tiene fuori da `f`.
+        verified = False
+        row["evaluation_failed"] = True
+        row["error_type"] = row["error_type"] or type(errore).__name__
     except Exception as errore:
         # La run e' gia' stata pagata: la riga con il suo costo si scrive
         # comunque, con la verifica data per non riuscita.
@@ -226,8 +237,11 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
 
     Ogni run ha un agente nuovo e quindi un workspace nuovo: le ripetizioni
     sono indipendenti. Una run e' un successo solo se l'incarico e' `completed`
-    **e** `verify` esce con 0: un modello che risponde «fatto!» senza aver
-    fatto nulla non conta come riuscito.
+    **e** la verifica accetta il lavoro (un comando `verify` che esce con 0, o
+    per un sito il sito che parte): un modello che risponde «fatto!» senza aver
+    fatto nulla non conta come riuscito. Il verificatore di ogni run scrive i
+    suoi file in `<campaigns_dir>/<campaign_id>/<task>-<rep>/`; un suo guasto
+    (`VerificationError`) si annota come `evaluation_failed` e resta fuori da `f`.
 
     Il manifesto (`<campaigns_dir>/<campaign_id>.jsonl`) riceve una riga per
     run, scritta subito: se la campagna si interrompe, quanto gia' speso resta
@@ -322,7 +336,8 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
     esiti = run_parallel(
         jobs,
         lambda job: _esegui_run(factory, job[0], job[1], role=role, shell=shell,
-                                max_iterations=max_iterations),
+                                max_iterations=max_iterations,
+                                out_dir=campaigns_dir / campaign_id / f"{job[0].id}-{job[1]}"),
         max_workers=workers, admit=admit, on_done=on_done)
 
     rows = [righe_run[i] for i in sorted(righe_run)]
@@ -352,6 +367,16 @@ def sandbox_environment(image: str, network: str, *,
     """
     leggi = inspect if inspect is not None else sandbox.image_id
     return {"image": image, "image_id": leggi(image), "network": network}
+
+
+def orphan_max_ages() -> dict[str, float]:
+    """Tempo massimo di vita di ogni tipo di container, per riconoscere gli orfani (R1.11).
+
+    Si legge dal punto d'ingresso, non all'import: dipende dalla configurazione.
+    """
+    import renderer
+    return {"orc-sandbox-": float(config.EXEC_TIMEOUT), "orc-renderer-": float(renderer.RENDER_TIMEOUT_S),
+            "orc-eval-": float(renderer.EVAL_TIMEOUT_S)}
 
 
 def ensure_image_available(image: str, *,
@@ -384,8 +409,9 @@ def report(manifest_path: Path, runs_root: Path, registry: Any) -> CampaignRepor
     """
     righe = [json.loads(r) for r in Path(manifest_path).read_text().splitlines() if r]
     tutte = [r for r in righe if r.get("task_id")]
-    # I guasti della campagna non dicono nulla sul modello: fuori da `f`.
-    run = [r for r in tutte if r.get("status") not in ("setup_failed", "build_failed")]
+    # I guasti della campagna e della valutazione non dicono nulla sul modello: fuori da `f`.
+    run = [r for r in tutte if r.get("status") not in ("setup_failed", "build_failed")
+           and not r.get("evaluation_failed")]
 
     per_task: dict[str, list[bool]] = {}
     for r in run:
@@ -591,6 +617,7 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
         ensure_image_available(config.DOCKER_IMAGE, attempts=config.DOCKER_TENTATIVI_AVVIO,
                                delay=config.DOCKER_ATTESA_AVVIO_S,
                                max_total_s=config.DOCKER_ATTESA_AVVIO_MAX_S)
+        orfani = sandbox.cleanup_orphans(orphan_max_ages())
         config.load_environment(dotenv)
         factory = AgentFactory(
             registry, runs_root=runs_root, workspaces_root=PROJECT_ROOT / "workspace",
@@ -606,7 +633,8 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
             factory, tasks, role=args.role, repetitions=args.repetitions,
             campaign_id=campaign_id, campaigns_dir=campaigns_dir, shell=shell_docker,
             max_total_usd=args.max_total_usd, max_iterations=args.max_iterations,
-            environment=sandbox_environment(config.DOCKER_IMAGE, args.network),
+            environment={**sandbox_environment(config.DOCKER_IMAGE, args.network),
+                         "orphans_removed": orfani},
             workers=args.workers, reserve_per_run_usd=args.budget_usd)
     except CampaignError as errore:
         print(f"errore: {errore}", file=sys.stderr)

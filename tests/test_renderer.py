@@ -149,7 +149,8 @@ def test_r7_tempo_scaduto_ferma_il_container_per_nome_ed_e_un_guasto(tmp_path):
 
     nome = _valore(chiamate[0], "--name")
     assert nome.startswith("orc-renderer-")
-    assert ["docker", "kill", nome] in [c[:3] for c in chiamate]
+    # P19-D2 (24 ott): `rm -f` toglie anche un container mai partito, `kill` no.
+    assert ["docker", "rm", "-f", nome] in [c[:4] for c in chiamate]
 
 
 def test_r8_la_valutazione_lavora_su_una_copia_del_workspace(tmp_path):

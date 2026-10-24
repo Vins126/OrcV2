@@ -19,6 +19,7 @@ from accounting import ModelRegistry
 from agent import AgentFailure, RunResult
 import campaign
 from campaign import CampaignError, Task, load_tasks, report, run_campaign
+from task_model import Verification, VerificationError
 
 TASKS_M2S4A = Path("campaigns/m2s4a.toml")
 
@@ -1080,3 +1081,68 @@ def test_un_tetto_per_run_piu_alto_del_totale_e_un_errore_prima_di_creare_il_man
 
     assert fabbrica.costruiti == []
     assert not (tmp_path / "campagne" / "c.jsonl").exists()
+
+
+# ── R1.5: verificatori, valutazione.json e guasti della valutazione ────────
+
+class VerificatoreFinto:
+    """Verificatore che registra dove gli si chiede di scrivere e risponde come detto."""
+
+    def __init__(self, esito=None, solleva=None):
+        self.esito = esito or Verification(verified=True, summary={"evaluation": {"funziona": 80.0}})
+        self.solleva = solleva
+        self.cartelle = []
+
+    def __call__(self, workspace, out_dir, shell):
+        self.cartelle.append(out_dir)
+        if self.solleva:
+            raise self.solleva
+        return self.esito
+
+
+def test_r15_1_il_verificatore_riceve_una_cartella_per_run_e_il_riassunto_va_nel_manifesto(tmp_path):
+    fabbrica = FabbricaFinta(tmp_path)
+    verificatore = VerificatoreFinto()
+    task = Task(id="842", prompt="p", verify=verificatore)
+
+    manifesto = _esegui(tmp_path, fabbrica, shell_che_registra(fabbrica.eventi), ripetizioni=2, tasks=[task])
+
+    assert verificatore.cartelle == [tmp_path / "campagne" / "c1" / "842-1", tmp_path / "campagne" / "c1" / "842-2"]
+    assert all(r["success"] and r["evaluation"] == {"funziona": 80.0} for r in manifesto)
+
+
+def test_r15_2_un_guasto_della_valutazione_si_annota_e_non_e_un_fallimento_del_sito(tmp_path):
+    fabbrica = FabbricaFinta(tmp_path, costo=0.05)
+    task = Task(id="842", prompt="p", verify=VerificatoreFinto(solleva=VerificationError("eval.json illeggibile")))
+
+    manifesto = _esegui(tmp_path, fabbrica, shell_che_registra(fabbrica.eventi), tasks=[task])
+
+    assert manifesto[0]["evaluation_failed"] is True
+    assert manifesto[0]["verified"] is False and manifesto[0]["success"] is False
+    assert manifesto[0]["error_type"] == "VerificationError"
+    assert manifesto[0]["total_cost"] == pytest.approx(0.05)
+
+
+def test_r15_3_un_comando_shell_non_aggiunge_campi_alla_riga(tmp_path):
+    fabbrica = FabbricaFinta(tmp_path)
+
+    manifesto = _esegui(tmp_path, fabbrica, shell_che_registra(fabbrica.eventi), tasks=due_task()[1:])
+
+    assert "evaluation" not in manifesto[0] and "evaluation_failed" not in manifesto[0]
+
+
+def test_r15_4_il_report_tiene_i_guasti_della_valutazione_fuori_da_f(tmp_path):
+    runs = tmp_path / "runs"
+    _scrivi_run(runs, "r0", {"input_tokens": 1000})
+    manifesto = tmp_path / "c1.jsonl"
+    with open(manifesto, "w") as f:
+        f.write(json.dumps({"task_id": "t1", "rep": 1, "run_id": "r0", "status": "completed",
+                            "success": True, "total_cost": 0.0}) + "\n")
+        f.write(json.dumps({"task_id": "t1", "rep": 2, "run_id": None, "status": "completed",
+                            "success": False, "evaluation_failed": True, "total_cost": 0.0}) + "\n")
+
+    esito = report(manifesto, runs, ModelRegistry.from_file("models.toml"))
+
+    assert esito.runs == 1
+    assert esito.failure_rate == pytest.approx(0.0)
+    assert esito.excluded_runs == 1

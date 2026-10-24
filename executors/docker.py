@@ -39,12 +39,14 @@ import subprocess
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from executors.base import CommandExecutor
+from task_model import VerificationError
 
 log = logging.getLogger(__name__)
 
@@ -87,20 +89,21 @@ class ContainerLimiter:
     Limiti noti:
         - Processi con `max_concurrent` diversi sulla stessa cartella: vale il
           limite piu' alto (chi ha 6 usa i file 0-5, chi ha 4 i file 0-3).
-        - L'attesa di un posto non ha un tempo massimo: il `timeout` dell'esecutore
-          conta solo da quando il container parte. Il tempo in coda si legge nel
-          ledger (evento `sandbox_wait`).
+        - L'attesa di un posto ha un tempo massimo solo se dato (`max_wait_s`; il
+          limitatore di modulo usa `config.DOCKER_ATTESA_POSTO_MAX_S`): il `timeout`
+          dell'esecutore conta da quando il container parte. Il tempo in coda si
+          legge nel ledger (evento `sandbox_wait`).
         - Il posto libero si cerca ogni `poll_s` secondi: l'ordine fra chi aspetta
           non e' garantito (nessuna coda equa).
-        - Il container puo' restare vivo con il posto gia' libero: se il processo
-          muore durante un `docker run`, se arriva un Ctrl+C (o un'altra eccezione
-          che non sia lo scadere del tempo), o se il tempo scade prima che Docker
-          abbia avviato il container (il `kill` non lo trova). Per un ciclo infinito
-          il limite viene superato. Rimedio previsto in M4: fermare all'avvio i
-          container `orc-sandbox-*` orfani. Non provato con Docker vero.
+        - Il container puo' restare vivo con il posto gia' libero se il processo
+          muore (`kill -9`) durante un `docker run`: provato con Docker vero il 24
+          ott. Su un'eccezione, Ctrl+C compreso, il container si toglie per nome con
+          `docker rm -f` prima di liberare il posto; gli orfani di un processo morto
+          li toglie `cleanup_orphans` all'avvio della campagna.
     """
 
-    def __init__(self, max_concurrent: int, slots_dir: str | Path, *, poll_s: float = 0.05):
+    def __init__(self, max_concurrent: int, slots_dir: str | Path, *, poll_s: float = 0.05,
+                 max_wait_s: float | None = None):
         """Prepara i posti.
 
         Args:
@@ -108,16 +111,21 @@ class ContainerLimiter:
             slots_dir: cartella dei file dei posti, condivisa da chi deve rispettare
                 lo stesso limite.
             poll_s: ogni quanto riprovare quando i posti sono tutti presi.
+            max_wait_s: attesa massima per un posto; `None` aspetta senza limite.
 
         Raises:
-            ValueError: se `max_concurrent` non e' positivo. Si controlla prima di
-                creare la cartella, per non lasciarne di orfane.
+            ValueError: se `max_concurrent` non e' positivo o `max_wait_s` e'
+                negativo. Si controlla prima di creare la cartella, per non
+                lasciarne di orfane.
         """
         if max_concurrent < 1:
             raise ValueError(f"max_concurrent deve essere almeno 1, non {max_concurrent}")
+        if max_wait_s is not None and max_wait_s < 0:
+            raise ValueError(f"max_wait_s non puo' essere negativo, non {max_wait_s}")
         self.max_concurrent = max_concurrent
         self.slots_dir = Path(slots_dir)
         self.poll_s = poll_s
+        self.max_wait_s = max_wait_s
         self.slots_dir.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
@@ -126,6 +134,9 @@ class ContainerLimiter:
 
         Yields:
             I secondi passati ad aspettare il posto.
+
+        Raises:
+            SandboxSlotTimeout: nessun posto libero entro `max_wait_s`.
         """
         inizio = time.monotonic()
         while True:
@@ -151,7 +162,13 @@ class ContainerLimiter:
                     finally:
                         os.close(fd)
                 return
-            time.sleep(self.poll_s)
+            atteso = time.monotonic() - inizio
+            if self.max_wait_s is not None and atteso >= self.max_wait_s:
+                raise SandboxSlotTimeout(
+                    f"nessun posto della sandbox libero dopo {atteso:.1f} s "
+                    f"({self.max_concurrent} occupati)")
+            resta = None if self.max_wait_s is None else self.max_wait_s - atteso
+            time.sleep(self.poll_s if resta is None else min(self.poll_s, resta))
 
 
 _shared: ContainerLimiter | None = None
@@ -170,7 +187,8 @@ def shared_limiter() -> ContainerLimiter:
         if _shared is None:
             import config
             _shared = ContainerLimiter(config.DOCKER_MAX_CONCURRENT,
-                                       Path(config.DOCKER_SLOTS_DIR).expanduser())
+                                       Path(config.DOCKER_SLOTS_DIR).expanduser(),
+                                       max_wait_s=config.DOCKER_ATTESA_POSTO_MAX_S)
         return _shared
 
 
@@ -179,6 +197,82 @@ def reset_shared_limiter() -> None:
     global _shared
     with _shared_lock:
         _shared = None
+
+
+class SandboxSlotTimeout(VerificationError):
+    """Nessun posto libero nella sandbox entro l'attesa massima.
+
+    E' un guasto della macchina, non del modello (P19-D4): in verifica la riga
+    diventa `evaluation_failed` e resta fuori da `f`. Durante il lavoro
+    dell'agente arriva come un errore qualunque della run.
+    """
+
+
+def remove_container(name: str, runner: Callable[..., Any] | None = None) -> None:
+    """Toglie un container per nome, che sia vivo, fermo o mai partito.
+
+    `docker kill` non toglie un container rimasto «Created» (tempo scaduto prima
+    dell'avvio) e su quello `--rm` non scatta: `rm -f` si'. Un errore qui non deve
+    nascondere quello che ha portato a chiamarla: si ignora.
+    """
+    esegui = runner if runner is not None else subprocess.run
+    with suppress(Exception):
+        esegui(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=KILL_TIMEOUT_S)
+
+
+#: Prefissi dei nomi dei container del progetto: sandbox, renderer, script d'interazione.
+ORPHAN_PREFIXES = ("orc-sandbox-", "orc-renderer-", "orc-eval-")
+#: Margine oltre il tempo massimo di un container prima di considerarlo orfano.
+ORPHAN_MARGIN_S = 30.0
+
+
+def _creato(testo: str) -> datetime:
+    """Data di creazione di `docker inspect` (RFC 3339 con nanosecondi) come datetime UTC."""
+    base, _, resto = testo.strip().partition(".")
+    return datetime.fromisoformat(base + ("+00:00" if resto.endswith("Z") or not resto else ""))
+
+
+def cleanup_orphans(max_age_s: Mapping[str, float], *, created_grace_s: float = 60.0,
+                    runner: Callable[..., Any] | None = None,
+                    now: datetime | None = None) -> list[str]:
+    """Toglie i container del progetto rimasti orfani; restituisce i nomi tolti.
+
+    Si giudica per eta' (P19-D1), cosi' i container di una campagna viva in un
+    altro terminale non si toccano: un container che ha superato il suo tempo
+    massimo (`max_age_s[prefisso]`) di oltre 30 s, o uno mai partito («created»)
+    da oltre `created_grace_s`, non appartiene piu' a nessuno.
+
+    Args:
+        max_age_s: tempo massimo di vita per prefisso del nome (`orc-sandbox-` ...).
+        created_grace_s: dopo quanto un container mai partito e' orfano.
+        runner: chi esegue i comandi `docker` (nei test, un finto).
+        now: l'ora di riferimento (nei test, fissa).
+
+    Una rimozione fallita e' un avviso nel log, non un errore: la campagna parte.
+    """
+    esegui = runner if runner is not None else subprocess.run
+    adesso = now if now is not None else datetime.now(timezone.utc)
+    elenco = esegui(["docker", "ps", "-a", "--filter", "name=orc-", "--format", "{{.Names}}"],
+                    capture_output=True, text=True, timeout=30)
+    # Il filtro di Docker cerca la sottostringa: si ricontrolla l'inizio del nome.
+    nomi = [n for n in elenco.stdout.split() if n.startswith(tuple(max_age_s))]
+    if not nomi:
+        return []
+    dettagli = esegui(["docker", "inspect", "--format", "{{.Name}}\t{{.State.Status}}\t{{.Created}}", *nomi],
+                      capture_output=True, text=True, timeout=30)
+    tolti: list[str] = []
+    for riga in dettagli.stdout.splitlines():
+        nome, stato, creato = riga.lstrip("/").split("\t")
+        eta = (adesso - _creato(creato)).total_seconds()
+        massimo = next(v for k, v in max_age_s.items() if nome.startswith(k))
+        if eta <= (created_grace_s if stato == "created" else massimo + ORPHAN_MARGIN_S):
+            continue
+        esito = esegui(["docker", "rm", "-f", nome], capture_output=True, text=True, timeout=KILL_TIMEOUT_S)
+        if esito.returncode == 0:
+            tolti.append(nome)
+        else:
+            log.warning("Container orfano %s non rimosso: %s", nome, (esito.stderr or "").strip())
+    return tolti
 
 
 class SandboxImageMissing(Exception):
@@ -394,13 +488,11 @@ class DockerExecutor(CommandExecutor):
                                 attesa, errore)
             try:
                 r = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=self.timeout)
-            except subprocess.TimeoutExpired:
-                # `timeout` di `subprocess.run` ferma il programma `docker`, non il container:
-                # un ciclo infinito resterebbe vivo (e a consumare) per sempre. Lo si ferma
-                # per nome; `--rm` poi lo rimuove. Se il `kill` stesso fallisce, l'errore di
-                # tempo arriva comunque a chi ha chiamato.
-                with suppress(Exception):
-                    subprocess.run(["docker", "kill", nome], capture_output=True,
-                                   timeout=KILL_TIMEOUT_S)
+            except BaseException:
+                # `timeout` di `subprocess.run` ferma il programma `docker`, non il container,
+                # e un Ctrl+C lo stesso: un ciclo infinito resterebbe vivo per sempre. Lo si
+                # toglie per nome, anche se non era ancora partito; l'errore arriva comunque
+                # a chi ha chiamato.
+                remove_container(nome)
                 raise
         return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}

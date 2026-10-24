@@ -54,7 +54,7 @@ python main.py "crea un file ciao.txt con dentro hello, poi rileggilo"
 ```
 
 Senza altre opzioni l'agente ha il ruolo `worker`, quindi `models.toml` lo assegna a
-`kimi-k3`. Tutti i modelli passano da **OpenRouter** e serve solo `ORC2_OPENROUTER_KEY` nel
+`kimi-k3-1-pro` (Kimi K3.1 Pro). Tutti i modelli passano da **OpenRouter** e serve solo `ORC2_OPENROUTER_KEY` nel
 `.env`. Il ruolo decide il modello: cambiarlo non richiede di toccare il codice. Le altre
 infrastrutture (Anthropic, Moonshot, MiniMax, OpenAI, il proxy locale) sono scollegate:
 vedi `docs/INFRASTRUTTURE_SCOLLEGATE.md`.

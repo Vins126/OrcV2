@@ -129,7 +129,8 @@ api_key_env = "ORC2_OPENROUTER_KEY"
 # ───────────────────────────────────────────────────────────────────────────
 
 # ═══ ROSA DEI MODELLI (D38, 18 ott 2026) ═══
-# Forte: Opus 5.5. Intermedio: GPT-6.1 Sol. Economici: DeepSeek V4.1 Flash (D47, al posto di V4 Pro)
+# Forte: Opus 5.5. Intermedio: Kimi K3.1 Pro (24 ott 2026, al posto di GPT-6.1 Sol).
+# Economici: DeepSeek V4.1 Flash (D47, al posto di V4 Pro)
 # e GLM 5.3 Flash.
 # Candidati giudice (D41, scelta in R1): Gemini 4 Argon e Gemini 3.8 Flash.
 # Listini letti il 19 ott 2026 dall'elenco pubblico degli endpoint di OpenRouter
@@ -157,15 +158,17 @@ prices         = { input_tokens = 4.00, output_tokens = 20.00, cached_input_toke
 
 # --- Fascia media ---
 
-# Endpoint `openai` (19 ott 2026): 2.00 / 10.00 / lettura 0.10 / scrittura 2.50, trascritti
-# come li espone OpenRouter. Non si usa `openai/flex` (meta' prezzo, priorita' bassa e tempi
-# non garantiti): il listino deve descrivere il servizio normale. Accetta immagini.
-[models.gpt-6-1-sol]
+# Endpoint standard `moonshotai/mxfp4` (24 ott 2026), elenco pubblico:
+# https://openrouter.ai/api/v1/models/moonshotai/kimi-k3.1-pro/endpoints
+# Input 2.00, output 10.00, lettura cache 0.20 per milione; accetta immagini e strumenti.
+# Non si usa `moonshotai/highspeed` (4.00 / 20.00). Nessun prezzo di scrittura cache
+# esposto dall'endpoint: un consumo di quel tipo resta non prezzato. Nessuna prova reale.
+[models.kimi-k3-1-pro]
 provider       = "openrouter"
-api_model      = "openai/gpt-6.1-sol"
-provider_order = ["openai"]
+api_model      = "moonshotai/kimi-k3.1-pro"
+provider_order = ["moonshotai/mxfp4"]
 capabilities   = ["reasoning", "code", "text", "vision_input"]
-prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.10, cache_write_tokens = 2.50 }
+prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.20 }
 
 # --- Fascia economica ---
 
@@ -224,8 +227,18 @@ provider_order = ["google-ai-studio"]
 capabilities   = ["reasoning", "code", "text", "vision_input"]
 prices         = { input_tokens = 0.75, output_tokens = 3.75, cached_input_tokens = 0.075, cache_write_tokens = 0.0416666666666667 }
 
-# --- Fuori rosa (D38): restano solo per prezzare le run gia' in `runs/` ---
+# --- Fuori rosa (D38 e revisione del 24 ott): listini per le run gia' in `runs/` ---
 # Nessun ruolo li usa. Toglierli renderebbe non prezzabili i dati di M2s e M3.
+
+# GPT-6.1 Sol, sostituito da Kimi K3.1 Pro come intermedio il 24 ott 2026.
+# Endpoint `openai` (19 ott 2026): 2.00 / 10.00 / lettura 0.10 / scrittura 2.50,
+# trascritti come li espone OpenRouter. Listino storico conservato, nessun ruolo.
+[models.gpt-6-1-sol]
+provider       = "openrouter"
+api_model      = "openai/gpt-6.1-sol"
+provider_order = ["openai"]
+capabilities   = ["reasoning", "code", "text", "vision_input"]
+prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.10, cache_write_tokens = 2.50 }
 
 # Endpoint `moonshotai/mxfp4` di OpenRouter (letto il 10 ott 2026): 3.00 / 15.00 / lettura
 # cache 0.30, come il listino ufficiale Moonshot. Quantizzazione mxfp4 = precisione nativa
@@ -270,7 +283,7 @@ model    = "opus-5-5"
 requires = ["reasoning", "code"]
 
 [roles.worker]
-model    = "gpt-6-1-sol"
+model    = "kimi-k3-1-pro"
 requires = ["code"]
 
 [roles.worker_cheap]

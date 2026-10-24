@@ -16,6 +16,14 @@ def immagine_sandbox_presente(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def nessun_orfano_da_togliere(monkeypatch):
+    """La pulizia degli orfani all'avvio della campagna (R1.11) chiamerebbe `docker ps`:
+    nei test non ci sono orfani. I test della funzione la importano per nome e usano un
+    Docker finto."""
+    monkeypatch.setattr("executors.docker.cleanup_orphans", lambda *a, **kw: [])
+
+
+@pytest.fixture(autouse=True)
 def nessuna_attesa_vera(monkeypatch):
     """Il controllo dell'immagine aspetta l'avvio di Docker: nei test non si dorme davvero."""
     monkeypatch.setattr("executors.docker._attendi", lambda secondi: None)

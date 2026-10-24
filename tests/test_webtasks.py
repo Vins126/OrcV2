@@ -8,7 +8,9 @@ Nota di design (tesi):
     in fondo e si lancia di proposito con `ORC_INTEGRATION=1`.
 """
 
+import dataclasses
 import hashlib
+import http.client
 import json
 import os
 import subprocess
@@ -214,6 +216,12 @@ def _dati(tmp_path: Path) -> Path:
     return cartella
 
 
+def _sorgenti(cartella: Path) -> tuple:
+    """Le fonti con lo sha256 dei file finti: `load_selection` ricontrolla l'hash."""
+    return tuple(dataclasses.replace(s, sha256=hashlib.sha256((cartella / s.filename).read_bytes()).hexdigest())
+                 for s in SOURCES)
+
+
 def _config(tmp_path: Path, testo: str) -> Path:
     file = tmp_path / "c.toml"
     file.write_text(testo)
@@ -238,7 +246,7 @@ count = 1
 verdicts = [{_verdetti_in_ordine(ordine_a[:1])}]
 """)
 
-    scelti = load_selection(config, dati)
+    scelti = load_selection(config, dati, sources=_sorgenti(dati))
 
     assert [(t.candidate.source, t.candidate.id) for t in scelti] == [
         (WEBGEN, ordine_w[0]), (WEBGEN, ordine_w[1]), (ARTIFACTS, ordine_a[0])]
@@ -263,7 +271,7 @@ verdicts = []
 """)
 
     with pytest.raises(WebTaskError, match=attesa):
-        load_selection(config, dati)
+        load_selection(config, dati, sources=_sorgenti(dati))
 
 
 def test_w16_dati_non_scaricati_e_un_errore_che_dice_come_scaricarli(tmp_path):
@@ -347,3 +355,133 @@ def test_w22_da_riga_di_comando_una_cartella_esistente_da_errore_e_codice_2(tmp_
 
     assert r.returncode == 2, r.stderr[-400:]
     assert "esiste" in r.stderr and "Traceback" not in r.stderr
+
+
+# ── Revisione indipendente del 24 ott ──────────────────────────────────────
+
+def _dati_con_esclusi(tmp_path: Path) -> Path:
+    """Dati finti in cui ogni fonte ha anche righe che il pre-filtro deve togliere."""
+    cartella = tmp_path / "dati"
+    cartella.mkdir()
+    (cartella / SOURCES[0].filename).write_text(_jsonl(
+        [_webgen_riga(f"{i:06d}") for i in range(1, 6)]
+        + [_webgen_riga(f"{i:06d}", "Browser-Based Games") for i in range(6, 11)]))
+    (cartella / SOURCES[1].filename).write_text(_jsonl(
+        [_artifacts_riga(i) for i in range(1, 6)]
+        + [_artifacts_riga(i, "SVG Generation-SVG Images") for i in range(6, 11)]))
+    return cartella
+
+
+def _config_tutti(tmp_path: Path, dati: Path, extra: str = "") -> Path:
+    """Verdetti positivi su tutti i compiti che passano il pre-filtro, nell'ordine."""
+    ordine_w = [c.id for c in draw_order(prefilter(load_webgen(dati / SOURCES[0].filename)), 7)]
+    ordine_a = [c.id for c in draw_order(prefilter(load_artifacts(dati / SOURCES[1].filename)), 7)]
+    return _config(tmp_path, f"""{extra}
+seed = 7
+[webgen]
+count = 5
+verdicts = [{_verdetti_in_ordine(ordine_w)}]
+[artifactsbench]
+count = 5
+verdicts = [{_verdetti_in_ordine(ordine_a)}]
+""")
+
+
+def test_w22_load_selection_applica_il_pre_filtro(tmp_path):
+    # Senza pre-filtro un gioco o un SVG arriverebbe nell'ordine senza verdetto.
+    dati = _dati_con_esclusi(tmp_path)
+
+    scelti = load_selection(_config_tutti(tmp_path, dati), dati, sources=_sorgenti(dati))
+
+    assert sorted(t.candidate.id for t in scelti if t.candidate.source == WEBGEN) == [
+        f"{i:06d}" for i in range(1, 6)]
+    assert sorted(int(t.candidate.id) for t in scelti if t.candidate.source == ARTIFACTS) == [1, 2, 3, 4, 5]
+
+
+def test_w23_un_file_con_sha256_diverso_e_un_errore(tmp_path):
+    dati = _dati(tmp_path)
+    sorgenti = _sorgenti(dati)
+    (dati / SOURCES[1].filename).write_text(_jsonl([_artifacts_riga(i) for i in range(1, 7)]))
+
+    with pytest.raises(WebTaskError, match="sha256"):
+        load_selection(_config_tutti(tmp_path, dati), dati, sources=sorgenti)
+
+
+def test_w24_l_ordine_registrato_deve_coincidere_con_quello_calcolato(tmp_path):
+    # L'ordine dipende da `random.shuffle`, che Python non garantisce fra versioni:
+    # si registra e si confronta, cosi' un cambio diventa un errore e non uno spostamento.
+    dati = _dati_con_esclusi(tmp_path)
+    ordine = {f.name: [c.id for c in draw_order(prefilter(_carica(f.name, dati)), 7)] for f in SOURCES}
+    (tmp_path / "ordine.json").write_text(json.dumps({"seed": 7, **ordine}))
+    config = _config_tutti(tmp_path, dati, extra='order = "ordine.json"')
+
+    assert len(load_selection(config, dati, sources=_sorgenti(dati))) == 10
+
+    ordine[ARTIFACTS] = list(reversed(ordine[ARTIFACTS]))
+    (tmp_path / "ordine.json").write_text(json.dumps({"seed": 7, **ordine}))
+    with pytest.raises(WebTaskError, match="ordine"):
+        load_selection(config, dati, sources=_sorgenti(dati))
+
+
+def _carica(nome: str, dati: Path):
+    fonte = next(s for s in SOURCES if s.name == nome)
+    return (load_webgen if nome == WEBGEN else load_artifacts)(dati / fonte.filename)
+
+
+def test_w25_identificativi_doppi_fra_i_candidati_sono_un_errore():
+    ordine = _candidati(3) + [Candidate(id="2", source=WEBGEN, label="x", text="doppio")]
+
+    with pytest.raises(WebTaskError, match="'2'"):
+        select(ordine, [Verdict("1", True, kind="sito")], 1)
+
+
+def test_w26_id_di_webgen_numerico_diventa_testo_e_uno_non_numerico_e_un_errore(tmp_path):
+    file = tmp_path / "w.jsonl"
+    file.write_text(_jsonl([{**_webgen_riga("x"), "id": 98}]))
+    assert load_webgen(file)[0].id == "98"
+
+    with pytest.raises(WebTaskError, match="abc"):
+        draw_order([Candidate(id="abc", source=WEBGEN, label="x", text="t")], 1)
+
+
+@pytest.mark.parametrize("verdetto, attesa", [
+    ('{ id = "X", keep = true, kind = "sito", reason = "x" }', "reason"),
+    ('{ id = "X", keep = false, reason = "x", kind = "sito" }', "kind"),
+    ('{ id = "X", keep = false, reasons = "x" }', "reasons"),
+])
+def test_w27_chiavi_in_piu_nei_verdetti_sono_un_errore(tmp_path, verdetto, attesa):
+    dati = _dati(tmp_path)
+    primo = draw_order(load_webgen(dati / SOURCES[0].filename), 7)[0].id
+    config = _config(tmp_path, f"""
+seed = 7
+[webgen]
+count = 1
+verdicts = [{verdetto.replace('"X"', f'"{primo}"')}]
+[artifactsbench]
+count = 0
+verdicts = []
+""")
+
+    with pytest.raises(WebTaskError, match=attesa):
+        load_selection(config, dati, sources=_sorgenti(dati))
+
+
+@pytest.mark.parametrize("testo, attesa", [
+    ("seed = 1\n[webgen]\ncount = -1\n[artifactsbench]\ncount = 0\n", "count"),
+    ("seed = 1\n[webgen]\ncount = true\n[artifactsbench]\ncount = 0\n", "count"),
+    ("seed = 1\n[webgen]\ncount = 0\nverdict = []\n[artifactsbench]\ncount = 0\n", "verdict"),
+    ("seed = 1\nsede = 2\n[webgen]\ncount = 0\n[artifactsbench]\ncount = 0\n", "sede"),
+])
+def test_w28_count_non_valido_o_chiavi_sconosciute_nel_file_sono_un_errore(tmp_path, testo, attesa):
+    dati = _dati(tmp_path)
+
+    with pytest.raises(WebTaskError, match=attesa):
+        load_selection(_config(tmp_path, testo), dati, sources=_sorgenti(dati))
+
+
+def test_w29_una_connessione_interrotta_a_meta_e_un_errore_del_progetto(tmp_path):
+    def scarica(url: str) -> bytes:
+        raise http.client.IncompleteRead(b"meta'")
+
+    with pytest.raises(WebTaskError, match="scaricamento"):
+        fetch_webtasks(tmp_path / "dest", download=scarica)

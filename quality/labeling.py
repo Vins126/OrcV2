@@ -13,6 +13,7 @@ from parallel_runner import run_parallel
 from polyglot import Exercise, exercise_to_task
 from quality.dataset import Example
 from quality.mutants import generate_mutants
+from task_model import as_verifier
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,8 @@ def label_mutants(mutants: Sequence[Example], exercises: Mapping[str, Exercise],
             (cartella / next(iter(esercizio.solution_files))).write_text(mutante.solution)
             for nome, contenuto in esercizio.test_files.items():
                 (cartella / nome).write_text(contenuto)
-            return "etichetta", int(shell(cartella, exercise_to_task(esercizio).verify) == 0)
+            verifica = as_verifier(exercise_to_task(esercizio).verify)(cartella, cartella, shell)
+            return "etichetta", int(verifica.verified)
         except subprocess.TimeoutExpired:
             return "timeout", 0
         except Exception as errore:   # un guasto dell'ambiente non deve fermare gli altri

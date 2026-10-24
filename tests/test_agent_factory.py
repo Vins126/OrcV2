@@ -102,7 +102,7 @@ def test_due_ruoli_producono_agenti_con_modelli_diversi_sulla_stessa_infrastrutt
     planner = fabbrica.build("planner")
     worker = fabbrica.build("worker")
 
-    assert (planner.model, worker.model) == ("opus-5-5", "gpt-6-1-sol")
+    assert (planner.model, worker.model) == ("opus-5-5", "kimi-k3-1-pro")
     assert isinstance(planner.gateway, OpenAIChatGateway)
     assert isinstance(worker.gateway, OpenAIChatGateway)
     assert planner.agent.llm is planner.gateway
@@ -182,7 +182,7 @@ def test_il_contabile_somma_tutta_la_vita_e_ogni_ledger_solo_il_suo_incarico(fab
     worker.assign("primo")
     worker.assign("secondo")
 
-    costo_incarico = 2.00  # un milione di token di input a $2.00 (gpt-6-1-sol)
+    costo_incarico = 2.00  # un milione di token di input a $2.00 (kimi-k3-1-pro)
     totali = [json.loads((l.run_dir / "summary.json").read_text())["total_cost"]
               for l in worker.ledgers]
     assert totali == [pytest.approx(costo_incarico)] * 2
@@ -468,7 +468,7 @@ def test_l_avviso_morbido_scatta_una_volta_nella_vita_e_resta_nel_ledger_che_lo_
         ModelRegistry.from_file("models.toml"),
         runs_root=tmp_path / "runs", workspaces_root=tmp_path / "ws",
         # Un incarico costa $0.0012 (100 token in input e 100 in output sul
-        # listino del worker, gpt-6-1-sol: $2 e $10 per milione): il tetto lascia almeno due incarichi completati
+        # listino del worker, kimi-k3-1-pro: $2 e $10 per milione): il tetto lascia almeno due incarichi completati
         # nella zona dell'avviso, fra l'80% e il 100%.
         budget_usd=0.015, tools_builder=lambda percorso, **_: [], reporter=ReporterMuto(),
     )

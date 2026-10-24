@@ -33,6 +33,12 @@ from polyglot import (
 )
 
 
+
+def _comando(task: Task) -> str:
+    """Il comando di verifica di un esercizio Polyglot, che e' sempre un testo."""
+    assert isinstance(task.verify, str)
+    return task.verify
+
 def _scrivi_esercizio(radice: Path, nome: str, *, test_files=None, appendice=None,
                       introduzione=None, config=True, con_test=True):
     """Costruisce una cartella di esercizio nella struttura reale di Exercism."""
@@ -146,7 +152,7 @@ def test_p3_la_verifica_ripristina_i_test_originali_e_ignora_conftest_e_configur
                             "test_utils.py": "# test originale test_utils.py\n"}
     for pezzo in ("pytest", "--noconftest", "-c /dev/null", "-p no:cacheprovider",
                   "due_test.py"):
-        assert pezzo in task.verify, pezzo
+        assert pezzo in _comando(task), pezzo
 
 
 def test_p3b_le_soluzioni_non_si_ripristinano(albero):
@@ -238,10 +244,10 @@ def test_r1_la_verifica_gira_in_una_cartella_pulita_con_solo_soluzione_e_test(al
     nuova e si lancia `pytest` li'. La prova vera e' `test_polyglot_integration`."""
     task = exercise_to_task(next(e for e in load_exercises(albero) if e.name == "due"))
 
-    assert "mktemp -d" in task.verify
-    assert "cp --parents due.py due_test.py test_utils.py" in task.verify
-    assert 'cd "$d"' in task.verify
-    assert task.verify.index("cp --parents") < task.verify.index("python3 -m pytest")
+    assert "mktemp -d" in _comando(task)
+    assert "cp --parents due.py due_test.py test_utils.py" in _comando(task)
+    assert 'cd "$d"' in _comando(task)
+    assert _comando(task).index("cp --parents") < _comando(task).index("python3 -m pytest")
 
 
 def test_r4_un_errore_di_rete_nel_download_e_un_errore_del_progetto(tmp_path):

@@ -609,7 +609,8 @@ def test_allo_scadere_del_tempo_il_container_si_ferma_e_l_errore_resta(tmp_path,
         DockerExecutor(str(tmp_path)).run("while true; do :; done")
 
     nome = _valore_dopo(viste[0], "--name")
-    assert viste[1] == ["docker", "kill", nome]
+    # P19-D2 (24 ott): `rm -f` toglie anche un container mai partito, `kill` no.
+    assert viste[1] == ["docker", "rm", "-f", nome]
 
 
 def test_se_il_kill_fallisce_l_errore_di_tempo_arriva_lo_stesso(tmp_path, monkeypatch):

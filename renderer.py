@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from task_model import CampaignError
+from executors.docker import remove_container
+from task_model import VerificationError
 
 #: Immagine del renderer, costruita da `docker/renderer.Dockerfile`.
 RENDERER_IMAGE = "orc-renderer:r1"
@@ -52,7 +53,7 @@ def _copia_codice(destinazione: Path) -> None:
     shutil.copy2(PROJECT_ROOT / "task_model.py", destinazione / "task_model.py")
 
 
-class RenderError(CampaignError):
+class RenderError(VerificationError):
     """Guasto della valutazione: risultato mancante, illeggibile o tempo scaduto."""
 
 
@@ -232,13 +233,13 @@ def render_site(workspace: Path, out_dir: Path, *, runner: Runner = subprocess.r
                                  script=script, code=codice)
         try:
             esito = runner(comando, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired as errore:
-            # Il timeout ferma il programma `docker`, non il container: lo si ferma per nome.
-            try:
-                runner(["docker", "kill", nome], capture_output=True, text=True, timeout=30)
-            except (subprocess.SubprocessError, OSError):
-                pass
-            raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} fermato") from errore
+        except BaseException as errore:
+            # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
+            # toglie per nome, anche se non era ancora partito (R1.11).
+            remove_container(nome, runner)
+            if isinstance(errore, subprocess.TimeoutExpired):
+                raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
+            raise
         return _leggi_risultato(out, destinazione, esito.stderr or "")
     finally:
         shutil.rmtree(temporanea, ignore_errors=True)
@@ -345,12 +346,13 @@ def evaluate_site(workspace: Path, script: Path, *, runner: Runner = subprocess.
                                start_timeout=start_timeout, work=work, code=codice)
         try:
             esito = runner(comando, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired as errore:
-            try:
-                runner(["docker", "kill", nome], capture_output=True, text=True, timeout=30)
-            except (subprocess.SubprocessError, OSError):
-                pass
-            raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} fermato") from errore
+        except BaseException as errore:
+            # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
+            # toglie per nome, anche se non era ancora partito (R1.11).
+            remove_container(nome, runner)
+            if isinstance(errore, subprocess.TimeoutExpired):
+                raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
+            raise
         return _leggi_valutazione(out, esito.stderr or "")
     finally:
         shutil.rmtree(temporanea, ignore_errors=True)

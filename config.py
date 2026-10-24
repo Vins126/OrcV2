@@ -171,6 +171,9 @@ DOCKER_PIDS_LIMIT = "256"
 # terminali lo rispettano insieme. Fuori dal progetto e da `runs/` (che e' il dataset).
 DOCKER_MAX_CONCURRENT = 6
 DOCKER_SLOTS_DIR = "~/.cache/orcv2/docker-slots"
+# Attesa massima per un posto della sandbox (R1.11, P19-D3): oltre, e' un guasto della
+# macchina (`SandboxSlotTimeout`), non del modello.
+DOCKER_ATTESA_POSTO_MAX_S = 300
 EXEC_TIMEOUT = 60
 
 # -- LOGGING --

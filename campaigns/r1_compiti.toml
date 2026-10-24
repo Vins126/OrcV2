@@ -7,6 +7,9 @@
 # saltato senza verdetto o un verdetto dato fuori ordine.
 
 seed = 20261021
+# Ordine estratto registrato (revisione del 24 ott): `random.shuffle` non e' garantito
+# uguale fra versioni di Python; un ordine diverso diventa un errore.
+order = "r1_ordine.json"
 
 [webgen]
 count = 3

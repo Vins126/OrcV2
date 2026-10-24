@@ -128,7 +128,8 @@ Miglioramenti minori ricavati dalla stessa analisi: innesco dell'escalation (R3.
       «funziona» e «piace» (D46) · R0-6 voto graduato −2..+2, τ_funziona = 10, τ_piace dopo il pilota · R0-7 sei
       domande fisse + 2-4 per compito · R0-8 bootstrap sui compiti al 2,5% con test t di controllo · R0-9 «funziona»
       = quota di passi superati dello script d'interazione · R0-10 seme 20261021 e DeepSeek V4.1 Flash (D47).
-- [x] `models.toml` con la rosa D38/D47, fornitori fissati, visione verificata; Opus con `cache_control` in
+- [x] `models.toml` con la rosa D38/D47, intermedio aggiornato a Kimi K3.1 Pro il 24 ott (D51), fornitori fissati,
+      visione verificata sul catalogo; Opus con `cache_control` in
       `extra_body` (`models.toml:154`; cache verificata il 12 ott su una prova isolata).
 - [x] Condizione di convenienza D37 in tesi prima delle misure (`TESI_master.md` §0.1).
 
@@ -153,7 +154,7 @@ vere. **Prerequisiti:** R0. **Sezione di tesi:** metodo sperimentale (compiti, m
   `842` cruscotto «Security Center», `684` gestione di file con etichette (sostituisce `1594`, scartato il 22 ott
   per contenuto non verificabile). Completezza = almeno 3 funzioni verificabili nel testo.
 - Giudice Gemini (famiglia non in gara), fra Gemini 4 Argon e 3.8 Flash per accordo con i voti umani (D41);
-  entrambi gia' nel registro con la visione (`models.toml:213-225`).
+  entrambi gia' nel registro con la visione (`models.toml:213-225`). **Rivisto il 24 ott (D52): GPT-6.1 Sol via Codex CLI.**
 
 **Ordine dei task (rispetta le dipendenze).**
 R1.1 ✅ → **R1.2** (scelte sulle convenzioni) → **R1.3** (contratti e domande: servono al prompt e agli script) →
@@ -161,16 +162,25 @@ R1.1 ✅ → **R1.2** (scelte sulle convenzioni) → **R1.3** (contratti e doman
 (script d'interazione) → **R1.8** (fonte delle coppie e strumento di voto) → **R1.9** (giudice) → **R1.10** (voti e
 scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine di R1.3 si chiudono i prompt.
 
-#### R1.1 — Compiti: scaricamento, filtro e sorteggio ✅ (da committare)
+#### R1.1 — Compiti: scaricamento, filtro e sorteggio ✅
 - **Fatto:** `webtasks.py` (lettura dei due formati, pre-filtro, ordine col seme, scelta lungo l'ordine che
   rifiuta compiti saltati o giudicati fuori turno, scaricamento con sha256), `campaigns/r1_compiti.toml`
   (verdetti), comando `python campaign.py fetch-webtasks`, `tests/test_webtasks.py` (23 test + 1 prova reale).
 - **Verificato il 21 ott:** suite 832 passati, pyright 0 errori; prova reale con `ORC_INTEGRATION=1` passata.
-- **Resta:** rilettura dell'autore con le domande di verifica; revisione indipendente (modello a scelta).
+- **Resta:** rilettura dell'autore con le domande di verifica.
+- **Revisione indipendente (24 ott, Opus):** 7 segnalazioni, nessuna alta, tutte corrette: `load_selection`
+  ricontrolla lo sha256; l'ordine estratto e' registrato in `campaigns/r1_ordine.json` e confrontato a ogni lettura
+  (`random.shuffle` non e' garantito uguale fra versioni di Python); test del pre-filtro senza rete; id doppi fra i
+  candidati, id di WebGen numerico o non numerico, chiavi sconosciute nei verdetti, `count` negativo e connessione
+  interrotta sono errori del progetto.
 - **⚠️ Trappola:** il file di ArtifactsBench si chiama `.json` ma e' JSONL: si salva come `.jsonl`, l'hash resta
   quello dei byte originali.
 
-#### R1.2 — Il compito come lo vedono i bracci: convenzioni
+#### R1.2 — Il compito come lo vedono i bracci: convenzioni ✅ codice (24 ott, da committare; restano i 5 prompt riletti dall'autore)
+- **Fatto (24 ott):** `webprompt.py` (`build_prompt`, `load_material`), cornice e materiale dei 5 compiti in
+  `campaigns/r1_prompt/`, `tests/test_webprompt.py` (36 test, compresi quelli sui file veri: marcatori e rotte
+  allineati a `campaigns/r1_valutazione/`, ogni marcatore usato dallo script). Il passaggio `WebTask → Task` passa a
+  R1.5, insieme al risultato strutturato (scelta del 24 ott: un `verify` provvisorio si butterebbe subito).
 - **Obiettivo:** un unico modo, uguale per B, C, D e H, di trasformare un compito in istruzioni e di dire dove e come
   consegnare. Tutto cio' che e' qui entra nel prompt e quindi nel confronto.
 - **Gia' deciso:** contratto delle rotte nel prompt (P12-D1); un solo comando di avvio su una porta fissa (§2).
@@ -214,8 +224,10 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   marcatori + convenzione di consegna) e il passaggio `WebTask → Task` della campagna (oggi `WebTask` non ha
   `prompt` ne' `verify`, `webtasks.py:106`). Se R2.6 sceglie il cancello con test propri, la convenzione `test.sh`
   entra nella cornice comune, uguale per tutti i bracci (D48).
-- **Test:** il prompt contiene contratto, marcatori e convenzione e non contiene script ne' domande; la frase fissa
-  sparisce da tutte le varianti presenti nel file vero.
+- **Test:** il prompt contiene contratto, marcatori e convenzione e non contiene script ne' domande; il testo del
+  compito arriva intatto, preambolo compreso (revisione del 24 ott: la frase fissa non si toglie piu', vedi sopra).
+  Controllato sul file vero il 24 ott: nessuno dei 5 compiti di sviluppo chiede «un solo file HTML» (6 su 1021 nel
+  pool di ArtifactsBench lo chiedono, compatibili con `start.sh` che serve un file statico).
 - **Fatto quando:** scelte registrate in `PROTOCOLLO.md`; dopo R1.3, 5 prompt riletti dall'autore.
 
 #### R1.3 — Contratti delle rotte e domande per compito (materia della tesi) ✅ (23 ott: `campaigns/r1_valutazione/*.md`, approvati)
@@ -233,7 +245,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   si', struttura interna del server no.
 - **Fatto quando:** contratti, domande e marcatori nel repository, datati, prima della prima generazione.
 
-#### R1.4 — Esecuzione del sito e rendering ✅ (22 ott, da committare)
+#### R1.4 — Esecuzione del sito e rendering ✅ (22 ott)
 - **Obiettivo:** avviare il sito consegnato, aspettare che risponda, aprirlo con un browser vero a 375, 768 e
   1440 px e raccogliere screenshot, errori e metriche, sempre nello stesso modo.
 - **Stato del codice:** l'immagine sandbox (Debian bookworm, Python 3.14, Node 24, `docker/sandbox.Dockerfile:9-24`)
@@ -279,7 +291,19 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   screenshot identici byte per byte. **Resta:** la prova con Ctrl+C a meta' (R1.11) e l'uso di `ContainerLimiter`
   per i renderer.
 
-#### R1.5 — Risultato strutturato al posto dell'exit code
+#### R1.5 — Risultato strutturato al posto dell'exit code ✅ (24 ott, da committare)
+- **Fatto (24 ott):** verificatore unico (P9-D1 c): `Task.verify` e' un comando shell (`ShellVerifier`, invariato per
+  Polyglot) o un verificatore; `webcampaign.WebVerifier` esegue renderer e script e scrive `valutazione.json` in
+  `campaigns/<campagna>/<compito>-<rip>/` con due blocchi, `cancello` (avvio, errori, sbordo, accessibilita',
+  versioni) e `riservato` (funziona, funziona-server, passi, vetrina, screenshot); riassunto nella riga del manifesto.
+  Successo per `f` = run finita e sito che parte (P9-D2). Guasto della valutazione = `VerificationError`
+  (`RenderError` ne e' un caso), riga `evaluation_failed`, fuori da `f` (P9-D3). `web_task_to_task` collega prompt
+  e script. Sito che non parte: 0 senza eseguire lo script, funziona-server 0 se il compito ha rotte. Test:
+  `tests/test_webcampaign.py` (15), 4 in `tests/test_campaign.py`. Prova reale con Docker: riferimento di 842 =
+  100 in 36 s; sito vuoto con lo script di 000098 = 0 e 0. Screenshot nel blocco riservato (scelta prudente: il
+  cancello ne riceve meno).
+- **Ereditato da R1.2 (24 ott):** il passaggio `WebTask → Task` della campagna (prompt da `webprompt.build_prompt`,
+  verifica con `renderer.evaluate_site` invece del comando `verify`).
 - **Obiettivo:** oggi la verifica e' un comando con exit code 0/1 (`task_model.py:25`, `campaign.py:202-208`) e il
   report calcola `f` su un booleano (`campaign.py:392`). Serve un risultato con credito parziale e metriche.
 - ✅ **Deciso il 22 ott:** la valutazione scrive un JSON (avvio riuscito, passi superati e totali, test delle
@@ -292,7 +316,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - **Test:** il JSON di un sito d'esempio ha tutti i campi; un JSON malformato e' un guasto, non uno 0; i vecchi test
   di campagna restano verdi.
 
-#### R1.6 — Controlli automatici (livello 1) ✅ (22 ott, da committare)
+#### R1.6 — Controlli automatici (livello 1) ✅ (22 ott)
 - **Obiettivo:** una definizione operativa, scritta prima delle misure, di ogni controllo di §6.
 - ✅ **Decise il 22 ott (in `PROTOCOLLO.md` §6):**
   - Errori: eccezioni non gestite (`pageerror`) e `console.error`, al caricamento e durante lo script; le risorse
@@ -308,7 +332,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   pacchetto npm verificato, licenza in `docker/axe-core.LICENSE`) eseguito a ogni larghezza, solo impatti `critical`
   e `serious`. Prove reali i2 e i5 passate.
 
-#### R1.7 — Script d'interazione e test delle rotte ✅ (23 ott, da committare: interprete e 5 script approvati)
+#### R1.7 — Script d'interazione e test delle rotte ✅ (23 ott: interprete e 5 script approvati)
 - **Obiettivo:** per ogni compito, una sequenza di passi scritta prima di generare qualunque sito per quel compito.
 - **Gia' deciso:** «funziona» = quota di passi superati dello **script d'interazione**, 0 se la pagina non si apre
   (R0-9); per le applicazioni ci sono anche test diretti sul server (P12-D1).
@@ -346,20 +370,36 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - **Fatto quando:** 5 script approvati dall'autore, tutti «vuoto = 0», due «riferimento = 100».
 
 #### R1.8 — Fonte delle coppie e strumento di voto
+- ✅ **Regola delle coppie (24 ott, P21-D1 (a)):** dai compiti dalla 300ª posizione, solo risposte HTML in un file che
+  non caricano nulla dalla rete, voti di Gemini 2.5 Pro (`gemini_mllm_score`, usati **solo** per trovare coppie
+  vicine) distanti al massimo 10, nessun pareggio, minimo 30; una coppia per compito, ogni modello al massimo 15
+  volte. Sui dati scaricati: 150 coppie, 20 modelli 15 volte ciascuno, 176 compiti disponibili (26 di riserva).
+  Piano di implementazione: `.claude/piani/R1.8.md` (locale). Dati scaricati e verificati in
+  `campaigns/data/calibrazione/risposte/` (ignorata da git).
 - **Il problema:** per misurare l'accordo giudice-umani servono circa 100-200 coppie di siti, e in R1 non esistono
   siti dei bracci.
-- `[SCELTA]` **Fonte.** (a) Le risposte pubblicate da ArtifactsBench (`dataset/release_data_20250725/`: 20 modelli,
+- ✅ **Licenza verificata (24 ott):** il `LICENSE` del repository di ArtifactsBench (radice, invariato dal primo
+  commit) e' CC BY 4.0 e copre `dataset/release_data_20250725/`: uso consentito con attribuzione (ArtifactsBench,
+  Tencent, link alla licenza, rendering dichiarato nostro). La scheda Hugging Face dichiara `cc-by-nc-4.0` nei
+  metadati ma riguarda solo i compiti: incoerenza da dichiarare. Termini d'uso dei fornitori sulle uscite dei modelli
+  non verificati: limite in tesi. WebGen-Bench su GitHub **non ha licenza**: `outputs.zip` non si usa.
+- ✅ **Dati (24 ott, a campione):** 20 modelli; ogni risposta ha il voto 0-100 di Gemini 2.5 Pro
+  (`gemini_mllm_score`); niente `index`, collegamento ai compiti per testo della domanda (1825 domande distinte);
+  circa 60% HTML in un file solo, il resto (pygame, vue, jsx, testo) si scarta; screenshot non pubblicati; o3 manca
+  ad almeno 206 compiti, gpt-4.1 ad almeno 10. ⚠️ Scegliere coppie «vicine» con i voti di un Gemini seleziona coppie
+  difficili per un giudice Gemini: l'accordo misurato tende al basso. Distorsione prudente, da dichiarare.
+- ✅ (24 ott: (c)) **Fonte.** (a) Le risposte pubblicate da ArtifactsBench (`dataset/release_data_20250725/`: 20 modelli,
   stessi compiti, gia' giudicati da Gemini 2.5 Pro), scegliendo **coppie di qualita' vicina** (fra i modelli
   migliori), perche' l'accordo e' piu' alto fra siti molto diversi e misurarlo li' lo gonfierebbe proprio dove
   conta (C e B si somiglieranno); limite: pagine singole senza server; la licenza di quella cartella va verificata
   ed e' **bloccante**; (b) siti generati da B e D nel pilota di R2; (c) entrambe. Raccomandazione: (c): (a) per il
   grosso della calibrazione in R1, e una quota **obbligatoria** di coppie da R2 (almeno 20) per controllare che
   l'accordo regga sui siti con server.
-- `[SCELTA]` **Compiti della calibrazione senza toccare i compiti di test.** I compiti di test si prenderanno
+- ✅ (24 ott: proposta accettata) **Compiti della calibrazione senza toccare i compiti di test.** I compiti di test si prenderanno
   proseguendo l'ordine estratto (§2): toglierne alcuni per la calibrazione cambierebbe l'insieme. Proposta: la
-  calibrazione usa solo compiti oltre una posizione fissata ora nell'ordine di ArtifactsBench (es. dalla 300ª in
+  calibrazione usa solo compiti oltre una posizione fissata ora nell'ordine di ArtifactsBench (fissata il 24 ott: dalla 300ª, cioe' indice 299 di `campaigns/r1_ordine.json`, in
   poi, ben oltre quanto servira' ai test), scritta nel protocollo prima di usarla.
-- **Strumento di voto:** pagina locale servita dal portatile; vede il testo del compito e gli stessi screenshot del
+- **Strumento di voto** (✅ 24 ott, P17-D1 (a): pacchetto statico, voti esportati in un file per votante): vede il testo del compito e gli stessi screenshot del
   giudice; voto da −2 a +2; ordine sinistra/destra casuale e registrato; nessun indizio del braccio; pausa ogni 20
   coppie; 5 coppie ripetute per misurare la coerenza del votante; voti salvati con identificativo anonimo, fuori dal
   repository pubblico.
@@ -368,6 +408,11 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - **Fatto quando:** coppie scelte e salvate; l'autore ha votato 10 coppie di prova e il file dei voti si legge.
 
 #### R1.9 — Giudice a coppie («piace»)
+- ✅ **Revisione del 24 ott (D52):** il giudice e' **GPT-6.1 Sol via Codex CLI** (`codex exec -m ... -i <immagini>
+  --output-schema <schema>`) con l'abbonamento dell'autore, al posto dei due Gemini via API. Le parti qui sotto su
+  gateway, `FrontierJudge`, preventivo e prezzi valgono solo come storia; il resto (entrambi gli ordini, checklist,
+  «non valutabile», bias di posizione e di quantita') resta. Il «Fatto quando» diventa: il giudice gira su 5 coppie
+  vere e la sua versione, il modello e lo sforzo di ragionamento sono registrati.
 - **Obiettivo:** dato un compito e due siti, un voto da −2 a +2 in entrambi gli ordini, piu' le risposte si'/no
   della checklist, con costo misurato.
 - **Gia' deciso:** voto graduato, entrambi gli ordini, media dei due voti col segno dalla parte di C (D46); sei
@@ -411,7 +456,19 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   siti non distingue e si toglie. Si congelano prima di R6.
 - **Fatto quando:** accordi calcolati con intervallo; giudice scelto o piano B attivato; scritto in `PROTOCOLLO.md`.
 
-#### R1.11 — Manutenzione dell'infrastruttura (da «Da decidere a inizio M4», storica righe 999-1020)
+#### R1.11 — Manutenzione dell'infrastruttura (da «Da decidere a inizio M4», storica righe 999-1020) 🟡 (24 ott, da committare)
+- **Prove con Docker vero (24 ott):** container orfani dopo Ctrl+C (sandbox), segnale al processo, `kill -9`, e tempo
+  scaduto prima dell'avvio (29 su 60 restavano «Created»: `docker kill` non li toglie e `--rm` non scatta). Il client
+  OpenAI si chiude gia' nel `__del__` dell'SDK (non provato con un agente completo).
+- **Fatto (24 ott, P19):** `docker rm -f` per nome su qualunque interruzione, Ctrl+C compreso, in sandbox, renderer
+  e script (P19-D2); `ContainerLimiter(max_wait_s=...)` con `SandboxSlotTimeout`, che deriva da `VerificationError`
+  (300 s, `config.DOCKER_ATTESA_POSTO_MAX_S`; P19-D3, P19-D4); `cleanup_orphans` all'avvio della campagna, per eta'
+  (tempo massimo + 30 s, «Created» oltre 60 s; P19-D1), con i nomi tolti nell'`environment` del manifesto. Client
+  OpenAI rimandato a una misura dei socket (P19-D5). Test: `tests/test_container_cleanup.py` (13); tre test che
+  controllavano `docker kill` ora controllano `docker rm -f` (contratto cambiato). Prova reale: 60 tempi scaduti
+  prima dell'avvio lasciano **1** container «Created» (prima 29): la richiesta di creazione arriva al demone dopo il
+  `rm -f`; lo toglie la pulizia all'avvio successivo. `cleanup_orphans` reale: un `docker create` giovane resta, a
+  +2 minuti si toglie.
 - Pulizia dei container orfani `orc-sandbox-*` (e dei renderer) all'avvio di ogni campagna.
 - Tempo massimo di attesa per un posto nella sandbox (oggi senza limite).
 - Client `openai.OpenAI` chiuso a fine agente (oggi mai chiuso: pesa nelle campagne lunghe).
@@ -443,7 +500,7 @@ a comporre V gia' nel pilota.
 strumento torna come stringa JSON (`agent.py:386-390`), quindi oggi un agente non puo' ricevere immagini; prompt
 di sistema generico (`agent.py:27-32`); 30 iterazioni (`config.py:124`); nessun `max_tokens` sul percorso
 OpenRouter (`llm_gateway.py:398-409`); uscite di `bash` non troncate (`tools/bash.py:62-74`); `main.py` usa di
-default il ruolo `worker` (GPT-6.1 Sol).
+default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 Sol, D51).
 
 #### R2.1 — Strumento «guarda il sito»
 - L'agente avvia il proprio sito e riceve screenshot ed errori dallo stesso renderer di R1.4, senza vedere gli
@@ -482,8 +539,8 @@ default il ruolo `worker` (GPT-6.1 Sol).
 
 #### R2.3 — Parita' fra bracci
 - `[SCELTA]` **Ruoli.** B = `planner` (Opus 5.5); D = `worker_cheap` (DeepSeek V4.1 Flash, D47). Per i worker di
-  C, D47 dice DeepSeek, mentre `models.toml:272-274` assegna `worker` a GPT-6.1 Sol (scelta mai confermata
-  dall'autore): va deciso quale modello fanno i worker di C, e D usa lo stesso.
+  C, D47 dice DeepSeek, mentre `models.toml` assegna `worker` a Kimi K3.1 Pro (intermedio scelto il 24 ott,
+  D51, al posto di GPT-6.1 Sol): va deciso quale modello fanno i worker di C, e D usa lo stesso.
 - `[SCELTA]` **Tetti per braccio.** Proposta: stesso tetto in dollari **per compito** per B, C, D e H (per C e' il
   tetto di squadra, R3.5; per H vale per tutta la run, prima e dopo il passaggio); tetto di iterazioni per agente
   misurato nel pilota (30 bastano per un sito statico, probabilmente non per un'applicazione) e uguale per tutti gli

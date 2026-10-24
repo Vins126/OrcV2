@@ -15,6 +15,7 @@ Nota di design (tesi):
 """
 
 import hashlib
+import http.client
 import json
 import random
 import shutil
@@ -133,7 +134,7 @@ def load_webgen(path: Path) -> list[Candidate]:
     Raises:
         WebTaskError: riga non JSON o campo mancante.
     """
-    return [Candidate(id=r["id"], source=WEBGEN, label=r["application_type"],
+    return [Candidate(id=str(r["id"]), source=WEBGEN, label=r["application_type"],
                       text=r["instruction"], checks=r["ui_instruct"])
             for r in _righe_jsonl(path, ("id", "instruction", "application_type", "ui_instruct"))]
 
@@ -169,6 +170,9 @@ def draw_order(candidates: list[Candidate], seed: int) -> list[Candidate]:
     L'ordinamento iniziale rende il risultato indipendente dall'ordine del file;
     e' numerico perche' in ordine alfabetico "10" verrebbe prima di "9".
     """
+    non_numerici = [c.id for c in candidates if not str(c.id).isdigit()]
+    if non_numerici:
+        raise WebTaskError(f"identificativi non numerici: {', '.join(map(repr, non_numerici[:5]))}")
     ordine = sorted(candidates, key=lambda c: int(c.id))
     random.Random(seed).shuffle(ordine)
     return ordine
@@ -188,7 +192,11 @@ def select(order: list[Candidate], verdicts: list[Verdict], count: int) -> list[
         if verdetto.id in per_id:
             raise WebTaskError(f"verdetto doppio per il compito '{verdetto.id}'")
         per_id[verdetto.id] = verdetto
-    esistenti = {c.id for c in order}
+    esistenti: set[str] = set()
+    for candidato in order:
+        if candidato.id in esistenti:
+            raise WebTaskError(f"identificativo '{candidato.id}' ripetuto fra i candidati")
+        esistenti.add(candidato.id)
     for id_ in per_id:
         if id_ not in esistenti:
             raise WebTaskError(f"verdetto sul compito '{id_}', che non e' fra i candidati")
@@ -224,6 +232,11 @@ def _verdetto(grezzo: object, fonte: str) -> Verdict:
             or not isinstance(grezzo.get("keep"), bool):
         raise WebTaskError(f"[{fonte}]: ogni verdetto vuole 'id' (testo) e 'keep' (true/false)")
     id_ = grezzo["id"]
+    ammesse = {"id", "keep", "kind"} if grezzo["keep"] else {"id", "keep", "reason"}
+    in_piu = sorted(set(grezzo) - ammesse)
+    if in_piu:
+        raise WebTaskError(f"[{fonte}] '{id_}': chiavi non ammesse per keep={str(grezzo['keep']).lower()}: "
+                           f"{', '.join(in_piu)}")
     if grezzo["keep"]:
         tipo = grezzo.get("kind")
         if tipo is None:
@@ -240,33 +253,79 @@ def _verdetto(grezzo: object, fonte: str) -> Verdict:
 _CARICATORI = {WEBGEN: load_webgen, ARTIFACTS: load_artifacts}
 
 
-def load_selection(config: Path, data_dir: Path) -> list[WebTask]:
+def _sha256(file: Path) -> str:
+    return hashlib.sha256(file.read_bytes()).hexdigest()
+
+
+def _ordine_registrato(config: Path, nome: object, seme: int) -> dict | None:
+    """L'ordine estratto salvato nel repository, se il file dei verdetti lo indica."""
+    if nome is None:
+        return None
+    if not isinstance(nome, str):
+        raise WebTaskError(f"{config}: 'order' deve essere il nome di un file")
+    file = Path(config).parent / nome
+    try:
+        dati = json.loads(file.read_text())
+    except (OSError, json.JSONDecodeError) as errore:
+        raise WebTaskError(f"{file}: ordine registrato non leggibile: {errore}") from errore
+    if not isinstance(dati, dict) or dati.get("seed") != seme:
+        raise WebTaskError(f"{file}: ordine registrato con un seme diverso da {seme}")
+    return dati
+
+
+def load_selection(config: Path, data_dir: Path, *, sources: tuple[Source, ...] = SOURCES) -> list[WebTask]:
     """Rifa' la scelta dal file dei verdetti: prima i compiti di WebGen, poi di ArtifactsBench.
 
+    Ogni file si ricontrolla con lo sha256 prima di leggerlo. Se il file dei
+    verdetti ha `order`, l'ordine calcolato deve coincidere con quello
+    registrato: `random.shuffle` non e' garantito uguale fra versioni di
+    Python, e i compiti di test si prenderanno proseguendo lo stesso ordine.
+
+    Args:
+        sources: le fonti con il loro sha256; i test passano quelle dei file finti.
+
     Raises:
-        WebTaskError: file dei verdetti illeggibile o incompleto, dati non
-            scaricati, o uno degli errori di `select`.
+        WebTaskError: file dei verdetti illeggibile, incompleto o con chiavi
+            sconosciute, dati non scaricati o con sha256 diverso, ordine diverso
+            da quello registrato, o uno degli errori di `select`.
     """
     try:
         dati = tomllib.loads(Path(config).read_text())
     except (OSError, tomllib.TOMLDecodeError) as errore:
         raise WebTaskError(f"{config}: file dei verdetti non leggibile: {errore}") from errore
     seme = dati.get("seed")
-    if not isinstance(seme, int):
+    if not isinstance(seme, int) or isinstance(seme, bool):
         raise WebTaskError(f"{config}: manca 'seed' (intero)")
+    sconosciute = sorted(set(dati) - {"seed", "order", *(f.name for f in sources)})
+    if sconosciute:
+        raise WebTaskError(f"{config}: chiavi sconosciute: {', '.join(sconosciute)}")
+    registrato = _ordine_registrato(config, dati.get("order"), seme)
 
     scelti: list[WebTask] = []
-    for fonte in SOURCES:
+    for fonte in sources:
         sezione = dati.get(fonte.name)
-        if not isinstance(sezione, dict) or not isinstance(sezione.get("count"), int):
+        if not isinstance(sezione, dict):
             raise WebTaskError(f"{config}: manca la sezione [{fonte.name}] con 'count'")
+        conta = sezione.get("count")
+        if not isinstance(conta, int) or isinstance(conta, bool) or conta < 0:
+            raise WebTaskError(f"{config}: [{fonte.name}] 'count' deve essere un intero >= 0")
+        in_piu = sorted(set(sezione) - {"count", "verdicts"})
+        if in_piu:
+            raise WebTaskError(f"{config}: [{fonte.name}] chiavi sconosciute: {', '.join(in_piu)}")
         file = Path(data_dir) / fonte.filename
         if not file.is_file():
             raise WebTaskError(
                 f"dati non trovati: {file}; scaricali con `python campaign.py fetch-webtasks`")
+        trovato = _sha256(file)
+        if trovato != fonte.sha256:
+            raise WebTaskError(f"{file}: sha256 diverso dall'atteso (atteso {fonte.sha256[:12]}..., "
+                               f"trovato {trovato[:12]}...): riscarica i dati")
         verdetti = [_verdetto(v, fonte.name) for v in sezione.get("verdicts", [])]
         ordine = draw_order(prefilter(_CARICATORI[fonte.name](file)), seme)
-        scelti.extend(select(ordine, verdetti, sezione["count"]))
+        if registrato is not None and [c.id for c in ordine] != registrato.get(fonte.name):
+            raise WebTaskError(f"[{fonte.name}]: l'ordine calcolato e' diverso da quello registrato "
+                               f"in '{dati['order']}' (versione di Python diversa?)")
+        scelti.extend(select(ordine, verdetti, conta))
     return scelti
 
 
@@ -299,7 +358,7 @@ def fetch_webtasks(dest: Path, *, download: Callable[[str], bytes] | None = None
     for fonte in SOURCES:
         try:
             contenuto = scarica(fonte.url)
-        except (urllib.error.URLError, OSError, TimeoutError) as errore:
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as errore:
             raise WebTaskError(f"scaricamento di {fonte.name} non riuscito: {errore}") from errore
         trovato = hashlib.sha256(contenuto).hexdigest()
         if trovato != fonte.sha256:
