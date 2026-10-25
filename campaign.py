@@ -510,6 +510,76 @@ def _carica_task(percorso: Path, only: list[str] | None) -> list[Task]:
     return tasks
 
 
+def _calibration_phase(args: argparse.Namespace) -> None:
+    """Esegue una fase della calibrazione senza leggere credenziali."""
+    from collections import Counter
+    import calibration
+    import renderer
+    from webtasks import WebTaskError, load_artifacts
+
+    campaigns = PROJECT_ROOT / "campaigns"
+    root = campaigns / "data" / "calibrazione"
+    responses_dir = root / "risposte"
+    tasks_file = campaigns / "data" / "webtasks" / "artifacts_bench.jsonl"
+    pairs_file = campaigns / "r1_coppie.json"
+    render_root = root / "render"
+    if args.fase == "fetch":
+        print(f"risposte verificate in {calibration.fetch_responses(responses_dir)}")
+    elif args.fase == "select":
+        responses, unmatched = calibration.load_responses(responses_dir, tasks_file)
+        eligible = calibration.calibration_task_ids(campaigns / "r1_ordine.json")
+        usable, rejected = calibration.usable_responses(responses, eligible)
+        params = {"seed": 20261024, "max_diff": 10.0, "min_score": 30.0,
+                  "cap_per_model": 15, "reserve_cap": 20, "iterations": 50, "exclude_named": True}
+        pairs = calibration.select_pairs(responses, eligible, **params)
+        main, reserve = pairs[:150], pairs[150:]
+        print(f"risposte non collegate: {unmatched}")
+        valid = len(responses) - sum(rejected[key] for key in
+                                    ("fuori_coda", "non_estraibile", "non_valida", "senza_punteggio"))
+        print(f"risposte valide prima dei filtri rete e nome: {valid}")
+        print(f"risposte usabili: {len(usable)}; compiti: {len({row.task_id for row in usable})}")
+        for reason, count in rejected.items():
+            print(f"scarti {reason}: {count}")
+        print(f"coppie principali: {len(main)}; riserva: {len(reserve)}")
+        for label, selected in (("principali", main), ("totale", pairs)):
+            counts = Counter(model for pair in selected for model in (pair.model_a, pair.model_b))
+            for model, count in sorted(counts.items()):
+                print(f"apparizioni {label} {model}: {count}")
+            diff = sum(abs(pair.score_a - pair.score_b) for pair in selected) / len(selected) if selected else 0
+            print(f"diff media {label}: {diff:.2f}")
+        if len(main) < 150:
+            raise WebTaskError(f"solo {len(main)} coppie principali disponibili: scelta da rivedere")
+        calibration.save_pairs(pairs_file, pairs, params=params)
+        print(f"coppie salvate in {pairs_file}")
+    elif args.fase == "render":
+        if args.workers < 1:
+            raise WebTaskError("workers deve essere almeno 1")
+        main, reserve = calibration.load_pairs(pairs_file)
+        responses, _ = calibration.load_responses(responses_dir, tasks_file)
+        ensure_image_available(renderer.RENDERER_IMAGE, attempts=config.DOCKER_TENTATIVI_AVVIO,
+                               delay=config.DOCKER_ATTESA_AVVIO_S,
+                               max_total_s=config.DOCKER_ATTESA_AVVIO_MAX_S)
+        sandbox.cleanup_orphans(orphan_max_ages())
+        summary = calibration.render_pairs(main + reserve, responses, render_root, workers=args.workers)
+        print(f"pagine renderizzate: {summary.rendered}; saltate alla ripresa: {summary.skipped}")
+        print(f"pagine guaste ({len(summary.failed)}): {', '.join(summary.failed) or 'nessuna'}")
+        print(f"pagine non partite ({len(summary.not_started)}): "
+              f"{', '.join(summary.not_started) or 'nessuna'}")
+    elif args.fase == "package":
+        pairs, notes = calibration.final_pairs(pairs_file, render_root)
+        for note in notes:
+            print(note)
+        try:
+            tasks = {task.id: task.text for task in load_artifacts(tasks_file)}
+        except OSError as error:
+            raise WebTaskError(f"{tasks_file}: lettura non riuscita: {error}") from error
+        dest = root / "pacchetto"
+        index = calibration.build_vote_package(pairs, tasks, render_root, dest, root / "chiave.json")
+        size = sum(path.stat().st_size for path in dest.rglob("*") if path.is_file())
+        print(f"pacchetto: {index}")
+        print(f"dimensione totale: {size / 1_000_000:.2f} MB (milioni di byte)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Costruisce la CLI senza accedere a ambiente, rete o Docker."""
     parser = argparse.ArgumentParser(description="Campagna di misura ORC (M2s.4)")
@@ -545,6 +615,14 @@ def build_parser() -> argparse.ArgumentParser:
                            help="scarica WebGen-Bench e ArtifactsBench ai commit fissati (R1)")
     web.add_argument("--dest", type=Path, default=PROJECT_ROOT / "campaigns" / "data" / "webtasks")
 
+    calibration = sotto.add_parser("calibration", help="prepara coppie e pacchetto di voto (R1.8)")
+    phases = calibration.add_subparsers(dest="fase", required=True)
+    phases.add_parser("fetch", help="scarica le risposte ai commit fissati")
+    phases.add_parser("select", help="sceglie coppie principali e riserva")
+    render = phases.add_parser("render", help="renderizza le pagine con ripresa")
+    render.add_argument("--workers", type=int, default=3)
+    phases.add_parser("package", help="costruisce il pacchetto anonimo e la chiave separata")
+
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")
     return parser
@@ -557,6 +635,14 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
     campaigns_dir = runs_root / "campaigns"
     registry = ModelRegistry.from_file(PROJECT_ROOT / "models.toml")
     dotenv = dotenv_path if dotenv_path is not None else PROJECT_ROOT / ".env"
+
+    if args.comando == "calibration":
+        try:
+            _calibration_phase(args)
+        except CampaignError as errore:
+            print(f"errore: {errore}", file=sys.stderr)
+            return 2
+        return 0
 
     if args.comando == "fetch-polyglot":
         from polyglot import fetch_polyglot

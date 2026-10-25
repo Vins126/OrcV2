@@ -25,7 +25,7 @@
 | M2s | Routing statico per ruolo | ✅ chiusa come superata (D43) |
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
-| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **in corso**: R1.1 fatto (da committare) |
+| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **in corso**: R1.1-R1.8 fatti (R1.2: restano i 5 prompt da rileggere); R1.9-R1.10 da fare |
 | R2 | Strumenti comuni, baseline e politiche semplici (cancello, H, pilota, preventivo misurato) | ⬜ |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ⬜ |
@@ -369,7 +369,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   nel risultato (`ok`, `assente`, `errore: ...`); un errore non ferma il rendering. Test r13-r15 e prova reale i9.
 - **Fatto quando:** 5 script approvati dall'autore, tutti «vuoto = 0», due «riferimento = 100».
 
-#### R1.8 — Fonte delle coppie e strumento di voto
+#### R1.8 — Fonte delle coppie e strumento di voto ✅ (25 ott, da committare)
 - ✅ **Regola delle coppie (24 ott, P21-D1 (a)):** dai compiti dalla 300ª posizione, solo risposte HTML in un file che
   non caricano nulla dalla rete, voti di Gemini 2.5 Pro (`gemini_mllm_score`, usati **solo** per trovare coppie
   vicine) distanti al massimo 10, nessun pareggio, minimo 30; una coppia per compito, ogni modello al massimo 15
@@ -403,9 +403,31 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   giudice; voto da −2 a +2; ordine sinistra/destra casuale e registrato; nessun indizio del braccio; pausa ogni 20
   coppie; 5 coppie ripetute per misurare la coerenza del votante; voti salvati con identificativo anonimo, fuori dal
   repository pubblico.
+  **Revisione del 25 ott:** applicazione separata in `../OrcValutatore/`, pubblicata su
+  Cloudflare Workers, con archivio D1 nell'Unione Europea,
+  inviti personali revocabili e raccolta automatica. Nessuna dipendenza web installata in OrcV2.
+  Il pacchetto statico resta la sorgente: 155 voci e 930 immagini verificate identiche; scala, lati e ripetizioni
+  invariati. Schede italiane con obiettivo e aspetti visivi da osservare, originale consultabile.
+  Ripresa automatica dal primo confronto ancora da votare al ritorno dal proprio invito.
+  Voto salvato al tocco con passaggio immediato alla coppia successiva; correzione tramite Indietro.
+  Verifiche: 51 test dell'app; uso da telefono e computer, ripresa senza rete e concorrenza fra schede;
+  collaudo sul servizio reale di voto, persistenza, esportazione, protezione degli accessi e revoca. Esportazione
+  reale riletta da `calibration.load_votes`; record fittizi rimossi. Restano la prova di 10 coppie dell'autore,
+  la rilettura delle schede e l'allineamento del materiale esplicativo del giudice prima dei voti reali.
 - **⚠️ Trappola:** l'autore conosce lo stile di C: sulle coppie con C il suo voto non e' cieco. Si esclude dalle
   coppie con C o si dichiara.
 - **Fatto quando:** coppie scelte e salvate; l'autore ha votato 10 coppie di prova e il file dei voti si legge.
+- ✅ **Fatto (25 ott):** `calibration.py` e sottocomando `python campaign.py calibration fetch|select|render|package`;
+  60 test in `tests/test_calibration.py` (uno sui dati veri con `ORC_INTEGRATION=1`). Coppie in
+  `campaigns/r1_coppie.json`: 3675 risposte valide dalla posizione 300, 1860 escluse per risorse di rete, **32 escluse
+  perche' la pagina nomina un modello** (la cecita' del voto si romperebbe), 1783 usabili; **150 coppie principali,
+  ognuno dei 20 modelli 15 volte, differenza media 5,24**, piu' 25 di riserva. La scelta e' deterministica (seme
+  20261024, compiti e candidati ordinati prima del mescolamento); su 100 semi provati la regola arriva a 150 coppie
+  esatte solo nel 34% dei casi, altrimenti 149: margine stretto, da dichiarare. La riserva continua i conteggi delle
+  principali con tetto 20. Rendering: 350 pagine in 6 minuti, nessuna guasta ne' non partita; 8 pagine con errori
+  JavaScript propri (difetti dei siti, non della valutazione). Pacchetto statico: 155 voci, 930 immagini, 100,8 MB.
+  Prova dell'autore: 15 voti letti da `calibration.load_votes`. Limite: il filtro sui nomi legge il testo dell'HTML,
+  non i nomi disegnati in immagini o SVG.
 
 #### R1.9 — Giudice a coppie («piace»)
 - ✅ **Revisione del 24 ott (D52):** il giudice e' **GPT-6.1 Sol via Codex CLI** (`codex exec -m ... -i <immagini>

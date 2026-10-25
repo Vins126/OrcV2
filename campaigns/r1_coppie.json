@@ -1,0 +1,1418 @@
+{
+ "commit": "88c968b87e150e63de7660937e6dcfb8e7d643cf",
+ "seed": 20261024,
+ "params": {
+  "seed": 20261024,
+  "max_diff": 10.0,
+  "min_score": 30.0,
+  "cap_per_model": 15,
+  "reserve_cap": 20,
+  "iterations": 50,
+  "exclude_named": true
+ },
+ "main": [
+  {
+   "pair_id": "c001",
+   "task_id": "1398",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "glm-4.5",
+   "score_a": 62.0,
+   "score_b": 72.0
+  },
+  {
+   "pair_id": "c002",
+   "task_id": "1670",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "gpt_4.1",
+   "score_a": 48.0,
+   "score_b": 38.0
+  },
+  {
+   "pair_id": "c003",
+   "task_id": "1728",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-R1",
+   "score_a": 49.0,
+   "score_b": 46.0
+  },
+  {
+   "pair_id": "c004",
+   "task_id": "1341",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "DeepSeek-V3-0324",
+   "score_a": 55.0,
+   "score_b": 60.0
+  },
+  {
+   "pair_id": "c005",
+   "task_id": "1522",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 48.0,
+   "score_b": 56.0
+  },
+  {
+   "pair_id": "c006",
+   "task_id": "1804",
+   "model_a": "KAT-V1",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 39.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c007",
+   "task_id": "1185",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 74.0,
+   "score_b": 80.0
+  },
+  {
+   "pair_id": "c008",
+   "task_id": "229",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "glm-4.5",
+   "score_a": 46.0,
+   "score_b": 49.0
+  },
+  {
+   "pair_id": "c009",
+   "task_id": "1123",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "kimi-k2",
+   "score_a": 57.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c010",
+   "task_id": "1778",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "gpt4o",
+   "score_a": 32.0,
+   "score_b": 31.0
+  },
+  {
+   "pair_id": "c011",
+   "task_id": "1610",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "kimi-k2",
+   "score_a": 51.0,
+   "score_b": 45.0
+  },
+  {
+   "pair_id": "c012",
+   "task_id": "1108",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt_4.1",
+   "score_a": 78.0,
+   "score_b": 68.5
+  },
+  {
+   "pair_id": "c013",
+   "task_id": "1638",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Claude_Sonnet_4_20250514",
+   "score_a": 40.0,
+   "score_b": 41.0
+  },
+  {
+   "pair_id": "c014",
+   "task_id": "896",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "o3",
+   "score_a": 47.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c015",
+   "task_id": "836",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 62.0,
+   "score_b": 55.0
+  },
+  {
+   "pair_id": "c016",
+   "task_id": "276",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "o3",
+   "score_a": 54.0,
+   "score_b": 62.0
+  },
+  {
+   "pair_id": "c017",
+   "task_id": "1434",
+   "model_a": "KAT-V1",
+   "model_b": "gpt4o",
+   "score_a": 50.0,
+   "score_b": 49.0
+  },
+  {
+   "pair_id": "c018",
+   "task_id": "1287",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Claude_3.7_Sonnet_20250219",
+   "score_a": 46.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c019",
+   "task_id": "472",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "kimi-k2",
+   "score_a": 60.0,
+   "score_b": 61.0
+  },
+  {
+   "pair_id": "c020",
+   "task_id": "1195",
+   "model_a": "glm-4.5",
+   "model_b": "o3",
+   "score_a": 40.0,
+   "score_b": 35.0
+  },
+  {
+   "pair_id": "c021",
+   "task_id": "1472",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 37.0,
+   "score_b": 32.0
+  },
+  {
+   "pair_id": "c022",
+   "task_id": "1289",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 58.0,
+   "score_b": 65.0
+  },
+  {
+   "pair_id": "c023",
+   "task_id": "1772",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt-5",
+   "score_a": 62.0,
+   "score_b": 66.0
+  },
+  {
+   "pair_id": "c024",
+   "task_id": "215",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 45.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c025",
+   "task_id": "1575",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 41.0,
+   "score_b": 48.0
+  },
+  {
+   "pair_id": "c026",
+   "task_id": "1811",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "gpt4o",
+   "score_a": 31.0,
+   "score_b": 32.0
+  },
+  {
+   "pair_id": "c027",
+   "task_id": "1022",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "o3",
+   "score_a": 49.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c028",
+   "task_id": "679",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 41.0,
+   "score_b": 39.0
+  },
+  {
+   "pair_id": "c029",
+   "task_id": "1190",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 60.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c030",
+   "task_id": "1097",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "gpt_4.1",
+   "score_a": 42.0,
+   "score_b": 45.0
+  },
+  {
+   "pair_id": "c031",
+   "task_id": "1750",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "gpt_4.1",
+   "score_a": 32.0,
+   "score_b": 33.0
+  },
+  {
+   "pair_id": "c032",
+   "task_id": "1332",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt-5",
+   "score_a": 67.0,
+   "score_b": 71.0
+  },
+  {
+   "pair_id": "c033",
+   "task_id": "356",
+   "model_a": "KAT-V1",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 49.0,
+   "score_b": 59.0
+  },
+  {
+   "pair_id": "c034",
+   "task_id": "731",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 46.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c035",
+   "task_id": "1727",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 62.0,
+   "score_b": 54.0
+  },
+  {
+   "pair_id": "c036",
+   "task_id": "1626",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 59.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c037",
+   "task_id": "482",
+   "model_a": "KAT-V1",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 45.0,
+   "score_b": 38.0
+  },
+  {
+   "pair_id": "c038",
+   "task_id": "1186",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 31.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c039",
+   "task_id": "1527",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "glm-4.5",
+   "score_a": 35.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c040",
+   "task_id": "1082",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "kimi-k2",
+   "score_a": 46.0,
+   "score_b": 54.0
+  },
+  {
+   "pair_id": "c041",
+   "task_id": "1092",
+   "model_a": "glm-4.5",
+   "model_b": "gpt-5",
+   "score_a": 85.0,
+   "score_b": 82.0
+  },
+  {
+   "pair_id": "c042",
+   "task_id": "1774",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "gpt4o",
+   "score_a": 40.0,
+   "score_b": 33.0
+  },
+  {
+   "pair_id": "c043",
+   "task_id": "1494",
+   "model_a": "DeepSeek-R1",
+   "model_b": "DeepSeek-R1-0528",
+   "score_a": 46.0,
+   "score_b": 39.0
+  },
+  {
+   "pair_id": "c044",
+   "task_id": "1561",
+   "model_a": "kimi-k2",
+   "model_b": "o3",
+   "score_a": 47.0,
+   "score_b": 48.0
+  },
+  {
+   "pair_id": "c045",
+   "task_id": "1816",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "DeepSeek-R1-0528",
+   "score_a": 78.0,
+   "score_b": 74.0
+  },
+  {
+   "pair_id": "c046",
+   "task_id": "619",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "kimi-k2",
+   "score_a": 54.0,
+   "score_b": 53.0
+  },
+  {
+   "pair_id": "c047",
+   "task_id": "1239",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "gpt4o",
+   "score_a": 33.0,
+   "score_b": 35.0
+  },
+  {
+   "pair_id": "c048",
+   "task_id": "1737",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "gpt4o",
+   "score_a": 51.0,
+   "score_b": 52.0
+  },
+  {
+   "pair_id": "c049",
+   "task_id": "1738",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 51.0,
+   "score_b": 49.0
+  },
+  {
+   "pair_id": "c050",
+   "task_id": "699",
+   "model_a": "KAT-V1",
+   "model_b": "gpt_4.1",
+   "score_a": 32.0,
+   "score_b": 41.0
+  },
+  {
+   "pair_id": "c051",
+   "task_id": "1286",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-V3-0324",
+   "score_a": 80.0,
+   "score_b": 79.0
+  },
+  {
+   "pair_id": "c052",
+   "task_id": "1566",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "glm-4.5",
+   "score_a": 68.0,
+   "score_b": 65.0
+  },
+  {
+   "pair_id": "c053",
+   "task_id": "1396",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "o3",
+   "score_a": 55.0,
+   "score_b": 56.0
+  },
+  {
+   "pair_id": "c054",
+   "task_id": "514",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "gpt-5",
+   "score_a": 62.0,
+   "score_b": 72.0
+  },
+  {
+   "pair_id": "c055",
+   "task_id": "447",
+   "model_a": "KAT-V1",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 37.0,
+   "score_b": 36.0
+  },
+  {
+   "pair_id": "c056",
+   "task_id": "1646",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 67.0,
+   "score_b": 61.0
+  },
+  {
+   "pair_id": "c057",
+   "task_id": "438",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "kimi-k2",
+   "score_a": 42.0,
+   "score_b": 44.0
+  },
+  {
+   "pair_id": "c058",
+   "task_id": "210",
+   "model_a": "gpt_4.1",
+   "model_b": "o3",
+   "score_a": 31.0,
+   "score_b": 36.0
+  },
+  {
+   "pair_id": "c059",
+   "task_id": "919",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "KAT-V1",
+   "score_a": 54.0,
+   "score_b": 46.0
+  },
+  {
+   "pair_id": "c060",
+   "task_id": "410",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-R1",
+   "score_a": 32.0,
+   "score_b": 41.0
+  },
+  {
+   "pair_id": "c061",
+   "task_id": "1098",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "gpt4o",
+   "score_a": 53.0,
+   "score_b": 43.0
+  },
+  {
+   "pair_id": "c062",
+   "task_id": "1223",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 80.0,
+   "score_b": 70.0
+  },
+  {
+   "pair_id": "c063",
+   "task_id": "441",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 90.0,
+   "score_b": 93.0
+  },
+  {
+   "pair_id": "c064",
+   "task_id": "1625",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "glm-4.5",
+   "score_a": 60.0,
+   "score_b": 51.0
+  },
+  {
+   "pair_id": "c065",
+   "task_id": "1413",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 42.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c066",
+   "task_id": "428",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 56.0,
+   "score_b": 53.0
+  },
+  {
+   "pair_id": "c067",
+   "task_id": "1526",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "gpt-5",
+   "score_a": 54.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c068",
+   "task_id": "1790",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 36.0,
+   "score_b": 38.0
+  },
+  {
+   "pair_id": "c069",
+   "task_id": "1313",
+   "model_a": "kimi-k2",
+   "model_b": "o3",
+   "score_a": 31.0,
+   "score_b": 34.0
+  },
+  {
+   "pair_id": "c070",
+   "task_id": "1402",
+   "model_a": "DeepSeek-R1",
+   "model_b": "gpt_4.1",
+   "score_a": 71.0,
+   "score_b": 61.0
+  },
+  {
+   "pair_id": "c071",
+   "task_id": "1063",
+   "model_a": "DeepSeek-R1",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 31.0,
+   "score_b": 32.0
+  },
+  {
+   "pair_id": "c072",
+   "task_id": "1095",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-R1-0528",
+   "score_a": 74.0,
+   "score_b": 78.0
+  },
+  {
+   "pair_id": "c073",
+   "task_id": "1007",
+   "model_a": "gpt_4.1",
+   "model_b": "kimi-k2",
+   "score_a": 40.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c074",
+   "task_id": "284",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 43.0,
+   "score_b": 49.0
+  },
+  {
+   "pair_id": "c075",
+   "task_id": "1432",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 74.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c076",
+   "task_id": "1367",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "KAT-V1",
+   "score_a": 43.0,
+   "score_b": 36.0
+  },
+  {
+   "pair_id": "c077",
+   "task_id": "1468",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 51.0,
+   "score_b": 61.0
+  },
+  {
+   "pair_id": "c078",
+   "task_id": "1474",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "gpt4o",
+   "score_a": 52.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c079",
+   "task_id": "1723",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 47.0,
+   "score_b": 51.0
+  },
+  {
+   "pair_id": "c080",
+   "task_id": "941",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 65.0,
+   "score_b": 59.0
+  },
+  {
+   "pair_id": "c081",
+   "task_id": "979",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "glm-4.5",
+   "score_a": 59.0,
+   "score_b": 62.0
+  },
+  {
+   "pair_id": "c082",
+   "task_id": "1781",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "gpt_4.1",
+   "score_a": 54.0,
+   "score_b": 62.0
+  },
+  {
+   "pair_id": "c083",
+   "task_id": "1292",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 49.5,
+   "score_b": 43.0
+  },
+  {
+   "pair_id": "c084",
+   "task_id": "536",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 45.0,
+   "score_b": 53.0
+  },
+  {
+   "pair_id": "c085",
+   "task_id": "252",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Claude_Sonnet_4_20250514",
+   "score_a": 54.0,
+   "score_b": 57.0
+  },
+  {
+   "pair_id": "c086",
+   "task_id": "1584",
+   "model_a": "DeepSeek-R1",
+   "model_b": "kimi-k2",
+   "score_a": 37.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c087",
+   "task_id": "398",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "o3",
+   "score_a": 75.0,
+   "score_b": 76.0
+  },
+  {
+   "pair_id": "c088",
+   "task_id": "1785",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "gpt4o",
+   "score_a": 46.0,
+   "score_b": 44.0
+  },
+  {
+   "pair_id": "c089",
+   "task_id": "381",
+   "model_a": "DeepSeek-R1",
+   "model_b": "gpt_4.1",
+   "score_a": 54.0,
+   "score_b": 59.0
+  },
+  {
+   "pair_id": "c090",
+   "task_id": "1033",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "glm-4.5",
+   "score_a": 67.0,
+   "score_b": 60.0
+  },
+  {
+   "pair_id": "c091",
+   "task_id": "718",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "KAT-V1",
+   "score_a": 53.0,
+   "score_b": 47.0
+  },
+  {
+   "pair_id": "c092",
+   "task_id": "1640",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 74.0,
+   "score_b": 76.0
+  },
+  {
+   "pair_id": "c093",
+   "task_id": "1153",
+   "model_a": "DeepSeek-R1",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 43.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c094",
+   "task_id": "1381",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "glm-4.5",
+   "score_a": 34.0,
+   "score_b": 43.0
+  },
+  {
+   "pair_id": "c095",
+   "task_id": "231",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "o3",
+   "score_a": 51.0,
+   "score_b": 52.0
+  },
+  {
+   "pair_id": "c096",
+   "task_id": "1786",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Claude_Sonnet_4_20250514",
+   "score_a": 32.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c097",
+   "task_id": "332",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "gpt-5",
+   "score_a": 60.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c098",
+   "task_id": "735",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 38.0,
+   "score_b": 31.0
+  },
+  {
+   "pair_id": "c099",
+   "task_id": "775",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 39.0,
+   "score_b": 38.0
+  },
+  {
+   "pair_id": "c100",
+   "task_id": "1578",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "gpt4o",
+   "score_a": 47.0,
+   "score_b": 44.0
+  },
+  {
+   "pair_id": "c101",
+   "task_id": "949",
+   "model_a": "gpt-5",
+   "model_b": "o3",
+   "score_a": 84.0,
+   "score_b": 76.0
+  },
+  {
+   "pair_id": "c102",
+   "task_id": "1663",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "glm-4.5",
+   "score_a": 36.0,
+   "score_b": 46.0
+  },
+  {
+   "pair_id": "c103",
+   "task_id": "1005",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gpt-5",
+   "score_a": 64.0,
+   "score_b": 54.0
+  },
+  {
+   "pair_id": "c104",
+   "task_id": "946",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "KAT-V1",
+   "score_a": 56.0,
+   "score_b": 49.0
+  },
+  {
+   "pair_id": "c105",
+   "task_id": "1043",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "gpt_4.1",
+   "score_a": 50.0,
+   "score_b": 52.0
+  },
+  {
+   "pair_id": "c106",
+   "task_id": "1787",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "kimi-k2",
+   "score_a": 45.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c107",
+   "task_id": "1757",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "kimi-k2",
+   "score_a": 47.0,
+   "score_b": 50.0
+  },
+  {
+   "pair_id": "c108",
+   "task_id": "1504",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 53.0,
+   "score_b": 55.0
+  },
+  {
+   "pair_id": "c109",
+   "task_id": "1181",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "glm-4.5",
+   "score_a": 59.0,
+   "score_b": 62.0
+  },
+  {
+   "pair_id": "c110",
+   "task_id": "324",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "o3",
+   "score_a": 37.0,
+   "score_b": 41.0
+  },
+  {
+   "pair_id": "c111",
+   "task_id": "1333",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gpt_4.1",
+   "score_a": 51.0,
+   "score_b": 58.0
+  },
+  {
+   "pair_id": "c112",
+   "task_id": "1669",
+   "model_a": "KAT-V1",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 47.0,
+   "score_b": 50.0
+  },
+  {
+   "pair_id": "c113",
+   "task_id": "242",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 36.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c114",
+   "task_id": "204",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "o3",
+   "score_a": 31.0,
+   "score_b": 35.0
+  },
+  {
+   "pair_id": "c115",
+   "task_id": "1715",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 36.0,
+   "score_b": 38.0
+  },
+  {
+   "pair_id": "c116",
+   "task_id": "1344",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 77.0,
+   "score_b": 68.0
+  },
+  {
+   "pair_id": "c117",
+   "task_id": "1429",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "gpt-5",
+   "score_a": 57.0,
+   "score_b": 61.0
+  },
+  {
+   "pair_id": "c118",
+   "task_id": "1118",
+   "model_a": "KAT-V1",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 37.0,
+   "score_b": 35.0
+  },
+  {
+   "pair_id": "c119",
+   "task_id": "1216",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "gpt-5",
+   "score_a": 76.0,
+   "score_b": 77.0
+  },
+  {
+   "pair_id": "c120",
+   "task_id": "1253",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 41.0,
+   "score_b": 33.0
+  },
+  {
+   "pair_id": "c121",
+   "task_id": "770",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 80.0,
+   "score_b": 88.0
+  },
+  {
+   "pair_id": "c122",
+   "task_id": "702",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "o3",
+   "score_a": 37.0,
+   "score_b": 39.0
+  },
+  {
+   "pair_id": "c123",
+   "task_id": "1796",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "gpt_4.1",
+   "score_a": 33.0,
+   "score_b": 31.0
+  },
+  {
+   "pair_id": "c124",
+   "task_id": "270",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "gpt4o",
+   "score_a": 45.0,
+   "score_b": 50.0
+  },
+  {
+   "pair_id": "c125",
+   "task_id": "829",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "kimi-k2",
+   "score_a": 48.0,
+   "score_b": 54.0
+  },
+  {
+   "pair_id": "c126",
+   "task_id": "412",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "gpt-5",
+   "score_a": 92.0,
+   "score_b": 99.0
+  },
+  {
+   "pair_id": "c127",
+   "task_id": "1528",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 78.0,
+   "score_b": 73.0
+  },
+  {
+   "pair_id": "c128",
+   "task_id": "1586",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 34.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c129",
+   "task_id": "549",
+   "model_a": "KAT-V1",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 32.0,
+   "score_b": 36.0
+  },
+  {
+   "pair_id": "c130",
+   "task_id": "1205",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "gpt4o",
+   "score_a": 52.0,
+   "score_b": 43.0
+  },
+  {
+   "pair_id": "c131",
+   "task_id": "847",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "DeepSeek-R1",
+   "score_a": 70.0,
+   "score_b": 73.0
+  },
+  {
+   "pair_id": "c132",
+   "task_id": "234",
+   "model_a": "glm-4.5",
+   "model_b": "kimi-k2",
+   "score_a": 71.0,
+   "score_b": 74.0
+  },
+  {
+   "pair_id": "c133",
+   "task_id": "1073",
+   "model_a": "Qwen3-235B-A22B",
+   "model_b": "gpt4o",
+   "score_a": 40.0,
+   "score_b": 39.0
+  },
+  {
+   "pair_id": "c134",
+   "task_id": "1017",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Qwen3-235B-A22B-Instruct-2507",
+   "score_a": 57.0,
+   "score_b": 60.0
+  },
+  {
+   "pair_id": "c135",
+   "task_id": "963",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-V3-0324",
+   "score_a": 35.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c136",
+   "task_id": "260",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 44.0,
+   "score_b": 36.0
+  },
+  {
+   "pair_id": "c137",
+   "task_id": "1442",
+   "model_a": "KAT-V1",
+   "model_b": "gpt4o",
+   "score_a": 44.0,
+   "score_b": 34.0
+  },
+  {
+   "pair_id": "c138",
+   "task_id": "521",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "KAT-V1",
+   "score_a": 39.0,
+   "score_b": 32.0
+  },
+  {
+   "pair_id": "c139",
+   "task_id": "250",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt-5",
+   "score_a": 85.0,
+   "score_b": 91.0
+  },
+  {
+   "pair_id": "c140",
+   "task_id": "233",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Claude_Sonnet_4_20250514",
+   "score_a": 68.0,
+   "score_b": 73.0
+  },
+  {
+   "pair_id": "c141",
+   "task_id": "1314",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 45.0,
+   "score_b": 52.0
+  },
+  {
+   "pair_id": "c142",
+   "task_id": "369",
+   "model_a": "glm-4.5",
+   "model_b": "gpt-5",
+   "score_a": 64.0,
+   "score_b": 73.0
+  },
+  {
+   "pair_id": "c143",
+   "task_id": "1758",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "gpt_4.1",
+   "score_a": 35.0,
+   "score_b": 32.0
+  },
+  {
+   "pair_id": "c144",
+   "task_id": "510",
+   "model_a": "DeepSeek-R1",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 38.0,
+   "score_b": 39.0
+  },
+  {
+   "pair_id": "c145",
+   "task_id": "1677",
+   "model_a": "glm-4.5",
+   "model_b": "gpt-5",
+   "score_a": 86.0,
+   "score_b": 91.0
+  },
+  {
+   "pair_id": "c146",
+   "task_id": "732",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "kimi-k2",
+   "score_a": 65.0,
+   "score_b": 60.0
+  },
+  {
+   "pair_id": "c147",
+   "task_id": "495",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 61.0,
+   "score_b": 67.0
+  },
+  {
+   "pair_id": "c148",
+   "task_id": "1392",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "o3",
+   "score_a": 69.0,
+   "score_b": 67.0
+  },
+  {
+   "pair_id": "c149",
+   "task_id": "1820",
+   "model_a": "gemini-2.5-pro",
+   "model_b": "gpt-5",
+   "score_a": 74.0,
+   "score_b": 84.0
+  },
+  {
+   "pair_id": "c150",
+   "task_id": "1687",
+   "model_a": "gpt4o",
+   "model_b": "gpt_4.1",
+   "score_a": 45.0,
+   "score_b": 51.0
+  }
+ ],
+ "reserve": [
+  {
+   "pair_id": "c151",
+   "task_id": "630",
+   "model_a": "gpt-5-chat-latest",
+   "model_b": "gpt_4.1",
+   "score_a": 38.0,
+   "score_b": 37.0
+  },
+  {
+   "pair_id": "c152",
+   "task_id": "1557",
+   "model_a": "DeepSeek-R1",
+   "model_b": "kimi-k2",
+   "score_a": 39.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c153",
+   "task_id": "218",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 43.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c154",
+   "task_id": "1365",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "DeepSeek-V3-0324",
+   "score_a": 51.0,
+   "score_b": 53.0
+  },
+  {
+   "pair_id": "c155",
+   "task_id": "1315",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "kimi-k2",
+   "score_a": 50.0,
+   "score_b": 59.0
+  },
+  {
+   "pair_id": "c156",
+   "task_id": "465",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "glm-4.5",
+   "score_a": 45.0,
+   "score_b": 55.0
+  },
+  {
+   "pair_id": "c157",
+   "task_id": "1810",
+   "model_a": "Hunyuan_A13B",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 41.0,
+   "score_b": 47.0
+  },
+  {
+   "pair_id": "c158",
+   "task_id": "421",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gemini-2.5-pro",
+   "score_a": 64.0,
+   "score_b": 73.0
+  },
+  {
+   "pair_id": "c159",
+   "task_id": "992",
+   "model_a": "DeepSeek-R1-0528",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 55.0,
+   "score_b": 51.0
+  },
+  {
+   "pair_id": "c160",
+   "task_id": "314",
+   "model_a": "KAT-V1",
+   "model_b": "gpt4o",
+   "score_a": 38.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c161",
+   "task_id": "703",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "o3",
+   "score_a": 48.0,
+   "score_b": 57.0
+  },
+  {
+   "pair_id": "c162",
+   "task_id": "249",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "DeepSeek-R1-0528",
+   "score_a": 77.0,
+   "score_b": 68.0
+  },
+  {
+   "pair_id": "c163",
+   "task_id": "1797",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "DeepSeek-R1",
+   "score_a": 34.0,
+   "score_b": 43.0
+  },
+  {
+   "pair_id": "c164",
+   "task_id": "1645",
+   "model_a": "Claude_Sonnet_4_20250514",
+   "model_b": "gpt-5-chat-latest",
+   "score_a": 69.0,
+   "score_b": 63.0
+  },
+  {
+   "pair_id": "c165",
+   "task_id": "889",
+   "model_a": "Claude_3.5_Sonnet_20241022",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 45.0,
+   "score_b": 54.0
+  },
+  {
+   "pair_id": "c166",
+   "task_id": "873",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Qwen3-235B-A22B",
+   "score_a": 51.0,
+   "score_b": 44.0
+  },
+  {
+   "pair_id": "c167",
+   "task_id": "1254",
+   "model_a": "Qwen3-Coder-480B-A35B-Instruct",
+   "model_b": "kimi-k2",
+   "score_a": 40.0,
+   "score_b": 50.0
+  },
+  {
+   "pair_id": "c168",
+   "task_id": "426",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "gpt4o",
+   "score_a": 37.0,
+   "score_b": 30.0
+  },
+  {
+   "pair_id": "c169",
+   "task_id": "1545",
+   "model_a": "Qwen3-235B-A22B-Thinking-2507",
+   "model_b": "o3",
+   "score_a": 38.0,
+   "score_b": 46.0
+  },
+  {
+   "pair_id": "c170",
+   "task_id": "1131",
+   "model_a": "glm-4.5",
+   "model_b": "gpt_4.1",
+   "score_a": 45.0,
+   "score_b": 40.0
+  },
+  {
+   "pair_id": "c171",
+   "task_id": "676",
+   "model_a": "Qwen3-235B-A22B-Instruct-2507",
+   "model_b": "Qwen3-Coder-480B-A35B-Instruct",
+   "score_a": 37.0,
+   "score_b": 31.0
+  },
+  {
+   "pair_id": "c172",
+   "task_id": "1749",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "glm-4.5",
+   "score_a": 55.0,
+   "score_b": 64.0
+  },
+  {
+   "pair_id": "c173",
+   "task_id": "1285",
+   "model_a": "DeepSeek-V3-0324",
+   "model_b": "Qwen3-235B-A22B-Thinking-2507",
+   "score_a": 33.0,
+   "score_b": 42.0
+  },
+  {
+   "pair_id": "c174",
+   "task_id": "1496",
+   "model_a": "DeepSeek-R1",
+   "model_b": "DeepSeek-R1-0528",
+   "score_a": 52.0,
+   "score_b": 57.0
+  },
+  {
+   "pair_id": "c175",
+   "task_id": "492",
+   "model_a": "Claude_3.7_Sonnet_20250219",
+   "model_b": "Hunyuan_A13B",
+   "score_a": 37.0,
+   "score_b": 31.0
+  }
+ ],
+ "created": "2026-10-24T22:36:16.468154+00:00"
+}
