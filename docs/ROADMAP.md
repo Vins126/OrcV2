@@ -25,7 +25,7 @@
 | M2s | Routing statico per ruolo | ✅ chiusa come superata (D43) |
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
-| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **in corso**: R1.1-R1.8 fatti (R1.2: restano i 5 prompt da rileggere); R1.9-R1.10 da fare |
+| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **in corso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 regola e script pronti, voti in raccolta fino al 28 ott: resta solo il calcolo degli accordi |
 | R2 | Strumenti comuni, baseline e politiche semplici (cancello, H, pilota, preventivo misurato) | ⬜ |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ⬜ |
@@ -167,7 +167,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   rifiuta compiti saltati o giudicati fuori turno, scaricamento con sha256), `campaigns/r1_compiti.toml`
   (verdetti), comando `python campaign.py fetch-webtasks`, `tests/test_webtasks.py` (23 test + 1 prova reale).
 - **Verificato il 21 ott:** suite 832 passati, pyright 0 errori; prova reale con `ORC_INTEGRATION=1` passata.
-- **Resta:** rilettura dell'autore con le domande di verifica.
+- **Riletto dall'autore (26 ott).**
 - **Revisione indipendente (24 ott, Opus):** 7 segnalazioni, nessuna alta, tutte corrette: `load_selection`
   ricontrolla lo sha256; l'ordine estratto e' registrato in `campaigns/r1_ordine.json` e confrontato a ogni lettura
   (`random.shuffle` non e' garantito uguale fra versioni di Python); test del pre-filtro senza rete; id doppi fra i
@@ -176,7 +176,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - **⚠️ Trappola:** il file di ArtifactsBench si chiama `.json` ma e' JSONL: si salva come `.jsonl`, l'hash resta
   quello dei byte originali.
 
-#### R1.2 — Il compito come lo vedono i bracci: convenzioni ✅ codice (24 ott, da committare; restano i 5 prompt riletti dall'autore)
+#### R1.2 — Il compito come lo vedono i bracci: convenzioni ✅ (24 ott; 5 prompt riletti dall'autore il 26 ott)
 - **Fatto (24 ott):** `webprompt.py` (`build_prompt`, `load_material`), cornice e materiale dei 5 compiti in
   `campaigns/r1_prompt/`, `tests/test_webprompt.py` (36 test, compresi quelli sui file veri: marcatori e rotte
   allineati a `campaigns/r1_valutazione/`, ogni marcatore usato dallo script). Il passaggio `WebTask → Task` passa a
@@ -288,10 +288,12 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   `docker/render_site.py` (avvio di `start.sh`, attesa della porta, Chromium a tre larghezze, errori, sbordo,
   screenshot), `docker/renderer.Dockerfile` (sandbox + Playwright 1.64.0 + Chromium 156; immagine `orc-renderer:r1`,
   2,1 GB), `tests/test_renderer.py` (12 test + 4 prove reali, passate). Due esecuzioni sullo stesso sito danno
-  screenshot identici byte per byte. **Resta:** la prova con Ctrl+C a meta' (R1.11) e l'uso di `ContainerLimiter`
-  per i renderer.
+  screenshot identici byte per byte. **Chiuso il 26 ott:** renderer e script prendono un posto dello stesso
+  `ContainerLimiter` della sandbox (iniettabile, di modulo se non dato; `renderer.py:239`, `renderer.py:367`);
+  Ctrl+C vero a meta' di un rendering e di uno script toglie il container (`test_i10`, Docker vero); un sito con
+  server valutato due volte da' lo stesso esito passo per passo (`test_i11`).
 
-#### R1.5 — Risultato strutturato al posto dell'exit code ✅ (24 ott, da committare)
+#### R1.5 — Risultato strutturato al posto dell'exit code ✅ (24 ott)
 - **Fatto (24 ott):** verificatore unico (P9-D1 c): `Task.verify` e' un comando shell (`ShellVerifier`, invariato per
   Polyglot) o un verificatore; `webcampaign.WebVerifier` esegue renderer e script e scrive `valutazione.json` in
   `campaigns/<campagna>/<compito>-<rip>/` con due blocchi, `cancello` (avvio, errori, sbordo, accessibilita',
@@ -369,7 +371,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   nel risultato (`ok`, `assente`, `errore: ...`); un errore non ferma il rendering. Test r13-r15 e prova reale i9.
 - **Fatto quando:** 5 script approvati dall'autore, tutti «vuoto = 0», due «riferimento = 100».
 
-#### R1.8 — Fonte delle coppie e strumento di voto ✅ (25 ott, da committare)
+#### R1.8 — Fonte delle coppie e strumento di voto ✅ (25 ott)
 - ✅ **Regola delle coppie (24 ott, P21-D1 (a)):** dai compiti dalla 300ª posizione, solo risposte HTML in un file che
   non caricano nulla dalla rete, voti di Gemini 2.5 Pro (`gemini_mllm_score`, usati **solo** per trovare coppie
   vicine) distanti al massimo 10, nessun pareggio, minimo 30; una coppia per compito, ogni modello al massimo 15
@@ -412,11 +414,12 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   Voto salvato al tocco con passaggio immediato alla coppia successiva; correzione tramite Indietro.
   Verifiche: 51 test dell'app; uso da telefono e computer, ripresa senza rete e concorrenza fra schede;
   collaudo sul servizio reale di voto, persistenza, esportazione, protezione degli accessi e revoca. Esportazione
-  reale riletta da `calibration.load_votes`; record fittizi rimossi. Restano la prova di 10 coppie dell'autore,
-  la rilettura delle schede e l'allineamento del materiale esplicativo del giudice prima dei voti reali.
+  reale riletta da `calibration.load_votes`; record fittizi rimossi. La prova di 10 coppie dell'autore non serve
+  piu' (26 ott): la lettura del file dei voti si verifica sull'esportazione vera dopo il 28 ott. Il giudice usa le
+  stesse schede dell'app (R1.9-D3).
 - **⚠️ Trappola:** l'autore conosce lo stile di C: sulle coppie con C il suo voto non e' cieco. Si esclude dalle
   coppie con C o si dichiara.
-- **Fatto quando:** coppie scelte e salvate; l'autore ha votato 10 coppie di prova e il file dei voti si legge.
+- **Fatto quando:** coppie scelte e salvate; il file dei voti esportato si legge (prova sull'esportazione reale).
 - ✅ **Fatto (25 ott):** `calibration.py` e sottocomando `python campaign.py calibration fetch|select|render|package`;
   60 test in `tests/test_calibration.py` (uno sui dati veri con `ORC_INTEGRATION=1`). Coppie in
   `campaigns/r1_coppie.json`: 3675 risposte valide dalla posizione 300, 1860 escluse per risorse di rete, **32 escluse
@@ -430,6 +433,41 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   non i nomi disegnati in immagini o SVG.
 
 #### R1.9 — Giudice a coppie («piace»)
+- ✅ **Fatto (25 ott, da committare):** `judge.py`, fase `python campaign.py
+  calibration judge [--items ...]`, istruzioni in `campaigns/r1_giudice/voto.txt` e `checklist.txt`, 49 test in
+  `tests/test_judge.py` (runner finto, nessuna chiamata vera). Scelte: istruzioni del giudice da validare dall'autore
+  sui risultati (R1.9-D1); **checklist in chiamate separate**, una per sito, e non usata sulle 150 coppie
+  della calibrazione, che valida solo il voto (D2); il giudice vede **la stessa scheda italiana, la richiesta
+  originale e le stesse istruzioni dei votanti** (D3; schede `OrcValutatore/content/task-guides.json`, sha256
+  `04396f38...e840c`, registrato in ogni giudizio). Chiamata: `codex exec --ephemeral --ignore-user-config
+  --ignore-rules -s read-only` da una cartella temporanea vuota con copie delle immagini a nome neutro, prompt su
+  stdin (`-i` accetta piu' valori e mangerebbe un prompt posizionale), `--output-schema`; tempo massimo 120 s, un
+  nuovo tentativo, poi «non valutabile»; limite d'uso dell'abbonamento ferma il lotto.
+  Codex si lancia direttamente da `judge.py`: nessun programma intermedio che apra il progetto (cecita') o
+  aggiunga testo al prompt.
+- **Prove gratuite (25 ott):** modello `gpt-6.1-sol`, sforzo `high` (`-c model_reasoning_effort=high`); 6 immagini
+  arrivano tutte (descritte una per una in 5 prove su 5); JSON valido in tutte le 20 chiamate concluse; il modello dichiara di
+  non aver eseguito comandi; stesso voto in 5 ripetizioni dello stesso ordine. Consumo: ≈ 20-25k token d'ingresso
+  per chiamata (≈ 14k sono il preambolo fisso di Codex), ≈ 0,6% della finestra di 5 ore dell'abbonamento Plus per
+  chiamata (misura a risoluzione di 1%: da 39% a 42% in 5 chiamate). **Non spiegato:** l'ingresso oscilla fra 20,3k e
+  25,1k token con lo stesso input. **Lentezza:** circa 1 chiamata su 5 resta ferma per minuti (525 s in una prova).
+- **Fatto quando ✅ (25 ott):** 5 coppie vere (v001-v005), 0 non valutabili, nessun disaccordo di direzione fra i due
+  ordini; 2 coppie hanno avuto un tempo scaduto (300 s, poi ridotto a 120) recuperato dal secondo tentativo; 1232 s in
+  tutto. Registrati per ogni giudizio modello, sforzo, `codex-cli 0.164.0`, sha256 delle istruzioni e delle schede,
+  durata e token. Preventivo per le 150 coppie: 300 chiamate ≈ 2 finestre di 5 ore; ≈ 3-4 ore contando i blocchi (stima, non misura).
+- **Lotto completo ✅ (26 ott):** 150/150 coppie giudicate in due riprese (fermo per limite d'uso dopo 120,
+  riconosciuto e ripreso da solo); 0 non valutabili, 0 tempi scaduti, 4115 s (≈ 27 s a coppia), 6,86M token
+  d'ingresso e 52k d'uscita, stessi metadati su tutte le righe. I due ordini sono opposti come atteso in 124
+  coppie; in 13 il giudice preferisce la stessa posizione in entrambi (voto finale pari); 14 pari finali in tutto.
+  Uscita: `campaigns/data/calibrazione/giudizi.jsonl`. L'accordo con i votanti si misura solo dopo i voti (R1.10).
+- **Revisione indipendente (25 ott):** confermati segno, conversione all'ordine della coppia, α
+  ordinale, bootstrap e «non valutabili». Corretti (R1.9-D5): ambiente ridotto passato a Codex (niente chiavi) e
+  tentativo scartato se il giudice usa strumenti, cosi' la cecita' si verifica a ogni chiamata e non dipende solo dal
+  prompt; limite d'uso cercato solo negli errori, non nel testo del modello; ripresa rifiutata se istruzioni o versione
+  cambiano; **tempi scaduti ritentati fino a 3 volte senza consumare il tentativo** (con un solo nuovo tentativo circa
+  l'8% delle coppie sarebbe uscito per un blocco di Codex, non per il giudizio), contati in ogni giudizio. Lasciati e
+  dichiarati: una riga troncata da un'interruzione brusca blocca la rilettura; α fra umani come media a coppie (D2).
+  Le 5 coppie di prova sono conservate a parte (regole precedenti); v001 rifatta con le nuove: stesso voto, 34 s.
 - ✅ **Revisione del 24 ott (D52):** il giudice e' **GPT-6.1 Sol via Codex CLI** (`codex exec -m ... -i <immagini>
   --output-schema <schema>`) con l'abbonamento dell'autore, al posto dei due Gemini via API. Le parti qui sotto su
   gateway, `FrontierJudge`, preventivo e prezzi valgono solo come storia; il resto (entrambi gli ordini, checklist,
@@ -463,13 +501,26 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - **Fatto quando:** il giudice gira su 5 coppie vere con costo misurato e prezzo di 3.8 Flash verificato.
 
 #### R1.10 — Voti umani e scelta del giudice
+- ✅ **Script degli accordi (25 ott, da committare):** `agreement.py` e fase `python campaign.py calibration agreement
+  --votes ...` (voti letti con `calibration.load_votes`, giudizi con `judge.load_judgments`), 33 test con voti finti in
+  `tests/test_agreement.py`; Scott's π, accordo percentuale, accordo senza pareggi, α ordinale, bootstrap con seme
+  fisso, regola di accettazione del protocollo. 150 coppie × 8 votanti × 10.000 ripescaggi: 4,4 s. Nessun voto vero
+  letto. Resta: giudicare le 150 coppie, raccogliere i voti entro il 28 ott, calcolare.
 - **Procedura (da M2b.1, storica righe 1225-1229):** prima l'accordo fra umani, poi giudice contro umani; il
   giudice si usa solo se si avvicina all'accordo fra umani.
-- `[SCELTA]` **Quanti voti.** Con 50 coppie l'accordo percentuale ha un'incertezza di ±12 punti, con 100 di ±8, con
+- ✅ **Quanti voti (25 ott):** le 150 coppie di R1.8, ognuna votata da tutti i 7-8 votanti previsti.
+- (storia) **Quanti voti.** Con 50 coppie l'accordo percentuale ha un'incertezza di ±12 punti, con 100 di ±8, con
   200 di ±6 (intervallo di Wilson al 95%, accordo 75%: calcolo del 21 ott, non da letteratura). Ogni coppia va
   votata da almeno 2 persone per conoscere il tetto di accordo fra umani. Proposta: 120 coppie × 2 persone su 4-6
   (≈ 50-60 voti a testa, come previsto in D41).
-- `[SCELTA]` **Metrica e soglia, scritte prima di vedere i voti.** Proposta: accordo sul segno (chi vince; pareggio
+- ✅ **Metrica e soglia (25 ott, prima di vedere i voti; `PROTOCOLLO.md` §6 «Validazione del giudice»):** segno a
+  tre classi con Scott's π e accordo percentuale (D1); giudice contro ciascun votante, alla pari con le coppie di
+  votanti (D2); accettato se π fra umani e π giudice-umani hanno il limite basso al 95% sopra 0 (D4) e Δ sopra
+  −0,10 (D3), bootstrap sulle 150 coppie; α ordinale e accordo senza pareggi come secondarie. Piano B (D5): voti
+  umani sulle coppie C-B in R6, con ritorno alla scelta se i votanti non bastano. Numeri delle simulazioni (modello,
+  non dati): con 7 votanti la Δ ha semi-ampiezza ≈ ±0,05-0,06, con 2 ≈ ±0,12. Votanti previsti: 7-8, tutti su tutte
+  le coppie. Ancora aperto: la regola per le ≥ 20 coppie con server del pilota di R2 (da fissare prima di R2).
+- (storia) **Metrica e soglia, scritte prima di vedere i voti.** Proposta: accordo sul segno (chi vince; pareggio
   a parte) con Scott's π, consigliato da Thakur et al. 2406.12624 perche' l'accordo percentuale distingue male i
   giudici, e Spearman sui voti graduati; il giudice e' accettato se il suo accordo con gli umani non e' inferiore di
   oltre X all'accordo fra umani. **Piano B** se nessuno dei due Gemini passa: «piace» diventa metrica secondaria e la
@@ -478,7 +529,7 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
   siti non distingue e si toglie. Si congelano prima di R6.
 - **Fatto quando:** accordi calcolati con intervallo; giudice scelto o piano B attivato; scritto in `PROTOCOLLO.md`.
 
-#### R1.11 — Manutenzione dell'infrastruttura (da «Da decidere a inizio M4», storica righe 999-1020) 🟡 (24 ott, da committare)
+#### R1.11 — Manutenzione dell'infrastruttura (da «Da decidere a inizio M4», storica righe 999-1020) ✅ (24 ott; client OpenAI rimandato a una misura dei socket, P19-D5)
 - **Prove con Docker vero (24 ott):** container orfani dopo Ctrl+C (sandbox), segnale al processo, `kill -9`, e tempo
   scaduto prima dell'avvio (29 su 60 restavano «Created»: `docker kill` non li toglie e `--rm` non scatta). Il client
   OpenAI si chiude gia' nel `__del__` dell'SDK (non provato con un agente completo).
@@ -498,12 +549,13 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 
 **Definition of Done — R1**
 - [x] 5 compiti di sviluppo estratti e riproducibili dal codice.
-- [ ] Convenzioni, contratti, domande, marcatori e script scritti e approvati prima di ogni generazione.
-- [ ] Un sito statico e uno con server d'esempio danno due volte lo stesso risultato; ogni script da' 0 sul sito
+- [x] Convenzioni, contratti, domande, marcatori e script scritti e approvati prima di ogni generazione (26 ott).
+- [x] Un sito statico e uno con server d'esempio danno due volte lo stesso risultato (`test_i1`; `test_i11`, 26 ott); ogni script da' 0 sul sito
       vuoto; due script danno 100 sul riferimento.
 - [ ] Giudice con costo misurato; accordi umani-umani e giudice-umani con intervallo; giudice scelto o piano B.
-- [ ] Nessuna chiamata a pagamento nei test; suite e pyright verdi.
-- [ ] Sezione di tesi «metodo di valutazione» abbozzata.
+- [x] Nessuna chiamata a pagamento nei test; suite e pyright verdi (26 ott: 1131 passati, 60 saltati; con Docker
+      vero 65 passati; pyright 0 errori).
+- [x] Sezione di tesi «metodo di valutazione» abbozzata (`TESI_master.md` §5.12, 26 ott; esito della validazione da aggiungere).
 
 ---
 

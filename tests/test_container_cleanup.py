@@ -12,7 +12,10 @@ Nota di design (tesi):
 """
 
 import os
+import shutil
+import signal
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -210,3 +213,171 @@ def test_o10_nessun_container_nessuna_ispezione():
     run, tolti = _docker_finto([])
 
     assert cleanup_orphans(MASSIMI, runner=run, now=ORA) == []
+
+
+# ── Posti anche per renderer e script (R1.4, 26 ott) ───────────────────────
+# Renderer e script lanciano container come la sandbox e pesano sulla stessa
+# macchina: prendono un posto dello stesso limitatore, iniettabile come quello
+# di `DockerExecutor` (di modulo se non dato).
+
+def _chiama(funzione: str, tmp_path: Path, run, **kwargs):
+    script = tmp_path / "s.py"
+    script.write_text("")
+    if funzione == "render":
+        return render_site(_workspace(tmp_path), tmp_path / "out", runner=run, **kwargs)
+    return evaluate_site(_workspace(tmp_path), script, runner=run, **kwargs)
+
+
+def _posto_libero(posti: Path) -> bool:
+    try:
+        with ContainerLimiter(1, posti, max_wait_s=0).slot():
+            return True
+    except SandboxSlotTimeout:
+        return False
+
+
+@pytest.mark.parametrize("funzione", ("render", "evaluate"))
+def test_o11_il_container_parte_dentro_un_posto_del_limitatore(tmp_path, funzione):
+    posti = tmp_path / "posti"
+    occupato_durante_run: list[bool] = []
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["docker", "run"]:
+            occupato_durante_run.append(not _posto_libero(posti))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    with pytest.raises(RenderError):        # nessun risultato scritto: guasto, ma dopo il run
+        _chiama(funzione, tmp_path, run, limiter=ContainerLimiter(1, posti))
+
+    assert occupato_durante_run == [True]
+    assert _posto_libero(posti)             # rilasciato alla fine
+
+
+@pytest.mark.parametrize("funzione", ("render", "evaluate"))
+@pytest.mark.parametrize("eccezione", (KeyboardInterrupt(), subprocess.TimeoutExpired(["docker"], 1)))
+def test_o12_il_posto_si_rilascia_anche_su_un_interruzione(tmp_path, funzione, eccezione):
+    posti = tmp_path / "posti"
+    run, _ = _runner_interrotto(eccezione)
+
+    with pytest.raises((KeyboardInterrupt, RenderError)):
+        _chiama(funzione, tmp_path, run, limiter=ContainerLimiter(1, posti))
+
+    assert _posto_libero(posti)
+
+
+@pytest.mark.parametrize("funzione", ("render", "evaluate"))
+def test_o13_senza_posto_entro_l_attesa_massima_nessun_container_parte(tmp_path, funzione):
+    posti = tmp_path / "posti"
+    chiamate: list[list[str]] = []
+
+    def run(cmd, **kwargs):
+        chiamate.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    rilascia, preso = threading.Event(), threading.Event()
+    filo = threading.Thread(target=_occupa, args=(posti, rilascia, preso))
+    filo.start()
+    preso.wait(5)
+    try:
+        with pytest.raises(SandboxSlotTimeout):
+            _chiama(funzione, tmp_path, run, limiter=ContainerLimiter(1, posti, max_wait_s=0.1))
+    finally:
+        rilascia.set()
+        filo.join()
+    assert chiamate == []
+
+
+@pytest.mark.parametrize("funzione", ("render", "evaluate"))
+def test_o14_senza_limitatore_si_usa_quello_di_modulo(tmp_path, monkeypatch, funzione):
+    import config
+    from executors import docker
+    monkeypatch.setattr(config, "DOCKER_MAX_CONCURRENT", 1)
+    monkeypatch.setattr(config, "DOCKER_ATTESA_POSTO_MAX_S", 0.1)
+    docker.reset_shared_limiter()
+    chiamate: list[list[str]] = []
+
+    def run(cmd, **kwargs):
+        chiamate.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    with docker.shared_limiter().slot():
+        with pytest.raises(SandboxSlotTimeout):
+            _chiama(funzione, tmp_path, run)
+    assert chiamate == []
+
+
+def test_o15_senza_start_sh_non_si_aspetta_un_posto(tmp_path):
+    posti = tmp_path / "posti"
+    ws = tmp_path / "vuoto"
+    ws.mkdir()
+    script = tmp_path / "s.py"
+    script.write_text("")
+    rilascia, preso = threading.Event(), threading.Event()
+    filo = threading.Thread(target=_occupa, args=(posti, rilascia, preso))
+    filo.start()
+    preso.wait(5)
+    try:
+        limitatore = ContainerLimiter(1, posti, max_wait_s=0.1)
+        assert render_site(ws, tmp_path / "out", limiter=limitatore).started is False
+        assert evaluate_site(ws, script, limiter=limitatore).funziona == 0
+    finally:
+        rilascia.set()
+        filo.join()
+
+
+# ── Ctrl+C vero durante il rendering (R1.4, 26 ott) ────────────────────────
+
+_INTEGRAZIONE = pytest.mark.skipif(
+    not os.environ.get("ORC_INTEGRATION") or shutil.which("docker") is None,
+    reason="serve Docker con l'immagine orc-renderer:r1: ORC_INTEGRATION=1")
+
+_FIGLIO = """
+import sys
+from pathlib import Path
+from executors.docker import ContainerLimiter
+from renderer import evaluate_site, render_site
+ws, out, posti, funzione = (Path(a) for a in sys.argv[1:5])
+limitatore = ContainerLimiter(1, posti)
+if funzione.name == "render":
+    render_site(ws, out, start_timeout=120, limiter=limitatore)
+else:
+    evaluate_site(ws, Path(sys.argv[5]), start_timeout=120, limiter=limitatore)
+"""
+
+
+def _container(prefisso: str) -> set[str]:
+    uscita = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"],
+                            capture_output=True, text=True, check=True).stdout
+    return {n for n in uscita.split() if n.startswith(prefisso)}
+
+
+@_INTEGRAZIONE
+@pytest.mark.parametrize("funzione, prefisso", [("render", "orc-renderer-"), ("evaluate", "orc-eval-")])
+def test_i10_un_ctrl_c_vero_a_meta_toglie_il_container(tmp_path, funzione, prefisso):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "start.sh").write_text("sleep 600\n")          # la porta non si apre mai: il container resta vivo
+    # uno script con passi: con uno script vuoto la valutazione finisce senza avviare il sito
+    script = Path(__file__).resolve().parent / "fixtures" / "valutazione" / "script_items.py"
+    prima = _container(prefisso)
+    radice = Path(__file__).resolve().parent.parent
+    figlio = subprocess.Popen(
+        [sys.executable, "-c", _FIGLIO, str(ws), str(tmp_path / "out"), str(tmp_path / "posti"),
+         funzione, str(script)], cwd=radice, start_new_session=True)
+    try:
+        nuovi: set[str] = set()
+        scadenza = time.monotonic() + 60
+        while not nuovi and time.monotonic() < scadenza:
+            time.sleep(0.5)
+            nuovi = _container(prefisso) - prima
+        assert nuovi, "il container non e' mai comparso"
+        time.sleep(2)                                    # il container sta davvero girando
+        assert figlio.poll() is None, "il processo e' finito prima del Ctrl+C"
+        os.killpg(figlio.pid, signal.SIGINT)                # come Ctrl+C: a tutto il gruppo, docker compreso
+        figlio.wait(60)
+    finally:
+        if figlio.poll() is None:
+            figlio.kill()
+    assert figlio.returncode != 0
+    assert not (nuovi & _container(prefisso))
+    assert _posto_libero(tmp_path / "posti")

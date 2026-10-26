@@ -5,6 +5,7 @@ Misura M2s.4a: tasso di fallimento `f` e quota di output su una serie di task.
 
 import argparse
 import functools
+import hashlib
 import json
 import subprocess
 import sys
@@ -578,6 +579,57 @@ def _calibration_phase(args: argparse.Namespace) -> None:
         size = sum(path.stat().st_size for path in dest.rglob("*") if path.is_file())
         print(f"pacchetto: {index}")
         print(f"dimensione totale: {size / 1_000_000:.2f} MB (milioni di byte)")
+    elif args.fase == "judge":
+        import judge
+
+        try:
+            version = subprocess.run(["codex", "--version"], capture_output=True, text=True,
+                                     timeout=judge.CALL_TIMEOUT_S)
+            if version.returncode != 0 or not version.stdout.strip():
+                raise judge.JudgeError(f"versione di Codex non disponibile: {version.stderr.strip()}")
+            meta = {
+                "model": judge.JUDGE_MODEL,
+                "effort": judge.JUDGE_EFFORT,
+                "codex_version": version.stdout.strip(),
+                "vote_sha256": hashlib.sha256((campaigns / "r1_giudice" / "voto.txt").read_bytes()).hexdigest(),
+                "checklist_sha256": hashlib.sha256(
+                    (campaigns / "r1_giudice" / "checklist.txt").read_bytes()).hexdigest(),
+                "guides_sha256": hashlib.sha256(args.guides.read_bytes()).hexdigest(),
+            }
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise judge.JudgeError(f"preparazione del giudice non riuscita: {error}") from error
+        items = [item.strip() for item in args.items.split(",") if item.strip()] if args.items is not None else None
+        judgments = judge.judge_package(root / "pacchetto", root / "chiave.json", args.guides,
+                                        root / "giudizi.jsonl", runner=judge.codex_runner(),
+                                        meta=meta, items=items)
+        print(f"coppie giudicate: {len(judgments)}; "
+              f"non valutabili: {sum(row.value is None for row in judgments)}")
+    elif args.fase == "agreement":
+        import agreement
+        import judge
+
+        votes = [vote for path in args.votes
+                 for vote in calibration.load_votes(path, root / "chiave.json", root / "pacchetto")]
+        judgments = judge.load_judgments(args.judgments or root / "giudizi.jsonl")
+        result = agreement.agreement_report(votes, judgments, samples=args.samples)
+        out = args.out or root / "accordi.json"
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+                           encoding="utf-8")
+        except OSError as error:
+            raise agreement.AgreementError(f"{out}: scrittura del rapporto non riuscita: {error}") from error
+        print(f"coppie: {result['pairs']}; votanti: {result['voters']}; "
+              f"non valutabili: {result['unratable']}")
+        print(f"{'misura':<20} {'2,5%':>10} {'stima':>10} {'97,5%':>10} {'saltati':>10}")
+        for name in agreement.METRICS:
+            values = [f"{result[name][key]:.4f}" if result[name][key] is not None else "n.d."
+                      for key in ("low", "point", "high")]
+            print(f"{name:<20} {values[0]:>10} {values[1]:>10} {values[2]:>10} "
+                  f"{result['skipped'][name]:>10}")
+        print(f"giudice accettato: {'si' if result['accepted'] else 'no'}; "
+              f"ripescaggi: {result['samples']}; seme: {result['seed']}")
+        print(f"rapporto: {out}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -622,6 +674,16 @@ def build_parser() -> argparse.ArgumentParser:
     render = phases.add_parser("render", help="renderizza le pagine con ripresa")
     render.add_argument("--workers", type=int, default=3)
     phases.add_parser("package", help="costruisce il pacchetto anonimo e la chiave separata")
+    judge = phases.add_parser("judge", help="giudica le coppie in entrambi gli ordini con ripresa (R1.9)")
+    judge.add_argument("--items", default=None, help="solo queste voci, separate da virgola")
+    judge.add_argument("--guides", type=Path,
+                       default=PROJECT_ROOT.parent / "OrcValutatore" / "content" / "task-guides.json",
+                       help="schede dei compiti mostrate ai votanti")
+    agreement = phases.add_parser("agreement", help="calcola gli accordi e valida il giudice (R1.10)")
+    agreement.add_argument("--votes", type=Path, nargs="+", required=True)
+    agreement.add_argument("--judgments", type=Path, default=None)
+    agreement.add_argument("--samples", type=int, default=10_000)
+    agreement.add_argument("--out", type=Path, default=None)
 
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")

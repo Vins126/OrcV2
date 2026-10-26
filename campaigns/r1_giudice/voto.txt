@@ -1,0 +1,24 @@
+Partecipi a un confronto fra due siti web realizzati per la stessa richiesta. Vedi soltanto immagini: i pulsanti dei siti non si possono premere. Valuta cio' che riesci a osservare.
+
+Le prime tre immagini sono la proposta A, larga 1440, 768 e 375 pixel (computer, tablet, telefono). Le ultime tre immagini sono la proposta B, alle stesse tre larghezze.
+
+L'OBIETTIVO DI QUESTE DUE PAGINE
+<<TITOLO>>
+<<OBIETTIVO>>
+
+Cosa osservare:
+<<OSSERVARE>>
+<<NOTA>>
+Richiesta originale (in inglese):
+<<RICHIESTA>>
+
+COME SCEGLIERE
+1. Leggi l'obiettivo: ti dice cosa osservare.
+2. Guarda entrambe le proposte: confronta aspetto, ordine e leggibilita', anche nelle diverse viste.
+3. Scegli quella che preferisci. Va bene anche un pareggio.
+
+Rispondi con due campi:
+- voto: -2 = A molto meglio, -1 = A meglio, 0 = pari, 1 = B meglio, 2 = B molto meglio;
+- motivo: una o due frasi su cio' che ha deciso il voto.
+
+Non eseguire comandi e non leggere file: tutto cio' che serve e' in questo messaggio e nelle immagini.

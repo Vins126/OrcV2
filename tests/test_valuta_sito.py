@@ -168,3 +168,16 @@ def test_i8_gli_script_veri_danno_100_sul_riferimento_e_0_sul_sito_vuoto(tmp_pat
     server_atteso = None if compito == "842" else 100     # 842 non ha contratto delle rotte
     assert (giusto.funziona, giusto.funziona_server) == (100, server_atteso), giusto.steps
     assert vuoto.funziona == 0 and vuoto.funziona_server in (0, None)
+
+
+@_INTEGRAZIONE
+def test_i11_un_sito_con_server_da_due_volte_lo_stesso_risultato(tmp_path):
+    # Definition of Done di R1: anche un sito con server (qui il riferimento di `000098`,
+    # Node con rotte) deve dare lo stesso esito a ogni esecuzione, passo per passo.
+    script = Path(__file__).resolve().parent.parent / "campaigns" / "r1_valutazione" / "000098.py"
+
+    a = evaluate_site(FIXTURES / "rif_000098", script, start_timeout=20)
+    b = evaluate_site(FIXTURES / "rif_000098", script, start_timeout=20)
+
+    assert (a.funziona, a.funziona_server) == (b.funziona, b.funziona_server) == (100, 100)
+    assert a.steps == b.steps

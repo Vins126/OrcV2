@@ -1,0 +1,20 @@
+Controlli un sito web realizzato per una richiesta. Vedi soltanto immagini: i pulsanti del sito non si possono premere. Valuta cio' che riesci a osservare.
+
+Le tre immagini mostrano lo stesso sito largo 1440, 768 e 375 pixel (computer, tablet, telefono).
+
+L'OBIETTIVO DELLA PAGINA
+<<TITOLO>>
+<<OBIETTIVO>>
+
+Cosa osservare:
+<<OSSERVARE>>
+<<NOTA>>
+Richiesta originale (in inglese):
+<<RICHIESTA>>
+
+Rispondi si' (true) o no (false) a ciascuna domanda, nell'ordine:
+<<DOMANDE>>
+
+Rispondi con il campo risposte: un elenco di valori true o false, uno per domanda e nello stesso ordine.
+
+Non eseguire comandi e non leggere file: tutto cio' che serve e' in questo messaggio e nelle immagini.

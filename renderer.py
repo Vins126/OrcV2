@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from executors.docker import remove_container
+from executors.docker import ContainerLimiter, remove_container, shared_limiter
 from task_model import VerificationError
 
 #: Immagine del renderer, costruita da `docker/renderer.Dockerfile`.
@@ -188,7 +188,8 @@ def _leggi_risultato(out: Path, out_dir: Path, stderr: str) -> RenderResult:
 
 def render_site(workspace: Path, out_dir: Path, *, runner: Runner = subprocess.run,
                 image: str = RENDERER_IMAGE, start_timeout: int = START_TIMEOUT_S,
-                timeout: int = RENDER_TIMEOUT_S, script: Path | None = None) -> RenderResult:
+                timeout: int = RENDER_TIMEOUT_S, script: Path | None = None,
+                limiter: ContainerLimiter | None = None) -> RenderResult:
     """Avvia il sito di `workspace` nel renderer e ne restituisce l'esito.
 
     Il container lavora su una copia temporanea del workspace, cancellata alla
@@ -203,11 +204,15 @@ def render_site(workspace: Path, out_dir: Path, *, runner: Runner = subprocess.r
         timeout: secondi concessi all'intera valutazione.
         script: script del compito; se ha una funzione `vetrina`, gli
             screenshot si fanno dopo averla eseguita (PROTOCOLLO §6).
+        limiter: limita i container contemporanei; `None` usa quello condiviso,
+            risolto alla chiamata solo se esiste `start.sh`.
 
     Returns:
         L'esito: anche un sito che non parte e' un esito (`started=False`).
 
     Raises:
+        SandboxSlotTimeout: nessun posto libero entro l'attesa massima del
+            limitatore; nessun container viene avviato.
         RenderError: guasto della valutazione (tempo scaduto, risultato
             mancante o illeggibile). Non e' un giudizio sul sito.
     """
@@ -231,15 +236,17 @@ def render_site(workspace: Path, out_dir: Path, *, runner: Runner = subprocess.r
         nome = f"orc-renderer-{uuid.uuid4().hex[:12]}"
         comando = docker_command(site, out, nome, image=image, start_timeout=start_timeout,
                                  script=script, code=codice)
-        try:
-            esito = runner(comando, capture_output=True, text=True, timeout=timeout)
-        except BaseException as errore:
-            # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
-            # toglie per nome, anche se non era ancora partito (R1.11).
-            remove_container(nome, runner)
-            if isinstance(errore, subprocess.TimeoutExpired):
-                raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
-            raise
+        limitatore = limiter if limiter is not None else shared_limiter()
+        with limitatore.slot():
+            try:
+                esito = runner(comando, capture_output=True, text=True, timeout=timeout)
+            except BaseException as errore:
+                # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
+                # toglie per nome, anche se non era ancora partito (R1.11).
+                remove_container(nome, runner)
+                if isinstance(errore, subprocess.TimeoutExpired):
+                    raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
+                raise
         return _leggi_risultato(out, destinazione, esito.stderr or "")
     finally:
         shutil.rmtree(temporanea, ignore_errors=True)
@@ -321,12 +328,25 @@ def _leggi_valutazione(out: Path, stderr: str) -> EvalResult:
 
 def evaluate_site(workspace: Path, script: Path, *, runner: Runner = subprocess.run,
                   image: str = RENDERER_IMAGE, start_timeout: int = START_TIMEOUT_S,
-                  timeout: int = EVAL_TIMEOUT_S) -> EvalResult:
+                  timeout: int = EVAL_TIMEOUT_S,
+                  limiter: ContainerLimiter | None = None) -> EvalResult:
     """Esegue lo script d'interazione `script` sul sito di `workspace`.
 
     Il container riceve una copia del workspace, che non viene mai toccato.
 
+    Args:
+        workspace: cartella consegnata, con `start.sh` nella radice.
+        script: script d'interazione del compito.
+        runner: chi esegue i comandi `docker` (nei test, un finto).
+        image: immagine del renderer.
+        start_timeout: secondi concessi al sito per aprire la porta.
+        timeout: secondi concessi all'intera valutazione.
+        limiter: limita i container contemporanei; `None` usa quello condiviso,
+            risolto alla chiamata solo se esiste `start.sh`.
+
     Raises:
+        SandboxSlotTimeout: nessun posto libero entro l'attesa massima del
+            limitatore; nessun container viene avviato.
         RenderError: guasto della valutazione (tempo scaduto, esito mancante o
             illeggibile). Non e' un giudizio sul sito.
     """
@@ -344,15 +364,17 @@ def evaluate_site(workspace: Path, script: Path, *, runner: Runner = subprocess.
         nome = f"orc-eval-{uuid.uuid4().hex[:12]}"
         comando = eval_command(site, Path(script).resolve(), out, nome, image=image,
                                start_timeout=start_timeout, work=work, code=codice)
-        try:
-            esito = runner(comando, capture_output=True, text=True, timeout=timeout)
-        except BaseException as errore:
-            # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
-            # toglie per nome, anche se non era ancora partito (R1.11).
-            remove_container(nome, runner)
-            if isinstance(errore, subprocess.TimeoutExpired):
-                raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
-            raise
+        limitatore = limiter if limiter is not None else shared_limiter()
+        with limitatore.slot():
+            try:
+                esito = runner(comando, capture_output=True, text=True, timeout=timeout)
+            except BaseException as errore:
+                # Il timeout (o un Ctrl+C) ferma il programma `docker`, non il container: lo si
+                # toglie per nome, anche se non era ancora partito (R1.11).
+                remove_container(nome, runner)
+                if isinstance(errore, subprocess.TimeoutExpired):
+                    raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
+                raise
         return _leggi_valutazione(out, esito.stderr or "")
     finally:
         shutil.rmtree(temporanea, ignore_errors=True)

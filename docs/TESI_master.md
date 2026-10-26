@@ -459,6 +459,58 @@ giudizio.
 > economico capace di svolgerlo — va applicata **anche al giudice**. È il punto in cui il costo della
 > tesi si decide davvero.
 
+### 5.12 Il metodo di valutazione costruito in R1 (abbozzo, 26 ottobre 2026)
+
+> Le sezioni 5.1-5.11 raccolgono il ragionamento da cui si e' partiti. Questa descrive lo strumento di misura
+> che esiste davvero nel codice dopo R1 ed e' la base del capitolo «metodo di valutazione». Le regole vincolanti
+> stanno in `PROTOCOLLO.md` §6-§7; qui c'e' l'ordine dell'esposizione.
+
+**1. Che cosa si misura.** Due metriche affiancate, nessun voto unico (§7 del protocollo): **funziona**
+(punteggio 0-100 da controlli eseguiti) e **piace** (voto di un giudice a coppie, −2..+2). C e' «non inferiore» a B
+solo se lo e' su entrambe. Il motivo della separazione: un sito bello che non funziona e un sito spoglio che
+funziona non devono potersi compensare.
+
+**2. Il compito e le regole uguali per tutti.** Cinque compiti di sviluppo estratti con un seme da
+ArtifactsBench e WebGen-Bench (`webtasks.py`), con verdetto scritto per ogni compito letto. Ogni braccio riceve lo
+stesso prompt (`webprompt.py`): testo del compito, contratto delle rotte, fino a 12 marcatori `data-testid`
+obbligatori, un solo `start.sh` su porta fissa. Tutto cio' che lo script usera' per misurare e' scritto
+**prima** di generare qualunque sito.
+
+**3. L'esecuzione.** Il sito si avvia in un container senza rete, con server e Chromium insieme (immagine
+`orc-renderer`, versioni bloccate), e si apre a 375, 768 e 1440 px. Ne escono screenshot, errori JavaScript,
+sbordo orizzontale e violazioni axe-core gravi. Ripetibilita' verificata con Docker vero: lo stesso sito statico
+da' screenshot identici byte per byte, lo stesso sito con server da' passo per passo lo stesso esito.
+
+**4. «Funziona».** Uno script Python per compito, scritto prima della generazione partendo dai casi di prova
+delle due fonti, eseguito da un interprete unico. Punteggio = passi superati / passi valutabili × 100; un passo
+fallito trascina quelli che ne dipendono; un passo la cui preparazione via rotte fallisce e' «non valutabile» ed
+esce dal denominatore. I test diretti sulle rotte formano la metrica secondaria «funziona-server». Taratura degli
+script: 0 sul sito vuoto per tutti e 5, 100 sui siti di riferimento.
+
+**5. «Piace»: il giudice.** GPT-6.1 Sol via Codex CLI (D52), di una famiglia che non e' in gara. Vede i sei
+screenshot dei due siti e le stesse schede per compito date ai votanti umani, ed e' cieco: nomi neutri delle
+immagini, nessun accesso a file o comandi, tentativo scartato se usa strumenti. Vota ogni coppia **nei due ordini**
+e si tiene la media, cosi' la preferenza per una posizione si annulla (sulle 150 coppie di calibrazione e'
+comparsa in 13). Ogni giudizio registra modello, sforzo, versione di Codex, impronte sha256 delle istruzioni e
+delle schede, durata e token.
+
+**6. Il giudice si valida prima di usarlo.** 150 coppie votate alla cieca da 7-8 persone con un'app web. Regola
+fissata e registrata prima di vedere i voti: accordo sul segno a tre classi con **Scott's π**, accordo umani-umani
+come riferimento (non come tetto), Δ = π(giudice-umani) − π(umani-umani), intervalli bootstrap sulle coppie.
+Il giudice si usa se i limiti bassi al 95% di π(umani-umani) e π(giudice-umani) sono sopra 0 e quello di Δ sopra
+−0,10. Altrimenti piano B: in R6 le coppie C-B le votano persone. *Esito: da scrivere dopo il 28 ottobre.*
+
+**7. Limiti da dichiarare.**
+- Con 150 coppie e 7 votanti un giudice di poco peggiore di un votante umano passa circa una volta su due
+  (simulazione): la regola esclude i giudici cattivi, non certifica quelli quasi buoni.
+- Il giudice vede screenshot, non usa il sito: l'interazione la misura solo «funziona».
+- Gli script coprono le funzioni scritte nel compito, non tutto cio' che un utente farebbe.
+- Il giudice e' un servizio in abbonamento che cambia nel tempo: la versione e' registrata, ma la stessa versione
+  potrebbe non essere piu' disponibile per chi rifa' l'esperimento.
+- Code aperte nel codice, senza effetto sui numeri: riga troncata in coda al file dei giudizi dopo un arresto,
+  π non definito su un votante con una sola categoria (saltato e contato), α ordinale come media a coppie.
+
+
 ---
 
 ## 6. Pipeline completa (dal task al risultato + apprendimento)

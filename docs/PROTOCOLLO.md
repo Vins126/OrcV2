@@ -172,6 +172,28 @@ tutti i bracci.
   prima di generare qualunque sito: per ArtifactsBench si partono dalle voci specifiche della sua checklist, per
   WebGen-Bench dai casi di prova di aspetto. Le risposte non entrano nella metrica: servono a guidare il giudice
   e a capire dove C perde.
+- ✅ **Validazione del giudice (R1.10, 25 ott 2026, fissata prima di vedere i voti umani):**
+  - *Dati:* le 150 coppie principali di `campaigns/r1_coppie.json`, votate da 7-8 persone sulla scala −2..+2
+    con il segno riportato all'ordine della coppia. Per le 5 coppie ripetute conta il primo voto; le ripetizioni
+    misurano solo la coerenza di ciascun votante. Un votante che non finisce entra con le coppie votate.
+  - *Voto del giudice:* uno per coppia, media dei due ordini (D46). Un «non valutabile» esce da tutti gli accordi
+    (anche da quelli fra umani, perche' i due numeri restino sulle stesse coppie) e si riporta a parte.
+  - *Metrica principale (D1):* accordo sul segno a tre classi (A meglio, pari, B meglio) con **Scott's π**
+    (Scott 1955), riportato insieme all'accordo percentuale come in Thakur et al. 2406.12624.
+  - *Confronto (D2):* π(umani-umani) e' la media di π su tutte le coppie di votanti; π(giudice-umani) e' la media
+    di π fra il giudice e ciascun votante. Ogni π si calcola sulle coppie votate da entrambi.
+    Δ = π(giudice-umani) − π(umani-umani). L'accordo fra umani e' un riferimento, non un tetto: Δ > 0 e' possibile.
+  - *Intervalli:* bootstrap sulle coppie, 10.000 ripescaggi, seme 20261025; si ricalcolano entrambi gli accordi
+    sullo stesso ripescaggio (Vanbelle e Albert 2008, esteso da κ a π).
+  - *Accettazione (D3, D4):* il giudice si usa se (1) il 2,5° percentile di π(umani-umani) e' sopra 0, (2) quello di
+    π(giudice-umani) e' sopra 0, (3) quello di Δ e' sopra **−0,10**. Limite dichiarato: con 150 coppie e 7 votanti,
+    in simulazione, un giudice poco peggiore di un votante umano passa circa una volta su due.
+  - *Metriche secondarie, senza soglia:* α ordinale di Krippendorff sui voti graduati (giudice con i mezzi punti
+    della media); accordo a due classi sulle coppie senza pareggi, per confronto con Zheng et al. 2306.05685.
+  - *Piano B (D5):* se manca una delle tre condizioni, «piace» resta metrica principale ma in R6 le coppie C-B si
+    fanno votare alle persone (l'autore escluso, perche' non cieco su C); τ_piace si fissa sulla variabilita' dei
+    voti umani. Se in R6 i votanti non bastano, la scelta fra questa strada e «piace» secondaria e descrittiva si
+    rifa' prima di vedere qualunque coppia C-B. Nessun secondo giudice si calibra sugli stessi voti.
 - ✅ **Date e orari (23 ott 2026):** quando un compito chiede di scegliere data e ora, il prompt impone campi
   `datetime-local` (data e ora nello stesso campo), uguali per tutti i bracci.
 - ✅ **Marcatori per lo script (22 ott 2026):** il prompt di ogni compito elenca fino a 12 attributi `data-testid` (5-8 fino al 22 ott, alzato
