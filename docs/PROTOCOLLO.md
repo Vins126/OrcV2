@@ -215,6 +215,43 @@ tutti i bracci.
     fanno votare alle persone (l'autore escluso, perche' non cieco su C); τ_piace si fissa sulla variabilita' dei
     voti umani. Se in R6 i votanti non bastano, la scelta fra questa strada e «piace» secondaria e descrittiva si
     rifa' prima di vedere qualunque coppia C-B. Nessun secondo giudice si calibra sugli stessi voti.
+  - *Scostamento nei dati (29 ott 2026, scritto prima di calcolare gli accordi):* raccolta dichiarata chiusa
+    dall'autore il 29 ott. Esportati 7 votanti invece di 7-8 con 150 coppie ciascuno: coppie principali votate
+    78, 44, 31, 6, 3, 1, 0; tutti seguono lo stesso ordine, quindi solo 44 coppie su 150 hanno almeno due voti
+    umani. La regola si applica senza modifiche sui voti disponibili. Lo script richiede che coppie votate e
+    giudicate coincidano: si passano i voti del giudice sulle sole 78 coppie con almeno un voto umano (le altre 72
+    non entrano in nessun π); il bootstrap ripesca fra queste 78.
+  - *Esito (29 ott 2026): giudice non accettato, si attiva il piano B.* 78 coppie, 6 votanti con almeno un voto,
+    0 non valutabili, 10.000 ripescaggi, seme 20261025. Stima [2,5%; 97,5%]: π(umani-umani) 0,048 [−0,444; 0,146];
+    π(giudice-umani) 0,345 [−0,018; 0,492]; Δ 0,297 [0,124; 0,652]. Condizioni (1) e (2) mancate, (3) soddisfatta.
+    Secondarie: accordo percentuale umani-umani 0,696, giudice-umani 0,665; senza pareggi 0,831 e 0,855; α
+    ordinale 0,062 e 0,522. Lettura: con questi voti l'accordo fra persone non si distingue dal caso, quindi la
+    prova non ha un riferimento su cui misurare il giudice; il risultato non dice che il giudice sia peggiore delle
+    persone. Per il piano B vale la clausola sui votanti insufficienti: la scelta fra voti umani sulle coppie C-B e
+    «piace» secondaria e descrittiva si fa prima di vedere qualunque coppia C-B.
+  - *Revisione dell'esito (29 ott 2026, decisa dall'autore dopo il calcolo):* con 3 votanti utili e 44 coppie in
+    comune la prova non ha un riferimento umano stimabile: l'esito si riclassifica **non conclusivo per dati
+    insufficienti**, non come bocciatura del giudice. Il ruolo del giudice si decide con una prova su un insieme
+    pubblico di voti umani (Vibe Design Arena), con una regola scritta e registrata prima di far giudicare
+    qualunque coppia di quell'insieme. La riclassificazione e' decisa dopo aver visto i numeri sopra e va riportata
+    come tale.
+- **Prova del giudice su voti pubblici (R1.12, 29 ott 2026, fissata prima di far giudicare qualunque coppia):**
+  - *Dati:* Vibe Design Arena (`datapointai/vibe-design-arena`, CC-BY-4.0): 60 siti, 1.770 coppie, per ogni coppia
+    i totali dei voti umani (30 previsti) e uno screenshot 1440×900 per sito. Si escludono le coppie in parita'.
+    Fra le restanti se ne estraggono **150** con seme **20261029**; le altre non si guardano.
+  - *Voto del giudice:* stesso modello e sforzo di R1.9, prompt adattato a un solo screenshot per sito e senza
+    testo del compito; due ordini e media (D46). Media 0 o «non valutabile» contano come **disaccordo**.
+  - *Accordo del giudice:* quota delle 150 coppie in cui il giudice preferisce il sito che ha la maggioranza dei voti.
+  - *Riferimento umano:* per una coppia con n voti e m alla maggioranza, una persona presa a caso concorda con la
+    maggioranza delle altre n−1 con probabilita' m/n; il riferimento e' la media di m/n sulle stesse coppie.
+    Δ = accordo del giudice − riferimento umano.
+  - *Intervalli:* bootstrap sulle 150 coppie, 10.000 ripescaggi, seme 20261029, entrambe le quantita' sullo stesso
+    ripescaggio.
+  - *Accettazione:* il giudice si usa per «piace» sulle coppie C-B se (1) il 2,5° percentile del suo accordo e'
+    sopra **0,5** e (2) il 2,5° percentile di Δ e' sopra **−0,10** (stesso margine di R1.10). Altrimenti «piace» e'
+    metrica secondaria e descrittiva.
+  - *Limiti dichiarati:* siti reali e non generati da modelli per un compito; una sola larghezza; voti solo
+    aggregati, quindi niente accordo fra singole persone; chi sono i votanti non e' indicato.
 - ✅ **Date e orari (23 ott 2026):** quando un compito chiede di scegliere data e ora, il prompt impone campi
   `datetime-local` (data e ora nello stesso campo), uguali per tutti i bracci.
 - ✅ **Marcatori per lo script (22 ott 2026):** il prompt di ogni compito elenca fino a 12 attributi `data-testid` (5-8 fino al 22 ott, alzato

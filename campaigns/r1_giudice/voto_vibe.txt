@@ -1,0 +1,13 @@
+Partecipi a un confronto fra due siti web. Vedi soltanto immagini: i pulsanti dei siti non si possono premere. Valuta cio' che riesci a osservare.
+
+La prima immagine e' la proposta A, la seconda e' la proposta B. Entrambe mostrano la parte iniziale della pagina su un computer, larga 1440 pixel.
+
+COME SCEGLIERE
+1. Guarda entrambe le proposte: confronta aspetto, ordine e leggibilita'.
+2. Scegli quella con il design visivo migliore. Va bene anche un pareggio.
+
+Rispondi con due campi:
+- voto: -2 = A molto meglio, -1 = A meglio, 0 = pari, 1 = B meglio, 2 = B molto meglio;
+- motivo: una o due frasi su cio' che ha deciso il voto.
+
+Non eseguire comandi e non leggere file: tutto cio' che serve e' in questo messaggio e nelle immagini.

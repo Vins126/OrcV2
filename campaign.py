@@ -630,6 +630,61 @@ def _calibration_phase(args: argparse.Namespace) -> None:
         print(f"giudice accettato: {'si' if result['accepted'] else 'no'}; "
               f"ripescaggi: {result['samples']}; seme: {result['seed']}")
         print(f"rapporto: {out}")
+    elif args.fase in ("vibe-judge", "vibe-agreement"):
+        import judge
+        import vibe
+
+        vibe_root = campaigns / "data" / "vibe"
+        pairs = vibe.sample_pairs(vibe.load_pairs(vibe_root / "estratto" / "coppie.json"))
+        out = vibe_root / "giudizi.jsonl"
+        # Elenco versionato: il commit fissa il campione prima dei giudizi.
+        selection = campaigns / "r1_vibe_coppie.json"
+        if args.fase == "vibe-judge":
+            vibe.check_screenshots(pairs, vibe_root / "estratto" / "screenshot")
+            vibe.freeze_selection(pairs, selection)
+            try:
+                version = subprocess.run(["codex", "--version"], capture_output=True, text=True,
+                                         timeout=judge.CALL_TIMEOUT_S)
+                if version.returncode != 0 or not version.stdout.strip():
+                    raise judge.JudgeError(f"versione di Codex non disponibile: {version.stderr.strip()}")
+                meta = {
+                    "model": judge.JUDGE_MODEL,
+                    "effort": judge.JUDGE_EFFORT,
+                    "codex_version": version.stdout.strip(),
+                    "vote_sha256": hashlib.sha256(
+                        (campaigns / "r1_giudice" / "voto_vibe.txt").read_bytes()).hexdigest(),
+                    "seed": vibe.VIBE_SEED,
+                }
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise judge.JudgeError(f"preparazione del giudice non riuscita: {error}") from error
+            judgments = vibe.judge_vibe(pairs, vibe_root / "estratto" / "screenshot", out,
+                                        runner=judge.codex_runner(), meta=meta, limit=args.limit)
+            print(f"coppie giudicate: {len(judgments)} su {len(pairs)}; "
+                  f"non valutabili: {sum(row.value is None for row in judgments)}")
+        else:
+            vibe.freeze_selection(pairs, selection, create=False)
+            result = vibe.vibe_report(pairs, judge.load_judgments(out), samples=args.samples, seed=vibe.VIBE_SEED)
+            report_file = vibe_root / "accordi.json"
+            try:
+                report_file.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+            except OSError as error:
+                raise judge.JudgeError(f"{report_file}: scrittura del rapporto non riuscita: {error}") from error
+            print(f"coppie: {result['pairs']}; pareggi del giudice: {result['judge_ties']}; "
+                  f"non valutabili: {result['unratable']}")
+            print(f"{'misura':<12} {'2,5%':>8} {'stima':>8} {'97,5%':>8}")
+            for name in ("accuracy", "reference", "delta"):
+                row = result[name]
+                print(f"{name:<12} {row['low']:>8.4f} {row['point']:>8.4f} {row['high']:>8.4f}")
+            print(f"giudice accettato: {'si' if result['accepted'] else 'no'}; "
+                  f"ripescaggi: {result['samples']}; seme: {result['seed']}")
+            print(f"rapporto: {report_file}")
+
+
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("serve un intero da 1 in su")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -684,6 +739,10 @@ def build_parser() -> argparse.ArgumentParser:
     agreement.add_argument("--judgments", type=Path, default=None)
     agreement.add_argument("--samples", type=int, default=10_000)
     agreement.add_argument("--out", type=Path, default=None)
+    vibe_judge = phases.add_parser("vibe-judge", help="giudica le coppie estratte di Vibe Design Arena (R1.12)")
+    vibe_judge.add_argument("--limit", type=_positive_int, default=None, help="solo le prime N coppie estratte (prova)")
+    vibe_agreement = phases.add_parser("vibe-agreement", help="applica la regola di R1.12 ai giudizi")
+    vibe_agreement.add_argument("--samples", type=int, default=10_000)
 
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")

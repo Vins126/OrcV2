@@ -498,7 +498,12 @@ delle schede, durata e token.
 fissata e registrata prima di vedere i voti: accordo sul segno a tre classi con **Scott's π**, accordo umani-umani
 come riferimento (non come tetto), Δ = π(giudice-umani) − π(umani-umani), intervalli bootstrap sulle coppie.
 Il giudice si usa se i limiti bassi al 95% di π(umani-umani) e π(giudice-umani) sono sopra 0 e quello di Δ sopra
-−0,10. Altrimenti piano B: in R6 le coppie C-B le votano persone. *Esito: da scrivere dopo il 28 ottobre.*
+−0,10. Altrimenti piano B: in R6 le coppie C-B le votano persone. *Esito (29 ottobre): raccolta chiusa con 6
+votanti attivi su 78 coppie (solo 44 con almeno due voti umani). π(umani-umani) 0,048 [−0,444; 0,146],
+π(giudice-umani) 0,345 [−0,018; 0,492], Δ 0,297 [0,124; 0,652]: le prime due condizioni mancano, il giudice non
+e' accettato secondo la lettera della regola. Con questi voti l'accordo fra persone non si distingue dal caso: la
+prova non misura il giudice, non lo boccia; l'esito e' stato quindi riclassificato come non conclusivo e il ruolo
+del giudice si decide su un insieme pubblico di voti (Vibe Design Arena), con una regola fissata prima.*
 
 **7. Limiti da dichiarare.**
 - Con 150 coppie e 7 votanti un giudice di poco peggiore di un votante umano passa circa una volta su due
