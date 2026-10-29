@@ -26,14 +26,17 @@
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
 | **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **in corso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 regola e script pronti, voti in raccolta fino al 28 ott: resta solo il calcolo degli accordi |
-| R2 | Strumenti comuni, baseline e politiche semplici (cancello, H, pilota, preventivo misurato) | ⬜ |
-| R3 | OrcV2 minimo: sciame per sezioni | ⬜ |
-| R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ⬜ |
-| R5 | Ottimizzazione automatica (facoltativa) | ⬜ |
-| R6 | Campagna finale, scala di politiche e ablazioni | ⬜ |
+| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1 fatto; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
+| R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
+| R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
+| R5 | Ottimizzazione automatica (facoltativa) | ↪️ lavoro futuro (D55) |
+| R6 | Campagna finale, scala di politiche e ablazioni | ⬜ sostituita dalla campagna MVP sui 5 compiti di sviluppo (D55) |
 | R7 | Router grossolano | ❌ tolta il 23 ott 2026 (D48): lavoro futuro |
 
-**Percorso e dipendenze.** R0 → R1 → R2 → R3 → R4.0 → R4 → (R5) → R6.
+**Dal 29 ottobre 2026 vale il piano MVP (D55), nella sezione subito sotto.** Il percorso e le fasi che seguono
+restano come riferimento: le parti tolte sono marcate ↪️ e passano a lavoro futuro.
+
+**Percorso e dipendenze (prima di D55).** R0 → R1 → R2 → R3 → R4.0 → R4 → (R5) → R6.
 - R1 fornisce **come si misura** (esecuzione, controlli, giudice validato). Senza R1 nessun numero di R2-R6 vale.
 - R2 fornisce **gli strumenti comuni**, la **parita' fra bracci** (tetti, ragionamento, ciclo di verifica), il
   **cancello eseguibile** (D48) e il braccio **H** (D49). B, C, D e H devono avere gli stessi strumenti (D39, D42):
@@ -49,7 +52,69 @@ previsione (D48). Lo sciame si confronta con il forte da solo (prova principale)
 stessi modelli, la cascata V e Plan/Execute H (D49), cosi' il risultato dice quale leva basta, qualunque sia. La
 valutazione e' co-centrale; il router appreso e' lavoro futuro.
 
+## Piano MVP (revisione del 29 ottobre 2026, D55)
+
+**Perche'.** La tesi e' triennale e il progetto va chiuso entro l'8 novembre 2026. Il piano R2-R6 era dimensionato
+per una campagna con potenza statistica, ottimizzazioni e cinque bracci. Si riduce a un prodotto minimo che fa il
+giro intero: sciame minimo, misura con il banco di prova di R1, confronto con B, D e V sui 5 compiti di sviluppo.
+
+**Cosa non cambia.** R0 e R1 (controlli, giudice, voti umani), ledger e tetti di spesa, modelli, i 5 compiti di
+sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
+
+**Task, in ordine.**
+1. **R1.10** — calcolo degli accordi sui voti umani, invariato.
+2. **R2.2** — correzioni comuni: troncamento delle uscite di `bash`, `max_tokens` esplicito su OpenRouter, prompt
+   di sistema per i siti con le convenzioni di R1.2 e con lo strumento «guarda il sito», ragionamento rimandato al
+   fornitore (problema aperto di DeepSeek, sotto). Test con modelli finti.
+3. **R2.3 ridotto** — regole di parita' scritte nel protocollo: stesso tetto in dollari per compito, stessi
+   strumenti, stesso tetto di iterazioni per agente, ragionamento e temperatura fissati per modello. B non ha un
+   passo di autocritica, perche' C non ha critico. `[SCELTA]` rimasta: modello dei worker di C (DeepSeek V4.1
+   Flash, D47, o Kimi K3.1 Pro, D51); D usa lo stesso.
+4. **R2.6, opzione (a)** — cancello: il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
+   caricamento. I test scritti dall'agente come motivo di rifiuto passano a lavoro futuro. Test come in R2.6,
+   compreso quello che garantisce che il cancello non legga la valutazione.
+5. **R2.5 ridotto** — τ_piace fissato prima di qualunque misura, con una motivazione sulla scala (opzione (a)),
+   senza pilota.
+6. **R3 minimo** — piano JSON validato di Opus (R3.1, opzione (a): scheletro comune, poi le sezioni); ondate in
+   parallelo su un workspace comune (R3.2); integrazione = avvio con `start.sh` e cancello; **una sola escalation**:
+   se il cancello rifiuta il sito finale, Opus lo corregge una volta; tetto unico in dollari per la squadra sopra
+   `TeamAccountant`; registro con ruolo, pezzo e verdetto del cancello. Test con modelli finti.
+7. **Campagna MVP** (sostituisce R2.4 e R6) — preventivo sul listino di `models.toml`, una run di prova su un
+   compito, poi B, D e C una volta ciascuno sui 5 compiti; V composta da B e D; giudice sulle coppie C-B e D-B in
+   entrambi gli ordini; analisi di `PROTOCOLLO.md` §10 presentata come stima.
+8. **Facoltativo, se avanza tempo:** braccio H (R2.7).
+
+**Tolto e passato a lavoro futuro (↪️).** R2.1b (genera immagine); pilota R2.4, sostituito dalla run di prova;
+test propri dell'agente nel cancello; critico, integratore deterministico, proiezione della spesa e lavoro
+scartato (R3.3-R3.6); R4.0, R4 e R5; compiti di test separati, potenza della prova, ablazioni e curve (R6.1,
+R6.4); H se non c'e' tempo.
+
+**Cosa cambia nella tesi.**
+- Il risultato e' una **stima su 5 compiti**, con intervallo, non una dimostrazione di non inferiorita' (R6.1,
+  opzione (c)). La bassa potenza si dichiara prima delle misure.
+- Si misura sugli stessi compiti con cui il sistema e' costruito: rischio di adattamento dichiarato.
+- La scomposizione del risparmio (D36) si limita a due leve, modello economico con verifica (V) e scomposizione in
+  pezzi (C): il confronto C contro V diventa la domanda centrale.
+- Senza H resta aperta l'obiezione Plan/Execute: si dichiara come limite.
+
+**Calendario indicativo.** 30 ott: R1.10, revisione del protocollo. 2 nov: R2.2, R2.3, R2.6. 3-5 nov: R3 minimo.
+6 nov: preventivo, run di prova, campagna. 7-9 nov: giudice, analisi, grafici.
+
+**Definition of Done — MVP**
+- [ ] R1.10 chiuso, esito in `PROTOCOLLO.md` §6.
+- [ ] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (test dedicato).
+- [ ] Regole di parita' e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
+- [ ] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti.
+- [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
+- [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.
+
+---
+
 ## Le quattro questioni che decidono la riuscita (da chiudere prima del congelamento)
+
+> Con il piano MVP (D55): la 1 si chiude con l'opzione (c) di R6.1 (stima con bassa potenza dichiarata); la 2 si
+> riduce alle regole scritte del task 3 del piano MVP; la 3 si chiude con R1.10; la 4 resta per V, mentre H e'
+> facoltativo.
 
 1. **Potenza della prova (R6.1).** Con 20 compiti, deviazione standard ipotizzata di 25 punti e τ_funziona = 10,
    l'intervallo al 95% della differenza media ha semi-ampiezza ≈ 11 punti: anche se C e B fossero davvero uguali,
@@ -559,14 +624,14 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 
 ---
 
-### R2 — Strumenti comuni, baseline e politiche semplici ⬜
+### R2 — Strumenti comuni, baseline e politiche semplici 🟡 (ridotta da D55)
 
 **Obiettivo.** Dare a un agente singolo gli strumenti che avranno tutti i bracci, fissare le regole di parita',
 costruire il cancello eseguibile (D48) e il braccio H (D49), far lavorare Opus 5.5 (B), DeepSeek V4.1 Flash (D) e H
 sui compiti pilota, comporre V, sostituire il preventivo calcolato con uno misurato. **Prerequisiti:** R1.
 **Sezione di tesi:** baseline, politiche semplici e costo del forte da solo.
 
-**Ordine dei task.** R2.1 e R2.1b (strumenti) → R2.2 (correzioni) → R2.3 (parita') → **R2.6** (cancello) →
+**Ordine dei task (prima di D55; ora vale il piano MVP).** R2.1 e R2.1b (strumenti) → R2.2 (correzioni) → R2.3 (parita') → **R2.6** (cancello) →
 **R2.7** (H) → R2.4 (pilota) → R2.5 (τ_piace e preventivo). Il cancello viene prima di H e del pilota perche' serve
 a comporre V gia' nel pilota.
 
@@ -600,7 +665,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   gateway Anthropic diretto (scollegato) non traduce il contenuto a lista. Per far partire DeepSeek e' servito
   permettere, nelle impostazioni dell'account OpenRouter, i fornitori che possono addestrare sui prompt pagati.
 
-#### R2.1b — Strumento «genera immagine» (deciso il 22 ott: immagini generate via OpenRouter)
+#### R2.1b — Strumento «genera immagine» ↪️ lavoro futuro (D55)
 - **Obiettivo:** uno strumento identico per B, C, D e H che produce un'immagine nel workspace e ne registra il costo.
   Dettagli della ricerca del 22 ott in `docs/STUDIO.md` (escluso da git).
 - **Fatti che condizionano il disegno:** su OpenRouter le immagini passano da `POST /api/v1/images`, non dalla
@@ -640,7 +705,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   eseguito da Opus stesso; (b) solo gli strumenti, e la differenza si dichiara come parte di cio' che C aggiunge.
   Raccomandazione: (a): e' la lettura letterale di D39 e toglie l'obiezione piu' facile.
 
-#### R2.4 — Pilota
+#### R2.4 — Pilota ↪️ sostituito dalla run di prova della campagna MVP (D55)
 - **Compiti:** `[SCELTA]` 3 dei 5 di sviluppo, almeno un sito e un'applicazione con server; proposta `000040`
   (sito), `000098` e `842` (app).
 - **Bracci (D50):** B, D e H, una esecuzione ciascuno; V composta da B e D con il cancello di R2.6 (nessuna
@@ -658,7 +723,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   passaggio, la quota di spesa di Opus (`q_H`) e «funziona». Con 3 compiti sono indicazioni, non stime: servono a
   capire se V e H vanno curati come rivali seri (`TESI_master.md` §0.2) e a fare il preventivo di R6.
 
-#### R2.5 — τ_piace e preventivo misurato
+#### R2.5 — τ_piace e preventivo misurato (ridotto da D55: opzione (a), senza pilota)
 - **Il problema:** R0-6 dice «τ_piace dopo il pilota, quando si conosce la variabilita' dei voti», ma nel pilota
   non c'e' C, e un margine di non inferiorita' dovrebbe dire quale differenza conta, non quanto rumore c'e' (il
   rumore pesa sulla potenza, non sul margine). In R0 «τ dal rumore» era gia' stato giudicato eccessivo.
@@ -670,7 +735,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   entrambi gli ordini, listino di dicembre; V riusa D-B) + voti umani sul campione. La voce da controllare e' il giudizio, non la generazione
   (storica righe 1554-1566).
 
-#### R2.6 — Cancello eseguibile (D48)
+#### R2.6 — Cancello eseguibile (D48; con D55 opzione (a))
 - **Obiettivo:** una funzione deterministica e gratuita che, dato il workspace consegnato, dice «accettato» o
   «rifiutato» con il motivo, usando solo cio' che l'agente stesso puo' vedere. Serve a V (sito di D tenuto o no) e a
   C (prima del critico e come innesco dell'escalation, R3.4): una sola implementazione per entrambi.
@@ -692,7 +757,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   mai i file di `valutazione/` ne' i campi riservati del JSON di R1.5 (test dedicato).
 - **Costo:** zero (Docker locale).
 
-#### R2.7 — Braccio H: Plan/Execute (D49)
+#### R2.7 — Braccio H: Plan/Execute (D49) — facoltativo con D55
 - **Obiettivo:** un agente singolo con gli stessi strumenti di B e D che usa Opus 5.5 fino alla prima scrittura di
   un file, poi DeepSeek V4.1 Flash con tutta la storia, fino alla fine.
 - **Riferimento:** politica Plan/Execute di Switchyard (`crates/libsy/src/algorithms/plan_execute.rs:87-119` al
@@ -764,12 +829,12 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
 - **⚠️ Trappola (M4.2b, storica righe 1054-1087):** la cache dura circa 5 minuti; un worker fermo in attesa la
   perde e riscrive la storia a 1,25 volte il prezzo. L'inattivita' e' una voce di costo.
 
-#### R3.3 — Integrazione
+#### R3.3 — Integrazione (con D55: solo avvio con `start.sh` e cancello)
 - Siti statici: integratore deterministico (modello di pagina che include le sezioni). Applicazioni: build e avvio
   con `start.sh`, poi i controlli che C puo' vedere: i propri test del contratto (il contratto e' nel prompt, quindi
   ogni braccio puo' scriverseli) e lo strumento «guarda il sito». Mai gli script di valutazione.
 
-#### R3.4 — Critico ed escalation
+#### R3.4 — Critico ed escalation (con D55: niente critico, una sola escalation)
 - Critico per pezzo (modello economico con visione) che guarda il pezzo dentro la pagina; al massimo 2 giri; si
   tiene la versione migliore secondo il critico. Prima il **cancello eseguibile di R2.6** (M2b.0, storica righe
   1196-1205; D48), lo stesso usato da V: se il cancello rifiuta, il critico non si chiama.
@@ -784,7 +849,7 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
   rifiuto. Il costo comprende la riscrittura della cache sul modello nuovo: nella documentazione di Switchyard ci sono
   casi in cui il cambio di modello ha fatto **salire** il costo.
 
-#### R3.5 — Tetto di squadra
+#### R3.5 — Tetto di squadra (con D55: tetto unico, senza proiezione)
 - Guardiano sopra `TeamAccountant` (`accounting/team.py:45`, oggi usato solo nei test), iniettato al posto del
   `BudgetGuard` per agente (`agent_factory.py:313`); innesco sulla **proiezione** della spesa (pezzi fatti / pezzi
   del piano), non sulla spesa gia' fatta (M4.2c, storica righe 1088-1105).
@@ -792,7 +857,7 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
   gia' deciso): (a) consegna il lavoro fatto; (b) modelli piu' economici per i pezzi rimasti; (c) ferma tutto.
   Raccomandazione: (a); si sceglie insieme alla regola dei guasti di R6.2, che vale per tutti i bracci.
 
-#### R3.6 — Cosa registrare
+#### R3.6 — Cosa registrare (con D55: ruolo, pezzo, verdetto del cancello)
 - Per ogni chiamata ruolo e pezzo, per calcolare m e q della condizione D37.
 - **Lavoro scartato** come voce separata: giri del critico non tenuti, escalation che rifanno un pezzo, tentativi
   ripetuti. E' la parte di `q` che non produce il sito e spiega dove la previsione di D37 viene smentita.
@@ -807,7 +872,7 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
 
 ---
 
-### R4.0 — Studio delle ottimizzazioni ⬜
+### R4.0 — Studio delle ottimizzazioni ↪️ lavoro futuro (D55)
 - Sessione senza codice: skill (es. `frontend-design`), server MCP (es. Playwright), harness aperti (SWE-agent,
   OpenHands, mini-swe-agent, Aider, Codex CLI) con licenza, prove pubblicate e costo. L'autore sceglie cosa provare.
 - `[SCELTA]` Le skill scritte per un formato preciso si danno uguali ai modelli di altre case? Per D42 ogni
@@ -818,7 +883,7 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
 - Da M7.1b (storica righe 1571-1583, AgentCARD): «planner forte + esecutore economico» vince con una coppia di
   modelli e perde con un'altra della stessa forma; un revisore economico sopra un planner forte non rende.
 
-### R4 — Ottimizzazione manuale ⬜
+### R4 — Ottimizzazione manuale ↪️ lavoro futuro (D55)
 - Una ottimizzazione alla volta, sui compiti di sviluppo, data anche a B e D (D42).
 - `[SCELTA]` **Parita' nella messa a punto.** Ogni modifica di prompt o di harness si prova anche su B (a), oppure il
   vantaggio di messa a punto di C si dichiara come limite (b). Raccomandazione: (a) per le modifiche comuni; quelle
@@ -841,13 +906,13 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
 - Revisione di checklist e domande con i dati di sviluppo; versione finale congelata prima di R6.
 - **Costo:** preventivo misurato prima di ogni lotto.
 
-### R5 — Ottimizzazione automatica (facoltativa) ⬜
+### R5 — Ottimizzazione automatica ↪️ lavoro futuro (D55)
 - GEPA e adattamento dell'harness per modello sui compiti di sviluppo. `[SCELTA]` metrica da ottimizzare:
   «funziona» e costo, con il giudice solo come controllo finale (ottimizzare sul giudice insegna a ingannarlo).
 
 ---
 
-### R6 — Campagna finale ⬜
+### R6 — Campagna finale ↪️ sostituita dalla campagna MVP (D55)
 
 **Obiettivo.** La prova della tesi: C contro B sui compiti di test, con la scala di politiche D, V, H (D49) e le
 ablazioni come contorno.
@@ -922,6 +987,9 @@ R4. M4.8 ottimo di scomposizione → R6.4 (K). «Da decidere a inizio M4» → R
 → R1.9 (schema di `FrontierJudge`) e R6.3 (`cluster_bootstrap_ci`). M7 → R6. B1-B6 controllo del costo → R3.5 e R4.
 
 ## Problemi aperti ancora validi
+
+> Con D55 le righe che rimandano a R4, R6.1 o R6.4 passano al capitolo dei limiti e del lavoro futuro; il pilota
+> R2.4 e' sostituito dalla run di prova della campagna MVP.
 
 | Problema | Dove si risolve |
 |---|---|

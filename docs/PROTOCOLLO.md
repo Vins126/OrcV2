@@ -4,7 +4,28 @@
 > volta durante R0-R1; prima della campagna finale (R6) il file si fissa con un commit pubblicato e
 > da quel momento non cambia. Una modifica dopo quel commit va dichiarata e la campagna rifatta.
 >
-> Legenda: ✅ deciso · 🔲 da decidere. Le sigle D35-D51 rimandano al registro in `PIANO_completo.md`.
+> Legenda: ✅ deciso · 🔲 da decidere. Le sigle D35-D55 rimandano al registro in `PIANO_completo.md`.
+
+## 0. Revisione del 29 ottobre 2026: piano MVP (D55)
+
+Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice le sezioni seguenti, vale questa.
+
+- **§1 Ipotesi.** L'ipotesi resta la stessa, ma la campagna non ha la potenza per dimostrarla: il risultato si
+  presenta come **stima con intervallo** sui 5 compiti di sviluppo, e la bassa potenza si dichiara qui, prima delle
+  misure. La domanda secondaria si limita a D e V; H si aggiunge solo se c'e' tempo.
+- **§2 Compiti.** Niente compiti di test separati: la campagna usa i 5 compiti di sviluppo, gli stessi su cui il
+  sistema e' costruito. Rischio di adattamento dichiarato.
+- **§3 Bracci.** B, C, D, una esecuzione ciascuno; V composta da B e D; H facoltativo. C e' lo sciame minimo:
+  piano di Opus, worker in parallelo, cancello, una sola correzione di Opus se il cancello rifiuta il sito finale,
+  nessun critico. B ha gli stessi strumenti e lo stesso cancello visibile, senza passo di autocritica.
+- **Cancello (D48).** Accetta se il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
+  caricamento; altrimenti rifiuta con il motivo.
+- **Parita'.** Stesso tetto in dollari per compito, stessi strumenti, stesso tetto di iterazioni per agente,
+  ragionamento e temperatura fissati per modello: i valori si scrivono qui prima della prima run. 🔲
+- **§7 τ_piace.** Si fissa prima di qualunque misura, senza pilota, con una motivazione sulla scala −2..+2. 🔲
+- **§10 Analisi.** Stessi calcoli (bootstrap sui compiti, test t appaiato, rapporto di costo C/B) sui 5 compiti.
+  Le conclusioni si scrivono come stime; «non inferiore» e «costa meno» si dichiarano solo se i criteri di §10 sono
+  soddisfatti, cosa improbabile con 5 compiti. Niente ablazioni.
 
 ## 1. Ipotesi ✅
 
