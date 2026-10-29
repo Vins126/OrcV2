@@ -584,6 +584,21 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   deve poter fare lo stesso.
 - **⚠️ Trappola:** ogni chiamata aggiunge immagini alla storia, rimandata a ogni turno. Politica minima: le
   immagini vecchie si tolgono dalla storia e resta una riga di testo.
+- ✅ **Fatto il 29 ott 2026.** Scelta (a). `view_site` (`tools/view_site.py`) chiama `render_site(..., script=None)`
+  e restituisce un `ToolResult(data, images)` (`tools/base.py`): errori, sbordo e accessibilita' per larghezza piu'
+  uno screenshot; `widths` facoltativo. Gli screenshot stanno in `run_dir/viste/<n>/`, fuori dal workspace. Le
+  immagini viaggiano **dentro il messaggio `tool`** come blocchi `image_url` (schema `ChatToolMessage` di
+  OpenRouter); quando arriva una vista nuova, quelle dei turni precedenti diventano una riga di testo
+  (`agent.py`, `NOTA_IMMAGINI_RIMOSSE`). Lo strumento e' fra quelli comuni (`tools/__init__.py`), quindi identico
+  per B, C, D e H.
+- **Prove con fornitori veri.** Sonda del 26-28 ott (codice casuale disegnato in un PNG): Opus 5.5, Kimi K3.1 Pro e
+  DeepSeek V4.1 Flash lo leggono sia nel messaggio `tool` sia in un messaggio `user`; spesa misurata circa $0,01.
+  Prova dell'agente completo del 29 ott, con il codice solo in un'immagine del sito: i tre modelli lo leggono in 2
+  iterazioni, $0,0157 misurati. Docker vero provato (`test_i1`).
+- **Limiti dichiarati.** Il renderer fa sempre tutte e tre le larghezze: `widths` riduce i token, non il tempo. Il
+  peso in base64 di screenshot lunghi (fino a 4000 px di altezza) non e' misurato: si misura nel pilota R2.4. Il
+  gateway Anthropic diretto (scollegato) non traduce il contenuto a lista. Per far partire DeepSeek e' servito
+  permettere, nelle impostazioni dell'account OpenRouter, i fornitori che possono addestrare sui prompt pagati.
 
 #### R2.1b — Strumento «genera immagine» (deciso il 22 ott: immagini generate via OpenRouter)
 - **Obiettivo:** uno strumento identico per B, C, D e H che produce un'immagine nel workspace e ne registra il costo.
@@ -923,6 +938,7 @@ R4. M4.8 ottimo di scomposizione → R6.4 (K). «Da decidere a inizio M4» → R
 | Una politica semplice (V o H) raggiunge C | R2.4 (prima lettura), R3 (confronto sui compiti di sviluppo), R6 |
 | Il cancello accetta siti che funzionano ma non piacciono | R2.6 (cosa controlla), R6.3 (coppie D-B dei compiti accettati) |
 | Il cancello eseguibile e' gia' pubblicato? | R4.0 (letteratura), prima del capitolo sullo stato dell'arte |
+| Il ragionamento del modello non torna al fornitore: `AssistantTurn` (`llm_contracts.py:68`) conserva solo testo e tool call. DeepSeek V4.1 Flash ha risposto 400 («The `reasoning_content` in the thinking mode must be passed back to the API») a una conversazione con un turno di tool call senza ragionamento, costruita a mano (28 ott 2026); con una tool call vera senza ragionamento la richiesta e' passata. Riguarda ogni strumento, non solo `view_site` | R2.2 (correzioni), da verificare prima del pilota R2.4 |
 
 ## Regole operative permanenti
 

@@ -5,6 +5,7 @@ Riceve un `ChatGateway` e tool gia' costruiti dal punto d'ingresso; per questo e
 facile da testare e riutilizzare con provider o ruoli diversi.
 """
 
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from budget_guard import BudgetExceeded
 from llm_contracts import AssistantTurn, ChatGateway, TurnOutcome
 from loop_detector import RilevatoreLoop
 from run_status import RunStatus
+from tools.base import ToolResult
 
 # Un logger per modulo. Il nome segue la gerarchia dei moduli (__name__).
 log = logging.getLogger(__name__)
@@ -35,6 +37,32 @@ SYSTEM_PROMPT = (
 #: a meta': il modello li legge come qualsiasi altra osservazione.
 NOTA_TOOL_INTERROTTO = "esecuzione interrotta prima che il risultato fosse registrato"
 NOTA_INCARICO_INTERROTTO = "Incarico precedente interrotto prima di concludersi."
+NOTA_IMMAGINI_RIMOSSE = "screenshot rimossi: superati da una vista successiva"
+
+
+def _contenuto_tool(risultato):
+    """Il `content` del messaggio tool: JSON, oppure testo piu' immagini per un `ToolResult`.
+
+    Gli screenshot si leggono qui, dopo il `try` di `_esegui_singolo_tool`: un file
+    illeggibile deve diventare un errore per il modello, non interrompere la run
+    lasciando nella storia una tool call senza risposta.
+    """
+    if not isinstance(risultato, ToolResult):
+        return json.dumps(risultato)
+    testo = json.dumps(risultato.data)
+    if not risultato.images:
+        return testo
+    try:
+        immagini = [
+            {"type": "image_url", "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii"),
+            }}
+            for path in risultato.images
+        ]
+    except OSError as errore:
+        log.warning("screenshot illeggibile: %s", errore)
+        return json.dumps({**risultato.data, "error": f"screenshot illeggibile: {errore}"})
+    return [{"type": "text", "text": testo}] + immagini
 
 #: Lo stato di run che corrisponde a ogni esito anomalo del turno. Gli esiti
 #: normali (`COMPLETE`, `TOOL_REQUEST`) non compaiono: li gestisce il ciclo.
@@ -379,14 +407,29 @@ class Agent:
             messages: conversazione, modificata sul posto con le osservazioni.
             msg: messaggio del modello contenente le tool call da eseguire.
         """
+        images_removed = False
         for tool_call in msg.tool_calls:
             risultato = self._esegui_singolo_tool(tool_call)
             log.debug("tool %s(%s) -> %s",
                       tool_call.name, tool_call.arguments, risultato)
+            content = _contenuto_tool(risultato)
+            if isinstance(content, list):
+                if not images_removed:
+                    # Solo la prima vista del turno supera le immagini precedenti:
+                    # quelle richieste insieme restano tutte nella storia.
+                    for previous in messages:
+                        if not isinstance(previous, dict) or previous.get("role") != "tool":
+                            continue
+                        blocks = previous.get("content")
+                        if isinstance(blocks, list) and any(block.get("type") == "image_url" for block in blocks):
+                            previous["content"] = [block for block in blocks if block.get("type") == "text"] + [
+                                {"type": "text", "text": NOTA_IMMAGINI_RIMOSSE},
+                            ]
+                    images_removed = True
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": json.dumps(risultato),
+                "content": content,
             })
 
     def _esegui_singolo_tool(self, tool_call):
@@ -408,7 +451,7 @@ class Agent:
             tool_call: singola tool call proveniente dall'API.
 
         Returns:
-            Il dizionario prodotto dal tool in caso di successo, oppure un
+            Il dizionario o `ToolResult` prodotto dal tool, oppure un
             dizionario con la sola chiave `error` che descrive il fallimento.
         """
         name = tool_call.name

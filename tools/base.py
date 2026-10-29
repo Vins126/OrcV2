@@ -17,6 +17,17 @@ Nota di design (tesi):
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """Esito di un tool con dati JSON e immagini da mostrare al modello."""
+
+    data: dict
+    images: tuple[Path, ...] = ()
+
 
 class Tool(ABC):
     """Classe base di ogni strumento utilizzabile dall'agente.
@@ -59,15 +70,16 @@ class Tool(ABC):
         ...
 
     @abstractmethod
-    def execute(self, args: dict) -> dict:
+    def execute(self, args: dict) -> dict | ToolResult:
         """Esegue l'operazione del tool.
 
         Args:
             args: argomenti prodotti dal modello, già deserializzati da JSON.
 
         Returns:
-            Un dizionario serializzabile in JSON con l'esito, che verrà rimandato
-            al modello come osservazione.
+            Un dizionario serializzabile in JSON con l'esito. Un tool che vuole
+            mostrare immagini al modello restituisce invece un `ToolResult`;
+            gli altri continuano a restituire un dizionario.
 
         Nota:
             Le implementazioni non sono tenute a gestire i propri errori: l'Agent

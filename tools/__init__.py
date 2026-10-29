@@ -20,6 +20,7 @@ import config
 from executors.docker import DockerExecutor, EventSink
 from tools.bash import BashTool
 from tools.read_file import ReadFileTool
+from tools.view_site import ViewSiteTool
 from tools.write_file import WriteFileTool
 from workspace import Workspace
 
@@ -44,4 +45,5 @@ def build_default_tools(workspace_path: str, *, network: str = "none",
         network=network,
         event_sink=event_sink,
     )
-    return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace)]
+    return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace),
+            ViewSiteTool(workspace.path, event_sink)]
