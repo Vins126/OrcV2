@@ -26,7 +26,7 @@
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
 | **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | ✅ **chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): R1.12 il 2 nov: giudice non accettato su Vibe Design Arena, «piace» secondaria e descrittiva |
-| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1 e R2.2 fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
+| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1, R2.2 e R2.3 fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
 | R5 | Ottimizzazione automatica (facoltativa) | ↪️ lavoro futuro (D55) |
@@ -66,10 +66,10 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
 2. ✅ **R2.2** (2 nov) — correzioni comuni: troncamento delle uscite di `bash`, `max_tokens` esplicito su OpenRouter, prompt
    di sistema per i siti con le convenzioni di R1.2 e con lo strumento «guarda il sito», ragionamento rimandato al
    fornitore (problema aperto di DeepSeek, sotto). Test con modelli finti. Dettagli nella sezione R2.2.
-3. **R2.3 ridotto** — regole di parita' scritte nel protocollo: stesso tetto in dollari per compito, stessi
-   strumenti, stesso tetto di iterazioni per agente, ragionamento e temperatura fissati per modello. B non ha un
-   passo di autocritica, perche' C non ha critico. `[SCELTA]` rimasta: modello dei worker di C (DeepSeek V4.1
-   Flash, D47, o Kimi K3.1 Pro, D51); D usa lo stesso.
+3. ✅ **R2.3 ridotto** (2 nov) — regole di parita' scritte in `PROTOCOLLO.md` §0: worker di C e braccio D con
+   DeepSeek V4.1 Flash; stessi strumenti; rete `bridge` con firewall; ragionamento fissato a `high`, temperatura
+   del fornitore; B senza autocritica; tetti uguali con valori ricavati dalla run di prova con una regola scritta
+   prima. Dettagli nella sezione R2.3.
 4. **R2.6, opzione (a)** — cancello: il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
    caricamento. I test scritti dall'agente come motivo di rifiuto passano a lavoro futuro. Test come in R2.6,
    compreso quello che garantisce che il cancello non legga la valutazione.
@@ -104,7 +104,7 @@ R6.4); H se non c'e' tempo.
 - [x] R1.10 chiuso, esito in `PROTOCOLLO.md` §6 (29 ott: non conclusivo per dati insufficienti).
 - [x] R1.12 prova del giudice su Vibe Design Arena, regola registrata prima (2 nov: non accettato, «piace» descrittiva).
 - [ ] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (test dedicato).
-- [ ] Regole di parita' e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
+- [ ] Regole di parita' (scritte il 2 nov; valori dei tetti dopo la run di prova) e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
 - [ ] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti.
 - [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
 - [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.
@@ -726,7 +726,20 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
     del modello che l'ha prodotto, quindi una conversazione ripresa da un altro modello (escalation di R3) non deve
     riportarlo.
 
-#### R2.3 — Parita' fra bracci
+#### R2.3 — Parita' fra bracci ✅ ridotto (2 nov 2026, D55)
+- **Esito (scelte dell'autore, scritte in `PROTOCOLLO.md` §0):**
+  - **Modello dei worker di C e di D:** DeepSeek V4.1 Flash (D47). Kimi K3.1 Pro e' avanti sui siti di circa 15
+    Elo nella classifica Website di Design Arena (circa 52% di preferenze) a un prezzo 13-17 volte maggiore.
+    `models.toml` assegna ancora `worker` a Kimi: C usera' `worker_cheap`, o il ruolo si riassegna in R3.
+  - **Rete:** `bridge` con firewall durante la generazione, come gia' in §5; i default del codice sono `none`, quindi
+    il programma della campagna deve passare `bridge` in modo esplicito, con un test.
+  - **Ragionamento:** `reasoning.effort = "high"` per Opus 5.5 e DeepSeek V4.1 Flash in `models.toml` (test
+    `test_p9`, `test_p10` in `tests/test_openrouter.py`). Temperatura non inviata: Opus 5.5 non la accetta.
+    Non provato con un fornitore vero: da controllare nella run di prova insieme a `reasoning_tokens`.
+  - **Tetti:** uguali per tutti; valori = 2 × spesa piu' alta, 2 × iterazioni massime (almeno 30), 2 × durata piu'
+    lunga della run di prova, scritti prima del primo compito della campagna.
+  - **Ciclo di verifica di B:** nessuna autocritica, perche' C non ha critico (D55).
+- Testo della pianificazione originale, superato dall'esito sopra:
 - `[SCELTA]` **Ruoli.** B = `planner` (Opus 5.5); D = `worker_cheap` (DeepSeek V4.1 Flash, D47). Per i worker di
   C, D47 dice DeepSeek, mentre `models.toml` assegna `worker` a Kimi K3.1 Pro (intermedio scelto il 24 ott,
   D51, al posto di GPT-6.1 Sol): va deciso quale modello fanno i worker di C, e D usa lo stesso.

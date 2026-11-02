@@ -116,7 +116,8 @@ def test_il_gateway_riceve_il_nome_di_openrouter_e_fissa_il_fornitore(fabbrica):
     assert planner.gateway.api_model == "anthropic/claude-opus-5.5"     # nome su OpenRouter
     assert planner.gateway.extra_body == {
         "provider": {"order": ["anthropic"], "allow_fallbacks": False},
-        "cache_control": {"type": "ephemeral"}}      # Anthropic mette in cache solo se glielo si chiede
+        "cache_control": {"type": "ephemeral"},      # Anthropic mette in cache solo se glielo si chiede
+        "reasoning": {"effort": "high"}}             # ragionamento fissato (R2.3)
 
 
 def test_il_worker_economico_riceve_il_nome_di_openrouter_non_l_alias(fabbrica):
@@ -126,7 +127,8 @@ def test_il_worker_economico_riceve_il_nome_di_openrouter_non_l_alias(fabbrica):
     assert economico.gateway.model == "deepseek-v4-1-flash"
     assert economico.gateway.api_model == "deepseek/deepseek-v4.1-flash-1017"
     assert economico.gateway.extra_body == {          # fornitore fissato: il listino resta vero
-        "provider": {"order": ["deepseek"], "allow_fallbacks": False}}
+        "provider": {"order": ["deepseek"], "allow_fallbacks": False},
+        "reasoning": {"effort": "high"}}
 
 
 def test_chi_risponde_e_chi_fattura_e_openrouter(fabbrica):
@@ -537,7 +539,8 @@ def test_make_gateway_da_a_chi_deve_solo_interrogare_un_modello_gli_stessi_accor
 
     assert gateway.model == "opus-5-5" and gateway.api_model == "anthropic/claude-opus-5.5"
     assert gateway.extra_body == {"provider": {"order": ["anthropic"], "allow_fallbacks": False},
-                                  "cache_control": {"type": "ephemeral"}}
+                                  "cache_control": {"type": "ephemeral"},
+                                  "reasoning": {"effort": "high"}}
     assert gateway.stream is True and gateway.generation_lookup is not None
     assert gateway.accountant is contabile and gateway.budget_guard is None
 

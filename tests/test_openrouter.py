@@ -569,9 +569,44 @@ def test_x6_la_fabbrica_non_condivide_i_dizionari_con_il_registro(fabbrica):
 
 
 def test_p6_solo_opus_ha_la_cache_esplicita_nel_models_toml_reale(reale):
-    assert reale.extra_body_for("opus-5-5") == {"cache_control": {"type": "ephemeral"}}
+    assert (reale.extra_body_for("opus-5-5") or {}).get("cache_control") == {"type": "ephemeral"}
+    assert "cache_control" not in (reale.extra_body_for("deepseek-v4-1-flash") or {})
     for modello in ("kimi-k3", "kimi-k3-1-pro", "minimax-m3", "text-embedding-3-small"):
         assert reale.extra_body_for(modello) is None, modello
+
+
+# ── Ragionamento fissato per i modelli dei bracci (R2.3, P5-D1) ───────────
+#
+# Nota di design (tesi):
+#    Senza il campo `reasoning` OpenRouter lo omette e vale il default del fornitore, che
+#    puo' cambiare senza preavviso. Per la parita' fra bracci lo si fissa nella richiesta:
+#    stesso livello `high` per Opus (B, piano di C) e DeepSeek V4.1 Flash (worker di C, D).
+
+def test_p9_opus_e_deepseek_flash_ragionano_a_effort_high(reale):
+    for modello in ("opus-5-5", "deepseek-v4-1-flash"):
+        assert (reale.extra_body_for(modello) or {}).get("reasoning") == {"effort": "high"}, modello
+
+
+def test_p10_la_richiesta_di_planner_e_worker_cheap_porta_il_ragionamento_fissato(tmp_path, monkeypatch):
+    monkeypatch.setenv("ORC2_OPENROUTER_KEY", "chiave-finta")
+    fabbrica_reale = AgentFactory(
+        ModelRegistry.from_file("models.toml"), runs_root=tmp_path / "runs",
+        workspaces_root=tmp_path / "ws", tools_builder=lambda percorso, **_: [], reporter=ReporterMuto())
+
+    planner = fabbrica_reale.build("planner").gateway
+    economico = fabbrica_reale.build("worker_cheap").gateway
+    assert isinstance(planner, OpenAIChatGateway) and isinstance(economico, OpenAIChatGateway)
+
+    assert planner.extra_body == {
+        "provider": {"order": ["anthropic"], "allow_fallbacks": False},
+        "cache_control": {"type": "ephemeral"},
+        "reasoning": {"effort": "high"},
+    }
+    assert economico.extra_body == {
+        "provider": {"order": ["deepseek"], "allow_fallbacks": False},
+        "reasoning": {"effort": "high"},
+    }
+    assert economico.model == "deepseek-v4-1-flash"
 
 
 def test_p7_la_richiesta_di_opus_porta_fornitore_fissato_e_cache(tmp_path, monkeypatch):
@@ -587,6 +622,7 @@ def test_p7_la_richiesta_di_opus_porta_fornitore_fissato_e_cache(tmp_path, monke
     assert planner.extra_body == {
         "provider": {"order": ["anthropic"], "allow_fallbacks": False},
         "cache_control": {"type": "ephemeral"},
+        "reasoning": {"effort": "high"},
     }
     assert worker.extra_body == {
         "provider": {"order": ["moonshotai/mxfp4"], "allow_fallbacks": False}}

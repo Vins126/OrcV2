@@ -20,8 +20,31 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
   nessun critico. B ha gli stessi strumenti e lo stesso cancello visibile, senza passo di autocritica.
 - **Cancello (D48).** Accetta se il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
   caricamento; altrimenti rifiuta con il motivo.
-- **Parita'.** Stesso tetto in dollari per compito, stessi strumenti, stesso tetto di iterazioni per agente,
-  ragionamento e temperatura fissati per modello: i valori si scrivono qui prima della prima run. 🔲
+- **Parita' (R2.3, 2 nov 2026).** ✅ Regole scritte prima di qualunque run di B, C o D:
+  - *Modelli.* B e il piano e la correzione di C: Opus 5.5. Worker di C e braccio D: DeepSeek V4.1 Flash `-1017`
+    (D47, confermato contro Kimi K3.1 Pro: sui siti Kimi e' avanti di circa 15 Elo nella classifica Website di
+    Design Arena, cioe' circa il 52% di preferenze, a un prezzo 13-17 volte maggiore; la tesi misura il costo a
+    qualita' pari e con 5 compiti si legge solo una differenza di costo grande).
+  - *Strumenti.* Gli stessi per ogni agente di ogni braccio (`tools/__init__.py`, `build_default_tools`).
+  - *Rete.* Durante la generazione `bridge` con il firewall del progetto per tutti i bracci, come in §5: la
+    cornice di R1.2 chiede di installare le dipendenze nella run. La valutazione resta senza rete. I default del
+    codice sono `none`: il programma della campagna passa `bridge` in modo esplicito, con un test che lo controlla.
+  - *Uscita per turno.* `max_tokens` = 32.000 per ogni modello (`config.MAX_TOKENS_TURNO`, R2.2).
+  - *Ragionamento.* Fissato nella richiesta a `reasoning.effort = "high"` per Opus 5.5 e DeepSeek V4.1 Flash
+    (`models.toml`, `extra_body`). Era anche il default del catalogo OpenRouter letto il 2 nov 2026 (Opus:
+    ragionamento obbligatorio; DeepSeek: acceso). Limite: lo stesso livello non e' la stessa quantita' di
+    ragionamento su due modelli diversi.
+  - *Temperatura.* Non si invia a nessun modello: vale quella del fornitore. Opus 5.5 non accetta il parametro,
+    quindi un valore comune non e' fissabile. Limite dichiarato.
+  - *Ciclo di verifica.* B non ha un passo di autocritica, perche' C non ha critico; B vede gli stessi strumenti e
+    lo stesso cancello di C.
+  - *Tetti.* Uguali per tutti: stesso tetto in dollari per compito (per C vale per la squadra intera), stesso
+    tetto di iterazioni per ogni agente, stesso tempo massimo per compito. Un tetto serve a fermare i guasti, non
+    deve scattare nel lavoro normale: un tetto stretto in dollari interromperebbe soprattutto B. I valori si
+    ricavano dalla run di prova con questa regola, fissata prima di vederla: dollari = 2 × la spesa piu' alta di
+    un braccio sul compito di prova; iterazioni = 2 × il massimo usato da un agente, e almeno 30; tempo = 2 × la
+    durata piu' lunga. Si scrivono qui dopo la run di prova e prima del primo compito della campagna; la run di
+    prova non entra nei dati e ha il suo tetto di spesa con preventivo (§11). Valori: 🔲 dopo la run di prova.
 - **§7 τ_piace.** Si fissa prima di qualunque misura, senza pilota, con una motivazione sulla scala −2..+2. 🔲
 - **§10 Analisi.** Stessi calcoli (bootstrap sui compiti, test t appaiato, rapporto di costo C/B) sui 5 compiti.
   Le conclusioni si scrivono come stime; «non inferiore» e «costa meno» si dichiarano solo se i criteri di §10 sono
