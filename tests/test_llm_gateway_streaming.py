@@ -194,3 +194,21 @@ def test_il_flusso_si_chiude_anche_quando_solleva():
         _gateway(ClientInStreaming(rotto), retry_max=1).complete([], [])
 
     assert rotto.chiuso
+
+
+# -- Ragionamento rimandato al fornitore (R2.2) -------------------------------------
+
+def test_il_ragionamento_di_un_flusso_vero_torna_al_fornitore_nel_turno_successivo():
+    """DeepSeek risponde 400 se il turno con tool call torna senza ragionamento (28 ott 2026)."""
+    client = ClientInStreaming(FlussoFinto(_chunks("una_tool_call")), FlussoFinto(_chunks("testo")))
+    gateway = _gateway(client)
+    storia = [{"role": "user", "content": "scrivi hello.py"}]
+
+    turno = gateway.complete(storia, [])
+    storia += [turno, {"role": "tool", "tool_call_id": turno.tool_calls[0].id, "content": "{}"}]
+    gateway.complete(storia, [])
+
+    assert turno.reasoning_details and turno.reasoning_details[0]["type"] == "reasoning.text"
+    inviato = client.richieste[1]["messages"][1]
+    assert inviato["role"] == "assistant"
+    assert inviato["reasoning_details"] == list(turno.reasoning_details)

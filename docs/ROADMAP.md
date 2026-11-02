@@ -26,7 +26,7 @@
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
 | **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | ✅ **chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): R1.12 il 2 nov: giudice non accettato su Vibe Design Arena, «piace» secondaria e descrittiva |
-| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1 fatto; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
+| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1 e R2.2 fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
 | R5 | Ottimizzazione automatica (facoltativa) | ↪️ lavoro futuro (D55) |
@@ -63,9 +63,9 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
 
 **Task, in ordine.**
 1. **R1.10** — calcolo degli accordi sui voti umani, invariato.
-2. **R2.2** — correzioni comuni: troncamento delle uscite di `bash`, `max_tokens` esplicito su OpenRouter, prompt
+2. ✅ **R2.2** (2 nov) — correzioni comuni: troncamento delle uscite di `bash`, `max_tokens` esplicito su OpenRouter, prompt
    di sistema per i siti con le convenzioni di R1.2 e con lo strumento «guarda il sito», ragionamento rimandato al
-   fornitore (problema aperto di DeepSeek, sotto). Test con modelli finti.
+   fornitore (problema aperto di DeepSeek, sotto). Test con modelli finti. Dettagli nella sezione R2.2.
 3. **R2.3 ridotto** — regole di parita' scritte nel protocollo: stesso tetto in dollari per compito, stessi
    strumenti, stesso tetto di iterazioni per agente, ragionamento e temperatura fissati per modello. B non ha un
    passo di autocritica, perche' C non ha critico. `[SCELTA]` rimasta: modello dei worker di C (DeepSeek V4.1
@@ -706,6 +706,25 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
 #### R2.2 — Correzioni dell'harness comuni a tutti
 - Troncamento delle uscite di `bash`; `max_tokens` esplicito su OpenRouter; prompt di sistema per i siti con le
   convenzioni di R1.2. Test con modelli finti.
+- ✅ **Fatto il 2 nov 2026**, solo con modelli finti e flussi registrati:
+  - `bash`: `stdout` e `stderr` oltre 10.000 caratteri si troncano ognuno per conto suo, tenendo i primi 2.500 e
+    gli ultimi 7.500 con un segnaposto in mezzo (`tools/bash.py`, limiti in `config.py`); limiti incoerenti sono
+    un errore alla costruzione.
+  - `max_tokens = 32000` per turno, uguale per ogni modello (`config.MAX_TOKENS_TURNO`, passato dalla fabbrica).
+    Copre ragionamento e testo; senza, OpenRouter non lo inoltra e vale il default del fornitore (pagina dei
+    parametri di OpenRouter). Sotto l'uscita massima degli endpoint usati (Opus su `anthropic`: 128.000; letto il
+    2 nov da `/api/v1/models/<id>/endpoints`).
+  - Ragionamento: `AssistantTurn.reasoning_details` conserva i blocchi `reasoning_details` di OpenRouter, che il
+    gateway rimanda invariati nel turno successivo (pagina «Reasoning tokens» di OpenRouter). In streaming i
+    frammenti consecutivi con stesso `index` e `type` si concatenano (`stream_assembler.py`).
+  - Prompt di sistema (`agent.py`) in inglese: nomina `write_file`, `read_file`, `bash`, `view_site`, rimanda
+    alle regole di consegna della cornice senza copiarle, non nomina la valutazione.
+  - **Non provato con un fornitore vero:** che DeepSeek non risponda piu' 400 e che Anthropic accetti la propria
+    firma va verificato nella run di prova della campagna. Limiti dichiarati: frammenti di ragionamento senza
+    `index` (la documentazione non dice come unirli; mai visti nei flussi registrati); ragionamento cifrato che in
+    streaming arriva come `[REDACTED]` (la documentazione lo prevede); il ragionamento resta nella conversazione
+    del modello che l'ha prodotto, quindi una conversazione ripresa da un altro modello (escalation di R3) non deve
+    riportarlo.
 
 #### R2.3 — Parita' fra bracci
 - `[SCELTA]` **Ruoli.** B = `planner` (Opus 5.5); D = `worker_cheap` (DeepSeek V4.1 Flash, D47). Per i worker di
@@ -851,6 +870,8 @@ Tab. 2). «Decomponi il piu' possibile» e' sbagliato quanto «non decomporre».
   ogni braccio puo' scriverseli) e lo strumento «guarda il sito». Mai gli script di valutazione.
 
 #### R3.4 — Critico ed escalation (con D55: niente critico, una sola escalation)
+- **Da R2.2:** il ragionamento (`reasoning_details`) appartiene al modello che l'ha prodotto. Se l'escalation di Opus
+  riprende la conversazione di un worker invece di partire da una nuova, i turni del worker non devono riportarlo.
 - Critico per pezzo (modello economico con visione) che guarda il pezzo dentro la pagina; al massimo 2 giri; si
   tiene la versione migliore secondo il critico. Prima il **cancello eseguibile di R2.6** (M2b.0, storica righe
   1196-1205; D48), lo stesso usato da V: se il cancello rifiuta, il critico non si chiama.
@@ -1022,7 +1043,7 @@ R4. M4.8 ottimo di scomposizione → R6.4 (K). «Da decidere a inizio M4» → R
 | Una politica semplice (V o H) raggiunge C | R2.4 (prima lettura), R3 (confronto sui compiti di sviluppo), R6 |
 | Il cancello accetta siti che funzionano ma non piacciono | R2.6 (cosa controlla), R6.3 (coppie D-B dei compiti accettati) |
 | Il cancello eseguibile e' gia' pubblicato? | R4.0 (letteratura), prima del capitolo sullo stato dell'arte |
-| Il ragionamento del modello non torna al fornitore: `AssistantTurn` (`llm_contracts.py:68`) conserva solo testo e tool call. DeepSeek V4.1 Flash ha risposto 400 («The `reasoning_content` in the thinking mode must be passed back to the API») a una conversazione con un turno di tool call senza ragionamento, costruita a mano (28 ott 2026); con una tool call vera senza ragionamento la richiesta e' passata. Riguarda ogni strumento, non solo `view_site` | R2.2 (correzioni), da verificare prima del pilota R2.4 |
+| Il ragionamento del modello non torna al fornitore: `AssistantTurn` (`llm_contracts.py:68`) conserva solo testo e tool call. DeepSeek V4.1 Flash ha risposto 400 («The `reasoning_content` in the thinking mode must be passed back to the API») a una conversazione con un turno di tool call senza ragionamento, costruita a mano (28 ott 2026); con una tool call vera senza ragionamento la richiesta e' passata. Riguarda ogni strumento, non solo `view_site` | R2.2: corretto il 2 nov con modelli finti (`reasoning_details` rimandato); da verificare nella run di prova della campagna |
 
 ## Regole operative permanenti
 

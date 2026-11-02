@@ -82,11 +82,18 @@ class AssistantTurn:
         outcome: come si e' chiuso il turno. Il default `COMPLETE` mantiene
             valido chi costruisce un turno a mano (i finti dei test); i gateway
             lo impostano sempre dal motivo di arresto del fornitore.
+        reasoning_details: il ragionamento del modello nella forma del
+            fornitore (blocchi `reasoning_details` di OpenRouter). E' un dato
+            opaco: l'agente non lo legge, il gateway lo rimanda invariato nel
+            turno successivo, perche' alcuni modelli lo pretendono (DeepSeek
+            risponde 400 senza) e altri lo firmano (Anthropic). Vuoto se il
+            modello non ha ragionato o il fornitore non lo espone.
     """
 
     content: str | None = None
     tool_calls: tuple[ToolCall, ...] = ()
     outcome: TurnOutcome = TurnOutcome.COMPLETE
+    reasoning_details: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

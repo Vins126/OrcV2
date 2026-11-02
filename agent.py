@@ -23,14 +23,24 @@ from tools.base import ToolResult
 log = logging.getLogger(__name__)
 
 #: Istruzioni di sistema anteposte a ogni conversazione. Dichiarano al modello
-#: quali capacità ha, che gli errori sono recuperabili in autonomia e — punto
-#: essenziale — qual è la condizione di terminazione: rispondere senza chiamare
-#: tool. Senza quest'ultima indicazione il ciclo non avrebbe una fine naturale.
+#: quali strumenti ha (quelli di `tools.build_default_tools`), il metodo per un
+#: sito, che gli errori sono recuperabili in autonomia e — punto essenziale — qual
+#: e' la condizione di terminazione: rispondere senza chiamare tool. Senza
+#: quest'ultima il ciclo non avrebbe una fine naturale. In inglese come la cornice
+#: del compito (`campaigns/r1_prompt/cornice.md`), alla quale rimanda senza
+#: copiarla: le regole di consegna hanno una fonte sola. Uguale per ogni braccio,
+#: e non nomina la valutazione (R2.2).
 SYSTEM_PROMPT = (
-    "Sei un agente. Hai il tool bash per eseguire comandi shell. Usalo per "
-    "completare il compito. Se ci sono errori analizza i tuoi tool per capire "
-    "se puoi risolverli in autonomia. Quando hai finito, rispondi a parole "
-    "SENZA chiamare tool. "
+    "You are an agent that builds a website in a sandboxed workspace. Your tools:\n"
+    "- `write_file`: create or overwrite a file in the workspace.\n"
+    "- `read_file`: read a file in the workspace.\n"
+    "- `bash`: run a shell command in the workspace. Very long output is shortened in the middle.\n"
+    "- `view_site`: start the site with start.sh and get back console errors, layout problems "
+    "and screenshots.\n"
+    "Write the files, then use `view_site` to check the site and fix what you see. Follow the "
+    "delivery rules given in the task. If a tool returns an error, read it and try to fix the "
+    "cause yourself. When the site is finished, reply in words WITHOUT calling any tool: that "
+    "ends your work."
 )
 
 #: Testi con cui `Agent._ripara_storia` rende valida una conversazione rimasta

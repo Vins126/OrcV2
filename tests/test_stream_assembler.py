@@ -255,3 +255,72 @@ def test_si_misura_l_intervallo_massimo_fra_due_chunk():
     assert assemblatore.stats.max_gap_s == 3.0
     assert assemblatore.stats.chunk_count == 4
     assert assemblatore.stats.reasoning_chars == 4
+
+
+# -- Ragionamento da rimandare al fornitore (R2.2) -------------------------------
+#
+# OpenRouter chiede di rimandare `reasoning_details` nel turno `assistant` cosi' come
+# il modello lo ha prodotto (pagina «Reasoning tokens», letta il 2 nov 2026). In
+# streaming arriva a frammenti: quelli consecutivi dello stesso blocco (stesso
+# `index` e `type`) si concatenano; un blocco nuovo apre una voce nuova.
+
+def _testo_del_ragionamento(chunks):
+    return "".join(c["choices"][0]["delta"].get("reasoning") or ""
+                   for c in chunks if c.get("choices"))
+
+
+def test_il_ragionamento_di_un_flusso_vero_si_ricompone_in_un_solo_blocco():
+    chunks = _flusso("una_tool_call")
+
+    dettagli = _assembla(chunks).result().choices[0].message.reasoning_details
+
+    assert dettagli == ({"type": "reasoning.text", "text": _testo_del_ragionamento(chunks),
+                         "format": "unknown", "index": 0},)
+
+
+def test_blocchi_con_indice_o_tipo_diverso_restano_separati_e_in_ordine():
+    risposta = _assembla([
+        _chunk({"reasoning_details": [{"type": "reasoning.text", "text": "a", "index": 0}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.text", "text": "b", "index": 0}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.encrypted", "data": "X", "index": 1}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.encrypted", "data": "Y", "index": 1}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.summary", "summary": "s", "index": 2}]}),
+        _chunk(finish_reason="stop"),
+    ]).result()
+
+    assert risposta.choices[0].message.reasoning_details == (
+        {"type": "reasoning.text", "text": "ab", "index": 0},
+        {"type": "reasoning.encrypted", "data": "XY", "index": 1},
+        {"type": "reasoning.summary", "summary": "s", "index": 2},
+    )
+
+
+def test_la_firma_arrivata_in_un_frammento_successivo_resta_nel_blocco():
+    """Anthropic firma il ragionamento: la firma arriva dopo il testo e va rimandata."""
+    risposta = _assembla([
+        _chunk({"reasoning_details": [{"type": "reasoning.text", "text": "pen", "index": 0,
+                                       "format": "anthropic-claude-v1"}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.text", "text": "so", "index": 0}]}),
+        _chunk({"reasoning_details": [{"type": "reasoning.text", "signature": "firma", "index": 0}]}),
+        _chunk(finish_reason="stop"),
+    ]).result()
+
+    assert risposta.choices[0].message.reasoning_details == (
+        {"type": "reasoning.text", "text": "penso", "index": 0,
+         "format": "anthropic-claude-v1", "signature": "firma"},)
+
+
+def test_senza_ragionamento_non_ci_sono_dettagli():
+    risposta = _assembla([_chunk({"content": "ok"}), _chunk(finish_reason="stop")]).result()
+
+    assert risposta.choices[0].message.reasoning_details == ()
+
+
+def test_i_frammenti_ricevuti_non_vengono_modificati_dall_assemblaggio():
+    """Il blocco ricomposto e' una copia: il dizionario del chunk resta com'era."""
+    frammento = {"type": "reasoning.text", "text": "a", "index": 0}
+    _assembla([_chunk({"reasoning_details": [frammento]}),
+               _chunk({"reasoning_details": [{"type": "reasoning.text", "text": "b", "index": 0}]}),
+               _chunk(finish_reason="stop")]).result()
+
+    assert frammento == {"type": "reasoning.text", "text": "a", "index": 0}

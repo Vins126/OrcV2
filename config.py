@@ -122,6 +122,15 @@ def credenziali_fornitore(provider: str, dati_provider: dict) -> ProviderCredent
 
 # --- COMPORTAMENTO AGENTE ---
 MAX_ITERAZIONI = 30
+# Tetto ai token generati in un turno, uguale per ogni modello (R2.2). Copre
+# ragionamento e testo visibile; senza, OpenRouter non lo inoltra e vale il
+# default ignoto del fornitore. Sta sotto l'uscita massima di ogni endpoint della
+# rosa (Opus 5.5 su `anthropic`: 128.000, letto il 2 nov 2026).
+MAX_TOKENS_TURNO = 32000
+# Uscite di `bash` oltre questa lunghezza (caratteri, per flusso) si troncano:
+# restano i primi BASH_OUTPUT_HEAD_CHARS e la coda, dove di solito sta l'errore.
+BASH_OUTPUT_MAX_CHARS = 10_000
+BASH_OUTPUT_HEAD_CHARS = 2_500
 RETRY_MAX = 3
 RETRY_DELAY = 2
 # Attesa massima di una singola richiesta al fornitore, in secondi. Con la

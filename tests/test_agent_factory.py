@@ -555,3 +555,20 @@ def test_gli_agenti_della_stessa_fabbrica_condividono_la_rilettura_del_costo(fab
 
     assert a.gateway.generation_lookup is not None
     assert a.gateway.generation_lookup is b.gateway.generation_lookup
+
+
+# ── max_tokens esplicito (R2.2) ───────────────────────────────────────────
+
+def test_ogni_gateway_openrouter_ha_lo_stesso_tetto_esplicito_di_token_per_turno(fabbrica):
+    """Uguale per tutti i modelli: senza, ognuno avrebbe il default (ignoto) del suo fornitore."""
+    contabile = InMemoryAccountant(fabbrica.registry)
+
+    assert fabbrica.build("worker").gateway.max_tokens == config.MAX_TOKENS_TURNO == 32000
+    assert fabbrica.make_gateway("opus-5-5", contabile, None).max_tokens == 32000
+
+
+def test_il_tetto_di_token_e_sotto_l_uscita_massima_di_ogni_endpoint_della_rosa():
+    """Uscite massime lette il 2 nov 2026 da `/api/v1/models/<id>/endpoints` di OpenRouter."""
+    uscita_massima = {"anthropic": 128_000, "moonshotai/mxfp4": 943_718, "deepseek": 393_216}
+
+    assert all(config.MAX_TOKENS_TURNO <= limite for limite in uscita_massima.values())

@@ -374,7 +374,7 @@ class OpenAIChatGateway(ChatGatewayBase):
 
     def __init__(self, *args: Any, extra_body: dict[str, Any] | None = None,
                  stream: bool = False, stall_timeout_s: float | None = None,
-                 **kwargs: Any):
+                 max_tokens: int | None = None, **kwargs: Any):
         """Args aggiuntivi rispetto alla base.
 
         Args:
@@ -389,11 +389,15 @@ class OpenAIChatGateway(ChatGatewayBase):
             stall_timeout_s: con lo streaming, secondi senza un chunk interpretato
                 dopo i quali il flusso si considera bloccato e si interrompe;
                 `None` non controlla. I commenti keep-alive non contano.
+            max_tokens: tetto ai token generati in un turno (ragionamento
+                compreso), se dato. `None` non lo invia: vale allora il default
+                del fornitore, che OpenRouter non sostituisce.
         """
         super().__init__(*args, **kwargs)
         self.extra_body = extra_body
         self.stream = stream
         self.stall_timeout_s = stall_timeout_s
+        self.max_tokens = max_tokens
 
     def _invoke(self, messages: list[Any], tools: list[dict[str, Any]]) -> Any:
         """Esegue la chiamata remota e restituisce la risposta grezza."""
@@ -404,6 +408,8 @@ class OpenAIChatGateway(ChatGatewayBase):
             tools=tools,
             **extra,
         )
+        if self.max_tokens is not None:
+            richiesta["max_tokens"] = self.max_tokens
         if not self.stream:
             return self.client.chat.completions.create(**richiesta)
         return self._consuma(self.client.chat.completions.create(stream=True, **richiesta))
@@ -549,6 +555,10 @@ class OpenAIChatGateway(ChatGatewayBase):
             content=getattr(message, "content", None),
             tool_calls=tool_calls,
             outcome=_outcome_openai(getattr(choice, "finish_reason", None), bool(tool_calls)),
+            # Campo di OpenRouter, fuori dallo schema dell'SDK: nella risposta
+            # intera e' una lista di dizionari, in quella ricomposta una tupla.
+            reasoning_details=tuple(
+                dict(b) for b in (getattr(message, "reasoning_details", None) or ())),
         )
 
     @classmethod
@@ -577,6 +587,10 @@ class OpenAIChatGateway(ChatGatewayBase):
                 }
                 for tc in turn.tool_calls
             ]
+        if turn.reasoning_details:
+            # Invariato e nello stesso ordine: OpenRouter non accetta blocchi
+            # modificati o riordinati (pagina «Reasoning tokens»).
+            wire["reasoning_details"] = [dict(b) for b in turn.reasoning_details]
         return wire
 
 

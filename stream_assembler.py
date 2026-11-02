@@ -89,6 +89,7 @@ class AssembledMessage:
 
     content: str | None
     tool_calls: tuple[AssembledToolCall, ...] = ()
+    reasoning_details: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,10 @@ class AssembledResponse:
     stats: StreamStats | None = None
 
 
+#: Campi di un blocco di ragionamento che arrivano a pezzi e si concatenano.
+_CAMPI_DI_TESTO = ("text", "summary", "data")
+
+
 @dataclass
 class _ToolCallInCorso:
     """Una tool call mentre i suoi frammenti arrivano."""
@@ -143,6 +148,7 @@ class StreamAssembler:
         self._provider: str | None = None
         self._testo: list[str] = []
         self._chiamate: dict[int, _ToolCallInCorso] = {}
+        self._ragionamento: list[dict[str, Any]] = []
         self._finish_reason: str | None = None
         self._usage: Mapping[str, Any] | None = None
         self._errore: Mapping[str, Any] | None = None
@@ -196,6 +202,8 @@ class StreamAssembler:
             self._stats.content_chars += len(delta["content"])
         if delta.get("reasoning"):
             self._stats.reasoning_chars += len(delta["reasoning"])
+        for blocco in delta.get("reasoning_details") or ():
+            self._unisci_ragionamento(blocco)
         for frammento in delta.get("tool_calls") or ():
             self._stats.tool_fragments += 1
             indice = frammento.get("index")
@@ -213,6 +221,26 @@ class StreamAssembler:
                 chiamata.name = funzione["name"]
             if funzione.get("arguments"):
                 chiamata.arguments.append(funzione["arguments"])
+
+    def _unisci_ragionamento(self, frammento: Mapping[str, Any]) -> None:
+        """Accoda un frammento di `reasoning_details` al blocco a cui appartiene.
+
+        Un frammento con lo stesso `index` e `type` dell'ultimo blocco lo
+        continua: i campi di testo (`text`, `summary`, `data`) si concatenano, gli
+        altri (per esempio `signature`, che arriva dopo il testo) si prendono la
+        prima volta che compaiono. Altrimenti apre un blocco nuovo. Si lavora su
+        copie: i dizionari dei chunk non cambiano.
+        """
+        ultimo = self._ragionamento[-1] if self._ragionamento else None
+        if (ultimo is None or ultimo.get("index") != frammento.get("index")
+                or ultimo.get("type") != frammento.get("type")):
+            self._ragionamento.append(dict(frammento))
+            return
+        for chiave, valore in frammento.items():
+            if chiave in _CAMPI_DI_TESTO and isinstance(valore, str):
+                ultimo[chiave] = (ultimo.get(chiave) or "") + valore
+            elif valore is not None and ultimo.get(chiave) is None:
+                ultimo[chiave] = valore
 
     def result(self) -> AssembledResponse:
         """Restituisce la risposta intera, o solleva `StreamInterrupted`.
@@ -255,6 +283,7 @@ class StreamAssembler:
                         # Come nella risposta intera: nessun argomento e' `{}`.
                         arguments="".join(c.arguments) or "{}"))
                 for c in complete),
+            reasoning_details=tuple(dict(b) for b in self._ragionamento),
         )
         return AssembledResponse(
             id=self._id, model=self._model, provider=self._provider,

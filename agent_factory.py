@@ -132,7 +132,8 @@ def _lookup_openrouter(credenziali: config.ProviderCredentials) -> GenerationLoo
 #: Gli altri backend (Anthropic, Moonshot, MiniMax, OpenAI) sono scollegati: vedi
 #: `docs/INFRASTRUTTURE_SCOLLEGATE.md` per come rimetterli.
 BACKEND_PER_PROVIDER: dict[str, Backend] = {
-    "openrouter": Backend(OpenAIChatGateway, _client_openai, {"stream": True}, _lookup_openrouter),
+    "openrouter": Backend(OpenAIChatGateway, _client_openai,
+                          {"stream": True, "max_tokens": config.MAX_TOKENS_TURNO}, _lookup_openrouter),
 }
 
 

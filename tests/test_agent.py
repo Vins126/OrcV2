@@ -339,3 +339,51 @@ def test_una_storia_coerente_non_viene_toccata():
     agent.run("secondo")
 
     assert _ruoli(gateway.viste[1]) == ["system", "user", "assistant", "user"]
+
+
+# ── Prompt di sistema per i siti (R2.2) ───────────────────────────────────
+
+def test_il_prompt_di_sistema_nomina_ogni_strumento_comune(tmp_path):
+    """Gli strumenti sono quelli di `build_default_tools`: bash, read_file, write_file, view_site."""
+    from agent import SYSTEM_PROMPT
+    from tools.bash import BashTool
+    from tools.read_file import ReadFileTool
+    from tools.view_site import ViewSiteTool
+    from tools.write_file import WriteFileTool
+    from workspace import Workspace
+
+    workspace = Workspace(str(tmp_path))
+    nomi = [BashTool(None).name, ReadFileTool(workspace).name, WriteFileTool(workspace).name,  # type: ignore[arg-type]
+            ViewSiteTool(tmp_path, None).name]
+
+    assert all(f"`{nome}`" in SYSTEM_PROMPT for nome in nomi)
+
+
+def test_il_prompt_di_sistema_dice_come_si_chiude_e_rimanda_alle_regole_del_compito():
+    from agent import SYSTEM_PROMPT
+
+    assert "WITHOUT calling any tool" in SYSTEM_PROMPT
+    assert "delivery rules" in SYSTEM_PROMPT
+
+
+def test_il_prompt_di_sistema_non_parla_della_valutazione_ne_copia_la_cornice():
+    """La valutazione e' invisibile ai bracci; le regole di consegna stanno solo in `cornice.md`."""
+    from agent import SYSTEM_PROMPT
+
+    minuscolo = SYSTEM_PROMPT.lower()
+    assert not any(parola in minuscolo for parola in ("evaluat", "judge", "score", "valutazion"))
+    assert "8080" not in SYSTEM_PROMPT and "data-testid" not in SYSTEM_PROMPT
+
+
+def test_il_turno_del_modello_torna_al_gateway_con_il_suo_ragionamento():
+    """L'agente riaccoda il turno com'e': il ragionamento non si perde fra un'iterazione e l'altra."""
+    turno = AssistantTurn(tool_calls=(ToolCall(id="1", name="bash", arguments="{}"),),
+                          reasoning_details=({"type": "reasoning.text", "text": "x", "index": 0},))
+    gateway = FakeGateway(turno)
+    agent = Agent(gateway, [])
+
+    agent._esegui_iterazione(agent._messaggi_iniziali("compito"), _rilevatore(), 1)
+    messaggi = gateway.calls[0][0]
+
+    assert turno in messaggi
+    assert next(m for m in messaggi if isinstance(m, AssistantTurn)).reasoning_details == turno.reasoning_details

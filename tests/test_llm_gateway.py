@@ -336,3 +336,59 @@ def test_g1b_senza_extra_body_la_richiesta_non_ha_il_campo():
     _gateway(client).complete([{"role": "user", "content": "ciao"}], [])
 
     assert "extra_body" not in client.richieste[0]
+
+
+# ── max_tokens esplicito (R2.2) ───────────────────────────────────────────
+
+def test_g2_max_tokens_viaggia_nella_richiesta_quando_e_dato():
+    """Senza, OpenRouter non lo inoltra e vale il default del fornitore (pagina dei parametri)."""
+    client = ClientCheRegistra()
+
+    _gateway(client, max_tokens=32000).complete([{"role": "user", "content": "ciao"}], [])
+
+    assert client.richieste[0]["max_tokens"] == 32000
+
+
+def test_g2b_senza_max_tokens_la_richiesta_non_ha_il_campo():
+    client = ClientCheRegistra()
+
+    _gateway(client).complete([{"role": "user", "content": "ciao"}], [])
+
+    assert "max_tokens" not in client.richieste[0]
+
+
+# ── Ragionamento rimandato al fornitore (R2.2) ────────────────────────────
+
+DETTAGLI = ({"type": "reasoning.text", "text": "penso", "format": "unknown", "index": 0},)
+
+
+def test_il_ragionamento_della_risposta_entra_nel_turno():
+    risposta = _response()
+    risposta.choices[0].message.reasoning_details = [dict(d) for d in DETTAGLI]
+
+    turno = OpenAIChatGateway(Client(risposta), "m", ContabileFinto(), retry_max=1).complete([], [])
+
+    assert turno.reasoning_details == DETTAGLI
+
+
+def test_una_risposta_senza_ragionamento_da_un_turno_senza_dettagli():
+    turno = OpenAIChatGateway(Client(_response()), "m", ContabileFinto(), retry_max=1).complete([], [])
+
+    assert turno.reasoning_details == ()
+
+
+def test_il_turno_torna_al_fornitore_con_il_suo_ragionamento_invariato():
+    turno = AssistantTurn(tool_calls=(ToolCall(id="1", name="bash", arguments="{}"),),
+                          reasoning_details=DETTAGLI)
+
+    inviato = OpenAIChatGateway._to_wire([turno])[0]
+
+    assert inviato["reasoning_details"] == list(DETTAGLI)
+    assert inviato["tool_calls"][0]["id"] == "1"
+
+
+def test_un_turno_senza_ragionamento_torna_senza_il_campo():
+    """Un campo vuoto non si manda: la forma di prima resta identica."""
+    inviato = OpenAIChatGateway._to_wire([AssistantTurn(content="ok")])[0]
+
+    assert inviato == {"role": "assistant", "content": "ok"}
