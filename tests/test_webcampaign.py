@@ -32,7 +32,7 @@ def _resa(started: bool = True) -> RenderResult:
     if not started:
         return RenderResult(started=False, start_error="porta 8080 chiusa dopo 60 s", versions={"chromium": "1"})
     larghezze = {w: WidthResult(width=w, errors=["TypeError: x"] if w == 375 else [], overflow=w == 375,
-                                screenshot=Path(f"/tmp/{w}.png"),
+                                screenshot=Path(f"/tmp/{w}.png"), status=200,
                                 a11y=[{"id": "color-contrast", "impact": "serious", "nodes": 2}])
                  for w in (375, 768, 1440)}
     return RenderResult(started=True, widths=larghezze, versions={"chromium": "1"}, vetrina="ok")
@@ -81,13 +81,15 @@ def test_v1_sito_che_parte_documento_con_i_due_blocchi_e_run_verificata(tmp_path
     esito, documento = _verifica(tmp_path, Finti(_resa()))
 
     assert esito.verified is True
-    assert set(documento) == {"cancello", "riservato"}
+    assert set(documento) == {"cancello", "riservato", "gate"}
+    assert documento["gate"] == {
+        "accepted": False, "reason": "errori JavaScript al caricamento a 375 px: TypeError: x"}
     assert set(documento["cancello"]) == CAMPI_CANCELLO
     assert set(documento["riservato"]) == CAMPI_RISERVATO
     assert documento["riservato"]["funziona"] == 75.0
     assert documento["riservato"]["funziona_server"] == 50.0
     assert documento["cancello"]["widths"]["375"] == {
-        "errors": ["TypeError: x"], "overflow": True,
+        "errors": ["TypeError: x"], "overflow": True, "status": 200,
         "a11y": [{"id": "color-contrast", "impact": "serious", "nodes": 2}]}
 
 
@@ -105,7 +107,8 @@ def test_v3_il_riassunto_per_il_manifesto(tmp_path):
 
     assert esito.summary == {"evaluation": {
         "path": str(tmp_path / "out" / "valutazione.json"), "started": True, "funziona": 75.0,
-        "funziona_server": 50.0, "errors": 1, "overflow_widths": [375], "a11y_violations": 3}}
+        "funziona_server": 50.0, "errors": 1, "overflow_widths": [375], "a11y_violations": 3},
+        "gate": {"accepted": False, "reason": "errori JavaScript al caricamento a 375 px: TypeError: x"}}
 
 
 @pytest.mark.parametrize("con_rotte, server_atteso", [(True, 0.0), (False, None)])
@@ -115,7 +118,7 @@ def test_v4_sito_che_non_parte_vale_zero_senza_eseguire_lo_script(tmp_path, con_
     esito, documento = _verifica(tmp_path, finti, con_rotte=con_rotte)
 
     assert esito.verified is False
-    assert finti.chiamate == ["render"]
+    assert finti.chiamate == ["render", "render"]
     assert documento["riservato"]["funziona"] == 0.0
     assert documento["riservato"]["funziona_server"] == server_atteso
     assert documento["cancello"]["start_error"] == "porta 8080 chiusa dopo 60 s"
@@ -129,6 +132,52 @@ def test_v5_un_guasto_della_valutazione_e_un_verification_error(tmp_path, dove):
     with pytest.raises(VerificationError):
         _verifica(tmp_path, finti)
     assert not (tmp_path / "out" / "valutazione.json").exists()
+
+
+def test_v10_cancello_prima_della_valutazione_senza_script_e_verified_invariato(tmp_path):
+    chiamate = []
+    script = _script(tmp_path, con_rotte=True)
+    ws, out = tmp_path / "ws", tmp_path / "out"
+
+    def render(workspace, out_dir, **kwargs):
+        chiamate.append(("render", workspace, out_dir, kwargs))
+        return RenderResult(started=False, start_error="avvio fallito") if len(chiamate) == 1 else _resa()
+
+    def evaluate(workspace, script):
+        chiamate.append(("evaluate", workspace, script))
+        return EvalResult(funziona=75.0, funziona_server=None)
+
+    esito = WebVerifier(script=script, render=render, evaluate=evaluate)(ws, out, lambda w, c: 0)
+    documento = json.loads((out / "valutazione.json").read_text())
+
+    assert chiamate == [
+        ("render", ws, out / "cancello", {"script": None}),
+        ("render", ws, out / "screenshot", {"script": script}),
+        ("evaluate", ws, script)]
+    assert esito.verified is True
+    assert documento["gate"] == esito.summary["gate"] == {
+        "accepted": False, "reason": "non partito: avvio fallito"}
+
+
+def test_v11_sito_pulito_accettato_nel_documento_e_manifesto(tmp_path):
+    resa = RenderResult(started=True, widths={
+        w: WidthResult(width=w, status=200, errors=[], overflow=False, screenshot=None)
+        for w in (375, 768, 1440)})
+
+    esito, documento = _verifica(tmp_path, Finti(resa))
+
+    assert esito.verified is True
+    assert documento["gate"] == esito.summary["gate"] == {"accepted": True, "reason": None}
+
+
+def test_v12_guasto_del_cancello_ferma_prima_della_valutazione(tmp_path):
+    finti = Finti(RenderError("guasto del cancello"))
+
+    with pytest.raises(RenderError, match="guasto del cancello"):
+        _verifica(tmp_path, finti)
+
+    assert finti.chiamate == ["render"]
+    assert not (tmp_path / "out").exists()
 
 
 # ── Dal compito al task ────────────────────────────────────────────────────

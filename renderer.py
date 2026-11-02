@@ -67,6 +67,8 @@ class WidthResult:
     screenshot: Path | None
     #: Violazioni axe-core di impatto `critical` o `serious`: regola, impatto, quanti elementi.
     a11y: list[dict] = field(default_factory=list)
+    #: Stato HTTP della risposta a /; `None` se non registrato.
+    status: int | None = None
 
 
 @dataclass(frozen=True)
@@ -171,8 +173,11 @@ def _leggi_risultato(out: Path, out_dir: Path, stderr: str) -> RenderResult:
             nome = voce["screenshot"]
             accessibilita = [{"id": str(v["id"]), "impact": str(v["impact"]), "nodes": int(v["nodes"])}
                              for v in voce["a11y"]]
+            status = voce.get("status")
         except (KeyError, TypeError) as errore:
             raise RenderError(f"risultato della larghezza {w} incompleto: {errore}") from errore
+        if status is not None and (not isinstance(status, int) or isinstance(status, bool)):
+            raise RenderError(f"status non intero alla larghezza {w}")
         screenshot = None
         if nome:
             sorgente = out / Path(str(nome)).name
@@ -181,7 +186,7 @@ def _leggi_risultato(out: Path, out_dir: Path, stderr: str) -> RenderResult:
             screenshot = out_dir / sorgente.name
             shutil.copyfile(sorgente, screenshot)
         larghezze[w] = WidthResult(width=w, errors=errori, overflow=sbordo, screenshot=screenshot,
-                                   a11y=accessibilita)
+                                   a11y=accessibilita, status=status)
     return RenderResult(started=True, widths=larghezze, versions=dict(dati.get("versions") or {}),
                         vetrina=vetrina)
 

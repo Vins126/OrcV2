@@ -10,6 +10,7 @@ due blocchi separati:
 La run e' «verificata» (per `f`) se il sito parte (P9-D2); la misura vera e'
 «funziona», con credito parziale. Un guasto della valutazione e' un
 `VerificationError` (`RenderError` ne e' un caso), mai uno 0.
+Il blocco `gate` registra il verdetto del cancello R2.6 osservato prima della valutazione e senza script.
 """
 
 import importlib.util
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from gate import GATE_DIR, check_site
 from renderer import EvalResult, RenderResult, evaluate_site, render_site
 from task_model import Shell, Task, Verification
 from valutazione.libreria import ROTTA, raccogli
@@ -43,7 +45,7 @@ def _cancello(resa: RenderResult) -> dict[str, Any]:
     return {
         "started": resa.started,
         "start_error": resa.start_error,
-        "widths": {str(w): {"errors": r.errors, "overflow": r.overflow, "a11y": r.a11y}
+        "widths": {str(w): {"errors": r.errors, "overflow": r.overflow, "a11y": r.a11y, "status": r.status}
                    for w, r in resa.widths.items()},
         "versions": resa.versions,
     }
@@ -96,16 +98,19 @@ class WebVerifier:
         Raises:
             VerificationError: guasto del renderer o dello script; nessun file scritto.
         """
+        verdetto = check_site(workspace, out_dir / GATE_DIR, render=self.render)
         resa = self.render(workspace, out_dir / "screenshot", script=self.script)
         if resa.started:
             valutazione = self.evaluate(workspace, self.script)
         else:
             valutazione = EvalResult(funziona=0.0, funziona_server=0.0 if _ha_rotte(self.script) else None)
-        documento = {"cancello": _cancello(resa), "riservato": _riservato(resa, valutazione)}
+        documento = {"cancello": _cancello(resa), "riservato": _riservato(resa, valutazione),
+                     "gate": verdetto.to_dict()}
         out_dir.mkdir(parents=True, exist_ok=True)
         percorso = out_dir / EVALUATION_FILE
         percorso.write_text(json.dumps(documento, indent=1, ensure_ascii=False) + "\n")
-        return Verification(verified=resa.started, summary={"evaluation": _riassunto(documento, percorso)})
+        return Verification(verified=resa.started, summary={"evaluation": _riassunto(documento, percorso),
+                                                           "gate": verdetto.to_dict()})
 
 
 def web_task_to_task(task: WebTask, *, scripts_dir: Path = SCRIPTS_DIR,

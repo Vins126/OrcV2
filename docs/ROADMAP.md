@@ -26,7 +26,7 @@
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
 | **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | ✅ **chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): R1.12 il 2 nov: giudice non accettato su Vibe Design Arena, «piace» secondaria e descrittiva |
-| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1, R2.2 e R2.3 fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
+| R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1, R2.2, R2.3 e R2.6 (a) fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
 | R5 | Ottimizzazione automatica (facoltativa) | ↪️ lavoro futuro (D55) |
@@ -70,8 +70,8 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
    DeepSeek V4.1 Flash; stessi strumenti; rete `bridge` con firewall; ragionamento fissato a `high`, temperatura
    del fornitore; B senza autocritica; tetti uguali con valori ricavati dalla run di prova con una regola scritta
    prima. Dettagli nella sezione R2.3.
-4. **R2.6, opzione (a)** — cancello: il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
-   caricamento. I test scritti dall'agente come motivo di rifiuto passano a lavoro futuro. Test come in R2.6,
+4. ✅ **R2.6, opzione (a)** (2 nov) — cancello: il sito si avvia con `start.sh` entro 60 s, la pagina `/` risponde
+   con stato HTTP < 400 e non da' errori JavaScript al caricamento. Dettagli nella sezione R2.6. I test scritti dall'agente come motivo di rifiuto passano a lavoro futuro. Test come in R2.6,
    compreso quello che garantisce che il cancello non legga la valutazione.
 5. **R2.5 ridotto** — τ_piace fissato prima di qualunque misura, con una motivazione sulla scala (opzione (a)),
    senza pilota.
@@ -804,6 +804,20 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   `test.sh` che fallisce → rifiutato; `test.sh` vuoto su un compito con contratto → rifiutato; il cancello non legge
   mai i file di `valutazione/` ne' i campi riservati del JSON di R1.5 (test dedicato).
 - **Costo:** zero (Docker locale).
+- ✅ **Esito (2 nov 2026, opzione (a) di D55).** `gate.py`: `verdict_from_render` applica la regola in quest'ordine:
+  sito non partito; stato HTTP di `/` mancante o >= 400 a una delle tre larghezze; errori JavaScript al
+  caricamento (stessa definizione di §6: eccezioni non gestite e `console.error`, risorse mancanti escluse);
+  altrimenti accettato. `check_site` chiama il renderer sempre senza script del compito, quindi niente vetrina ne'
+  codice di `valutazione/`. Il controllo dello stato HTTP e' stato aggiunto (P2-D1, scelta (b)) perche' un
+  server che apre la porta ma risponde 404 su `/` passava: `docker/render_site.py` registra lo stato per larghezza,
+  `renderer.py` lo legge (`WidthResult.status`), immagine `orc-renderer:r1` ricostruita. `WebVerifier` esegue il
+  cancello prima della valutazione, in un rendering separato (screenshot in `cancello/` della run), e scrive il
+  verdetto in `valutazione.json` (`gate`) e nella riga del manifesto; `verified` non cambia. Un guasto del
+  renderer si propaga come guasto, non come rifiuto. Test: `tests/test_gate.py` (g1-g16, g15 = il cancello non
+  legge la valutazione), aggiunte in `tests/test_renderer.py` e `tests/test_webcampaign.py`; prova con Docker vero
+  su tre siti (statico accettato, errore JavaScript rifiutato, stato 501 rifiutato). Limiti: un server che apre la
+  porta ma non risponde mai finisce come guasto della valutazione; lo stesso errore visto a tre larghezze conta
+  tre volte nel motivo; il cancello come strumento visibile agli agenti e l'escalation di C restano a R3.
 
 #### R2.7 — Braccio H: Plan/Execute (D49) — facoltativo con D55
 - **Obiettivo:** un agente singolo con gli stessi strumenti di B e D che usa Opus 5.5 fino alla prima scrittura di

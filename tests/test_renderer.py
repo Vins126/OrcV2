@@ -206,6 +206,40 @@ def test_r12_senza_il_campo_a11y_e_un_guasto(tmp_path):
         render_site(_workspace(tmp_path), tmp_path / "esito", runner=run)
 
 
+@pytest.mark.parametrize("status", [200, 404, 500, None])
+def test_r16_lo_stato_http_viene_letto(tmp_path, status):
+    def scrivi(out, site):
+        dati = _risultato_ok(out)
+        for voce in dati["widths"].values():
+            voce["status"] = status
+        return json.dumps(dati)
+    run, _ = _runner(scrivi)
+
+    resa = render_site(_workspace(tmp_path), tmp_path / "esito", runner=run)
+
+    assert all(r.status == status for r in resa.widths.values())
+
+
+def test_r17_renderer_vecchio_senza_status_resta_leggibile(tmp_path):
+    run, _ = _runner(lambda out, site: json.dumps(_risultato_ok(out)))
+
+    resa = render_site(_workspace(tmp_path), tmp_path / "esito", runner=run)
+
+    assert all(r.status is None for r in resa.widths.values())
+
+
+@pytest.mark.parametrize("status", [True, False, "200", 200.0, [], {}])
+def test_r18_status_non_intero_e_un_guasto(tmp_path, status):
+    def scrivi(out, site):
+        dati = _risultato_ok(out)
+        dati["widths"]["768"]["status"] = status
+        return json.dumps(dati)
+    run, _ = _runner(scrivi)
+
+    with pytest.raises(RenderError, match="status.*768"):
+        render_site(_workspace(tmp_path), tmp_path / "esito", runner=run)
+
+
 # ── Prove con Docker vero ──────────────────────────────────────────────────
 
 _INTEGRAZIONE = pytest.mark.skipif(

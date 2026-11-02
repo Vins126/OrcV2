@@ -9,6 +9,7 @@ risorse mancanti come la favicon non contano), aspetta i font, ferma
 animazioni e transizioni, misura lo sbordo orizzontale, cerca con axe-core
 le violazioni di accessibilita' gravi e fa uno screenshot a
 pagina intera tagliato a un'altezza massima. Alla fine ferma il server.
+Registra anche lo stato HTTP della pagina iniziale per il cancello R2.6.
 
 Un sito che non apre la porta in tempo e' un esito (`started: false`), non un
 errore di questo script. Qualunque altra eccezione fa uscire con codice 1
@@ -74,7 +75,7 @@ def guarda(browser, url: str, width: int, out: Path) -> dict:
     pagina.on("pageerror", lambda e: errori.append(f"pageerror: {e}"))
     pagina.on("console", lambda m: errori.append(f"console.error: {m.text}")
               if m.type == "error" and "Failed to load resource" not in m.text else None)
-    pagina.goto(url, wait_until="load", timeout=30_000)
+    risposta = pagina.goto(url, wait_until="load", timeout=30_000)
     try:
         pagina.wait_for_load_state("networkidle", timeout=5_000)
     except Exception:
@@ -94,7 +95,8 @@ def guarda(browser, url: str, width: int, out: Path) -> dict:
                       clip={"x": 0, "y": 0, "width": width, "height": max(1, min(int(altezza), MAX_HEIGHT))},
                       animations="disabled")
     pagina.close()
-    return {"errors": errori, "overflow": bool(sbordo), "screenshot": nome, "a11y": accessibilita}
+    return {"errors": errori, "overflow": bool(sbordo), "screenshot": nome, "a11y": accessibilita,
+            "status": risposta.status if risposta is not None else None}
 
 
 def esegui_vetrina(script: Path, port: int) -> str:

@@ -18,8 +18,9 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
 - **§3 Bracci.** B, C, D, una esecuzione ciascuno; V composta da B e D; H facoltativo. C e' lo sciame minimo:
   piano di Opus, worker in parallelo, cancello, una sola correzione di Opus se il cancello rifiuta il sito finale,
   nessun critico. B ha gli stessi strumenti e lo stesso cancello visibile, senza passo di autocritica.
-- **Cancello (D48).** Accetta se il sito si avvia con `start.sh` entro 60 s e non da' errori JavaScript al
-  caricamento; altrimenti rifiuta con il motivo.
+- **Cancello (D48).** Accetta se il sito si avvia con `start.sh` entro 60 s, la pagina `/` risponde con stato
+  HTTP < 400 e non da' errori JavaScript al caricamento; altrimenti rifiuta con il motivo. Lo stato HTTP e' stato
+  aggiunto il 2 nov 2026 (R2.6), prima di qualunque run: senza, un server che risponde 404 su `/` passava.
 - **Parita' (R2.3, 2 nov 2026).** ✅ Regole scritte prima di qualunque run di B, C o D:
   - *Modelli.* B e il piano e la correzione di C: Opus 5.5. Worker di C e braccio D: DeepSeek V4.1 Flash `-1017`
     (D47, confermato contro Kimi K3.1 Pro: sui siti Kimi e' avanti di circa 15 Elo nella classifica Website di
