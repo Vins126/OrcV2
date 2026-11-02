@@ -25,7 +25,7 @@
 | M2s | Routing statico per ruolo | ✅ chiusa come superata (D43) |
 | M4, M2b, M7 | Swarm, routing, campagna | ↪️ sostituite da R0-R7 (D43); testo in `ROADMAP_storico.md` |
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
-| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | 🟡 **quasi chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): il ruolo del giudice si decide con R1.12, prova su Vibe Design Arena |
+| **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | ✅ **chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): R1.12 il 2 nov: giudice non accettato su Vibe Design Arena, «piace» secondaria e descrittiva |
 | R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1 fatto; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
 | R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
@@ -102,7 +102,7 @@ R6.4); H se non c'e' tempo.
 
 **Definition of Done — MVP**
 - [x] R1.10 chiuso, esito in `PROTOCOLLO.md` §6 (29 ott: non conclusivo per dati insufficienti).
-- [ ] R1.12 prova del giudice su Vibe Design Arena, regola registrata prima.
+- [x] R1.12 prova del giudice su Vibe Design Arena, regola registrata prima (2 nov: non accettato, «piace» descrittiva).
 - [ ] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (test dedicato).
 - [ ] Regole di parita' e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
 - [ ] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti.
@@ -606,6 +606,9 @@ scelta del giudice). R1.11 (manutenzione) quando capita, prima di R2. Al termine
 - Se il giudice passa, «piace» resta metrica principale con il giudice sulle coppie C-B; altrimenti «piace» e'
   secondaria e descrittiva.
 - Limiti da dichiarare: siti reali e non generati, un solo screenshot a una larghezza, voti solo aggregati.
+- ✅ **Esito (2 nov):** accordo con la maggioranza 0,507 [0,427; 0,587], riferimento umano 0,637, Δ −0,130 [−0,205;
+  −0,052]: **giudice non accettato**, «piace» secondaria e descrittiva (`PROTOCOLLO.md` §6). Descrittivo: 32 su 48
+  sulle coppie con maggioranza dal 70% in su, vicino al caso sulle altre.
 
 #### R1.11 — Manutenzione dell'infrastruttura (da «Da decidere a inizio M4», storica righe 999-1020) ✅ (24 ott; client OpenAI rimandato a una misura dei socket, P19-D5)
 - **Prove con Docker vero (24 ott):** container orfani dopo Ctrl+C (sandbox), segnale al processo, `kill -9`, e tempo

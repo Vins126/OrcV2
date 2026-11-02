@@ -504,6 +504,11 @@ votanti attivi su 78 coppie (solo 44 con almeno due voti umani). π(umani-umani)
 e' accettato secondo la lettera della regola. Con questi voti l'accordo fra persone non si distingue dal caso: la
 prova non misura il giudice, non lo boccia; l'esito e' stato quindi riclassificato come non conclusivo e il ruolo
 del giudice si decide su un insieme pubblico di voti (Vibe Design Arena), con una regola fissata prima.*
+*Esito di R1.12 (2 novembre): su 150 coppie con 30 voti ciascuna il giudice concorda con la maggioranza nel 50,7%
+dei casi [42,7%; 58,7%], contro il 63,7% atteso da una persona presa a caso; Δ −0,130 [−0,205; −0,052]. Il
+giudice non e' accettato: «piace» si riporta come metrica secondaria e descrittiva, e la conclusione si regge su
+costo e «funziona». Il giudice coglie le preferenze nette (32 coppie su 48 con maggioranza dal 70%) ma non quelle
+combattute: dato descrittivo, non parte della regola.*
 
 **7. Limiti da dichiarare.**
 - Con 150 coppie e 7 votanti un giudice di poco peggiore di un votante umano passa circa una volta su due

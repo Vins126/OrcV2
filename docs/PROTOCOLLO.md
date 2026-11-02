@@ -252,6 +252,13 @@ tutti i bracci.
     metrica secondaria e descrittiva.
   - *Limiti dichiarati:* siti reali e non generati da modelli per un compito; una sola larghezza; voti solo
     aggregati, quindi niente accordo fra singole persone; chi sono i votanti non e' indicato.
+  - *Esito (2 nov 2026): giudice non accettato; «piace» e' metrica secondaria e descrittiva.* Regola e campione
+    committati prima dei giudizi (`c991a56`, `campaigns/r1_vibe_coppie.json`). 150 coppie giudicate fra il 29 ott e
+    il 2 nov (quota esaurita all'ultima coppia, ripresa con gli stessi metadati), 0 non valutabili, 21 pareggi del
+    giudice. Stima [2,5%; 97,5%]: accordo con la maggioranza 0,507 [0,427; 0,587]; riferimento umano 0,637 [0,623;
+    0,650]; Δ −0,130 [−0,205; −0,052]. Condizioni (1) e (2) mancate. Descrittivo, fuori dalla regola: il giudice
+    concorda in 18 coppie su 52 con maggioranza sotto il 60%, 26 su 50 fra 60% e 70%, 32 su 48 dal 70% in su; nei
+    due ordini sceglie lo stesso sito in 129 coppie su 150.
 - ✅ **Date e orari (23 ott 2026):** quando un compito chiede di scegliere data e ora, il prompt impone campi
   `datetime-local` (data e ora nello stesso campo), uguali per tutti i bracci.
 - ✅ **Marcatori per lo script (22 ott 2026):** il prompt di ogni compito elenca fino a 12 attributi `data-testid` (5-8 fino al 22 ott, alzato
