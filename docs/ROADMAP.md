@@ -73,8 +73,8 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
 4. ✅ **R2.6, opzione (a)** (2 nov) — cancello: il sito si avvia con `start.sh` entro 60 s, la pagina `/` risponde
    con stato HTTP < 400 e non da' errori JavaScript al caricamento. Dettagli nella sezione R2.6. I test scritti dall'agente come motivo di rifiuto passano a lavoro futuro. Test come in R2.6,
    compreso quello che garantisce che il cancello non legga la valutazione.
-5. **R2.5 ridotto** — τ_piace fissato prima di qualunque misura, con una motivazione sulla scala (opzione (a)),
-   senza pilota.
+5. ✅ **R2.5 ridotto** (2 nov) — τ_piace = 1 fissato prima di qualunque misura, senza pilota, con la motivazione
+   sulla scala in `PROTOCOLLO.md` §7. Con «piace» descrittiva (R1.12) e' una linea di riferimento, non un criterio.
 6. **R3 minimo** — piano JSON validato di Opus (R3.1, opzione (a): scheletro comune, poi le sezioni); ondate in
    parallelo su un workspace comune (R3.2); integrazione = avvio con `start.sh` e cancello; **una sola escalation**:
    se il cancello rifiuta il sito finale, Opus lo corregge una volta; tetto unico in dollari per la squadra sopra
@@ -779,6 +779,11 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
   pari e leggermente meglio»), dopo aver visto nel pilota come il giudice usa la scala; (b) stimato dalla
   variabilita' di due esecuzioni di B sullo stesso compito. Raccomandazione: (a); la variabilita' misurata serve
   invece al calcolo della potenza di R6.1.
+- **Esito (2 nov 2026):** opzione (a), **τ_piace = 1**, un gradino intero della scala («pari» → «B meglio»), il
+  gradino piu' usato da giudice e persone nei voti di R1. Valori considerati: 0,5 (meta' gradino) e 0,25 (sotto la
+  risoluzione della scala). Poiche' il giudice non e' accettato (R1.12), τ_piace e' la linea di riferimento del
+  grafico costo-«piace» e non entra nella dichiarazione di non inferiorita', che si regge su «funziona». Limiti
+  in `PROTOCOLLO.md` §7. Il preventivo misurato passa alla campagna MVP (task 7).
 - **Preventivo della campagna:** generazione (B, C, D, H; V non costa) + giudice (coppie C-B, D-B, H-B e ablazioni,
   entrambi gli ordini, listino di dicembre; V riusa D-B) + voti umani sul campione. La voce da controllare e' il giudizio, non la generazione
   (storica righe 1554-1566).
@@ -851,7 +856,7 @@ default il ruolo `worker` (Kimi K3.1 Pro, scelto il 24 ott al posto di GPT-6.1 S
       la valutazione (test dedicato).
 - [ ] Pilota su 3 compiti con costo misurato, cache di Opus verificata, motivi di arresto analizzati; `a`, costo
       di V, quota di Opus in H riportati; sezione di tesi §0.2 confrontata con i primi dati.
-- [ ] τ_piace in `PROTOCOLLO.md` con la motivazione, prima di qualunque confronto C contro B.
+- [x] τ_piace in `PROTOCOLLO.md` con la motivazione, prima di qualunque confronto C contro B (2 nov: τ_piace = 1).
 - [ ] Deviazione standard di «funziona» stimata e potenza di R6 ricalcolata; preventivo di R3, R4 e R6.
 
 ---

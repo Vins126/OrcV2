@@ -46,7 +46,8 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
     un braccio sul compito di prova; iterazioni = 2 × il massimo usato da un agente, e almeno 30; tempo = 2 × la
     durata piu' lunga. Si scrivono qui dopo la run di prova e prima del primo compito della campagna; la run di
     prova non entra nei dati e ha il suo tetto di spesa con preventivo (§11). Valori: 🔲 dopo la run di prova.
-- **§7 τ_piace.** Si fissa prima di qualunque misura, senza pilota, con una motivazione sulla scala −2..+2. 🔲
+- **§7 τ_piace = 1** (2 nov 2026, fissato prima di qualunque misura, senza pilota). Un gradino intero della scala
+  −2..+2; motivazione e ruolo descrittivo in §7.
 - **§10 Analisi.** Stessi calcoli (bootstrap sui compiti, test t appaiato, rapporto di costo C/B) sui 5 compiti.
   Le conclusioni si scrivono come stime; «non inferiore» e «costa meno» si dichiarano solo se i criteri di §10 sono
   soddisfatti, cosa improbabile con 5 compiti. Niente ablazioni.
@@ -319,11 +320,18 @@ tutti i bracci.
   punteggio del livello 1 (0-100), sugli stessi compiti; (2) **piace**: voto medio del giudice nel confronto a
   coppie C contro B, su una scala graduata da −2 (B molto meglio) a +2 (C molto meglio), 0 = pari. Ogni coppia si
   giudica in entrambi gli ordini e si fa la media dei due voti, col segno riportato dalla parte di C. C e' «non
-  inferiore» solo se lo e' su entrambe.
+  inferiore» solo se lo e' su entrambe. *Dopo R1.12 (2 nov 2026, §6):* il giudice non e' accettato, «piace» e'
+  secondaria e descrittiva e la dichiarazione di non inferiorita' si regge solo su «funziona».
 - ✅ **τ_funziona = 10 punti** (21 ott 2026): la media di «funziona» di C puo' stare fino a 10 punti su 100 sotto quella di B (con 5-8 passi per compito un singolo passo vale 12-20 punti: τ e' una differenza media sui compiti, non un passo per sito).
-- ✅ **τ_piace: regola (21 ott 2026).** Il valore, sulla scala −2..+2, si fissa dopo il pilota di R2 (quando si
-  conosce la variabilita' dei voti) e prima di qualunque confronto fra C e B; si scrive qui con la motivazione e si
-  committa prima della campagna.
+- ✅ **τ_piace = 1 (2 nov 2026).** La regola del 21 ott (valore dopo il pilota di R2) decade con D55: il pilota non
+  si fa e il valore si fissa prima di qualunque misura, sulla scala −2..+2. *Motivazione:* 1 e' un gradino intero,
+  da «pari» a «B meglio», il gradino piu' usato sia dal giudice (78 e 75 voti medi su 150 in R1.9 e R1.12) sia dalle
+  persone (107 voti su 165 in R1.10); differenze sotto un gradino si leggono come trascurabili. *Ruolo:* con
+  «piace» descrittiva (§6), τ_piace non decide nulla: e' la linea di riferimento a −1 nella tabella e nel grafico
+  costo-«piace» di §10, e si riporta se il limite basso dell'intervallo bootstrap sta sopra o sotto. *Limiti
+  dichiarati:* (1) il margine e' largo: un C giudicato «B meglio» in ogni compito starebbe esattamente sulla linea;
+  (2) con 5 compiti e uno scarto tipico dei voti medi del giudice di 1,28-1,38 (R1.12, R1.9), meta' intervallo vale
+  circa 1,1 punti: anche con τ = 1 la linea si supera solo se C e' in media circa pari a B o meglio.
 
 ## 8. Costo ✅
 
