@@ -21,6 +21,7 @@ from agent_factory import (
     BACKEND_PER_PROVIDER,
     AgentDismissed,
     AgentFactory,
+    Team,
     UnsupportedProvider,
 )
 from llm_gateway import ChatGatewayBase, OpenAIChatGateway
@@ -575,3 +576,76 @@ def test_il_tetto_di_token_e_sotto_l_uscita_massima_di_ogni_endpoint_della_rosa(
     uscita_massima = {"anthropic": 128_000, "moonshotai/mxfp4": 943_718, "deepseek": 393_216}
 
     assert all(config.MAX_TOKENS_TURNO <= limite for limite in uscita_massima.values())
+
+
+# ── R3: workspace imposto e tetto di squadra (P6-D1) ──────────────────────
+
+def test_s1_un_workspace_imposto_e_quello_dell_agente_e_degli_strumenti(fabbrica, percorsi_workspace, tmp_path):
+    """R3.2: la squadra lavora su un workspace comune, scelto da chi la guida."""
+    comune = tmp_path / "comune"
+
+    a = fabbrica.build("worker", workspace=comune)
+    b = fabbrica.build("worker_cheap", workspace=comune)
+
+    assert a.workspace == b.workspace == comune
+    assert percorsi_workspace == [str(comune), str(comune)]
+
+
+def test_s2_se_gli_strumenti_falliscono_il_workspace_imposto_non_si_tocca(tmp_path, chiavi):
+    """Il workspace comune non e' dell'agente: anche vuoto, non lo si rimuove."""
+    comune = tmp_path / "comune"
+    comune.mkdir()
+
+    def strumenti_guasti(percorso, **_):
+        raise RuntimeError("Docker spento")
+
+    fabbrica = AgentFactory(ModelRegistry.from_file("models.toml"), runs_root=tmp_path / "runs",
+                            workspaces_root=tmp_path / "ws", tools_builder=strumenti_guasti)
+    with pytest.raises(RuntimeError):
+        fabbrica.build("worker", workspace=comune)
+    assert comune.is_dir()
+
+
+def test_s3_gli_agenti_di_una_squadra_condividono_guardiano_e_lettore_di_spesa(fabbrica):
+    squadra = Team(budget_usd=0.05)
+
+    a = fabbrica.build("planner", team=squadra)
+    b = fabbrica.build("worker_cheap", team=squadra)
+
+    assert a.gateway.budget_guard is b.gateway.budget_guard is squadra.guard
+    assert a.gateway.spend_reader is b.gateway.spend_reader is squadra.accountant
+    assert set(squadra.accountant.breakdown()) == {a.agent_id, b.agent_id}
+
+
+def test_s4_senza_squadra_il_gateway_legge_solo_la_propria_spesa(fabbrica):
+    """Compatibilita': chi non passa una squadra ottiene il comportamento di prima."""
+    assert fabbrica.build("worker").gateway.spend_reader is None
+
+
+def test_s5_il_tetto_di_squadra_ferma_un_agente_per_la_spesa_di_un_altro(fabbrica):
+    """La spesa del primo agente esaurisce il tetto: il secondo non tocca la rete."""
+    squadra = Team(budget_usd=0.001)
+    primo = fabbrica.build("worker", team=squadra)
+    secondo = fabbrica.build("worker", team=squadra)
+    primo.gateway.client = ClientOpenAIFinto(prompt=1000, completion=1000)  # oltre 0,001 $
+    client_secondo = ClientOpenAIFinto(prompt=1, completion=1)
+    secondo.gateway.client = client_secondo
+
+    assert primo.assign("primo").status == "completed"
+    assert secondo.assign("secondo").status == "budget_exhausted"
+    assert client_secondo.richieste == []
+    assert squadra.accountant.total_cost == pytest.approx(primo.accountant.total_cost)
+
+
+def test_s6_una_squadra_senza_tetto_non_ferma_nessuno(fabbrica):
+    squadra = Team(budget_usd=None)
+    agente = fabbrica.build("worker", team=squadra)
+    agente.gateway.client = ClientOpenAIFinto()
+
+    assert agente.assign("x").status == "completed"
+    assert squadra.guard.enabled is False
+
+
+def test_s7_un_tetto_di_squadra_non_valido_e_un_errore_subito():
+    with pytest.raises(ValueError):
+        Team(budget_usd=0)

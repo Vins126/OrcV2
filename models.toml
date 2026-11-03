@@ -165,10 +165,13 @@ prices         = { input_tokens = 4.00, output_tokens = 20.00, cached_input_toke
 # Input 2.00, output 10.00, lettura cache 0.20 per milione; accetta immagini e strumenti.
 # Non si usa `moonshotai/highspeed` (4.00 / 20.00). Nessun prezzo di scrittura cache
 # esposto dall'endpoint: un consumo di quel tipo resta non prezzato. Nessuna prova reale.
+# R3 (P3, 2 nov 2026): il planner puo' scegliere Kimi come worker; ragionamento fissato a `high` come gli
+# altri modelli dei bracci (R2.3, P5-D1).
 [models.kimi-k3-1-pro]
 provider       = "openrouter"
 api_model      = "moonshotai/kimi-k3.1-pro"
 provider_order = ["moonshotai/mxfp4"]
+extra_body     = { reasoning = { effort = "high" } }
 capabilities   = ["reasoning", "code", "text", "vision_input"]
 prices         = { input_tokens = 2.00, output_tokens = 10.00, cached_input_tokens = 0.20 }
 

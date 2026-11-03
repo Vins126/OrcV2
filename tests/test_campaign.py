@@ -1146,3 +1146,120 @@ def test_r15_4_il_report_tiene_i_guasti_della_valutazione_fuori_da_f(tmp_path):
     assert esito.runs == 1
     assert esito.failure_rate == pytest.approx(0.0)
     assert esito.excluded_runs == 1
+
+
+# ── R3 (P7-D1): i bracci B, C e D nella stessa campagna ───────────────────
+
+def test_b1_i_bracci_a_un_agente_hanno_il_ruolo_del_protocollo():
+    """PROTOCOLLO §0: B e' Opus da solo, D e' DeepSeek V4.1 Flash da solo."""
+    registro = ModelRegistry.from_file("models.toml")
+    assert campaign.ARM_ROLES == {"B": "planner", "D": "worker_cheap"}
+    assert registro.model_for(campaign.ARM_ROLES["B"]) == "opus-5-5"
+    assert registro.model_for(campaign.ARM_ROLES["D"]) == "deepseek-v4-1-flash"
+
+
+def test_b2_la_riga_di_comando_accetta_solo_i_bracci_noti():
+    base = ["run", "--budget-usd", "1", "--max-total-usd", "2"]
+    assert campaign.build_parser().parse_args([*base, "--arm", "C"]).arm == "C"
+    assert campaign.build_parser().parse_args(base).arm is None
+    with pytest.raises(SystemExit):
+        campaign.build_parser().parse_args([*base, "--arm", "X"])
+
+
+class SciameFinto:
+    """Fa la parte di `run_swarm`: registra la chiamata e scrive un file nel workspace."""
+
+    def __init__(self, status="completed", costo=0.3, solleva=None):
+        self.chiamate = []
+        self.status, self.costo, self.solleva = status, costo, solleva
+
+    def __call__(self, factory, prompt, workspace, out_dir, *, budget_usd, max_iterations=None):
+        self.chiamate.append({"prompt": prompt, "workspace": Path(workspace), "out_dir": Path(out_dir),
+                              "budget_usd": budget_usd, "max_iterations": max_iterations,
+                              "file_del_task": sorted(p.name for p in Path(workspace).iterdir())})
+        if self.solleva:
+            raise self.solleva
+        (Path(workspace) / "index.html").write_text("<h1>ok</h1>")
+        return NS(status=self.status, total_cost=self.costo, run_ids=["r-plan", "r-w1"],
+                  log_path=Path(out_dir) / "sciame" / "swarm.jsonl", gate=None, escalated=False)
+
+
+class FabbricaSciame(FabbricaFinta):
+    """Per il braccio C la campagna legge solo dove creare il workspace e il tetto per compito."""
+
+    def __init__(self, tmp_path, budget=0.5):
+        super().__init__(tmp_path)
+        self.workspaces_root = tmp_path / "workspaces"
+        self.budget_usd = budget
+
+
+def _fabbrica_sciame(tmp_path, budget=0.5):
+    return FabbricaSciame(tmp_path, budget)
+
+
+def test_b3_il_braccio_c_esegue_lo_sciame_sul_suo_workspace_con_il_tetto_per_compito(tmp_path):
+    fabbrica, sciame = _fabbrica_sciame(tmp_path), SciameFinto()
+    tasks = [Task(id="t1", prompt="p1", files={"dato.txt": "x"}, verify="VERIFY 1")]
+
+    righe_c = _esegui(tmp_path, fabbrica, shell_che_registra([]), tasks=tasks, swarm_runner=sciame,
+                      max_iterations=7)
+
+    assert fabbrica.costruiti == [], "C non costruisce un agente singolo"
+    chiamata = sciame.chiamate[0]
+    assert chiamata["prompt"] == "p1" and chiamata["budget_usd"] == 0.5 and chiamata["max_iterations"] == 7
+    assert chiamata["workspace"].is_relative_to(tmp_path / "workspaces")
+    assert chiamata["file_del_task"] == ["dato.txt"], "i file del task arrivano prima dello sciame"
+    assert chiamata["out_dir"] == tmp_path / "campagne" / "c1" / "t1-1"
+    riga = righe_c[0]
+    assert riga["model"] == "swarm" and riga["status"] == "completed"
+    assert riga["total_cost"] == 0.3
+    assert riga["run_ids"] == ["r-plan", "r-w1"] and riga["run_id"] == "r-plan"
+    assert riga["swarm_log"] == str(chiamata["out_dir"] / "sciame" / "swarm.jsonl")
+    assert riga["workspace"] == str(chiamata["workspace"])
+
+
+def test_b4_c_passa_dalla_stessa_verifica_degli_altri_bracci(tmp_path):
+    eventi = []
+    fabbrica, sciame = _fabbrica_sciame(tmp_path), SciameFinto()
+
+    riga = _esegui(tmp_path, fabbrica, shell_che_registra(eventi, esiti_verify=[True]),
+                   tasks=[Task(id="t1", prompt="p1", verify="VERIFY 1")], swarm_runner=sciame)[0]
+
+    assert ("verify", sciame.chiamate[0]["workspace"].name) in eventi
+    assert riga["verified"] is True and riga["success"] is True
+
+
+@pytest.mark.parametrize("stato", ["plan_failed", "budget_exhausted"])
+def test_b5_uno_sciame_non_completato_non_e_un_successo_anche_se_verificato(tmp_path, stato):
+    fabbrica, sciame = _fabbrica_sciame(tmp_path), SciameFinto(status=stato)
+
+    riga = _esegui(tmp_path, fabbrica, shell_che_registra([], esiti_verify=[True]),
+                   tasks=[Task(id="t1", prompt="p1", verify="VERIFY 1")], swarm_runner=sciame)[0]
+
+    assert riga["status"] == stato and riga["success"] is False
+
+
+def test_b6_un_guasto_dello_sciame_e_una_riga_e_la_campagna_prosegue(tmp_path):
+    fabbrica, sciame = _fabbrica_sciame(tmp_path), SciameFinto(solleva=RuntimeError("x"))
+
+    righe_c = _esegui(tmp_path, fabbrica, shell_che_registra([]), swarm_runner=sciame)
+
+    assert [r["status"] for r in righe_c] == ["unexpected_error", "unexpected_error"]
+    assert all(r["error_type"] == "RuntimeError" for r in righe_c)
+
+
+def test_b7_il_report_somma_l_uso_di_tutte_le_run_di_uno_sciame(tmp_path):
+    """Una riga di C ha piu' run (planner, worker, escalation): contano tutte."""
+    runs = tmp_path / "runs"
+    quantita = {"input_tokens": 1000, "output_tokens": 500}   # 0.0003 + 0.0006 su minimax-m3
+    for run_id in ("a", "b", "c"):
+        _scrivi_run(runs, run_id, quantita)
+    manifesto = tmp_path / "c1.jsonl"
+    manifesto.write_text(json.dumps({
+        "task_id": "t1", "rep": 1, "run_id": "a", "run_ids": ["a", "b", "c"], "model": "swarm",
+        "status": "completed", "verified": True, "success": True, "total_cost": 0.0}) + "\n")
+
+    esito = report(manifesto, runs, ModelRegistry.from_file("models.toml"))
+
+    assert esito.total_cost == pytest.approx(3 * 0.0009)
+    assert esito.runs_without_usage == 0

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Sequence
+from uuid import uuid4
 
 import config
 from run_status import RunStatus
@@ -25,6 +26,10 @@ from executors import docker as sandbox
 from executors.docker import RETI_AMMESSE, DockerExecutor, SandboxImageMissing
 from parallel_runner import Admission, JobOutcome, run_parallel
 from tools import build_default_tools
+from swarm import run_swarm
+
+# PROTOCOLLO §0: i bracci a un solo agente usano questi ruoli.
+ARM_ROLES = {"B": "planner", "D": "worker_cheap"}
 
 
 @dataclass
@@ -154,7 +159,8 @@ def shell_docker(workspace: Path, command: str) -> int:
 
 def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
                 shell: Callable[[Path, str], int],
-                max_iterations: int | None, out_dir: Path) -> dict[str, Any]:
+                max_iterations: int | None, out_dir: Path,
+                swarm_runner: Callable[..., Any] | None = None) -> dict[str, Any]:
     """Una run: agente nuovo, setup, incarico, verifica. Restituisce la riga del manifesto.
 
     `out_dir` e' la cartella in cui il verificatore puo' scrivere i suoi file
@@ -167,8 +173,16 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
     riga_base: dict[str, Any] = {
         "task_id": task.id, "rep": rep, "run_id": None, "error_type": None,
     }
+    built = None
     try:
-        built = factory.build(role)
+        if swarm_runner is None:
+            built = factory.build(role)
+            workspace = built.workspace
+            agent_id, model = built.agent_id, built.model
+        else:
+            workspace = factory.workspaces_root / f"swarm-{uuid4().hex[:8]}"
+            workspace.mkdir(parents=True, exist_ok=True)
+            agent_id, model = workspace.name, "swarm"
     except Exception as errore:
         # Guasto della campagna (chiave mancante, Docker spento): si annota e si
         # prosegue; non e' un fallimento del modello.
@@ -177,12 +191,12 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
                 "total_cost": 0.0, "error_type": type(errore).__name__}
 
     row: dict[str, Any] = {
-        **riga_base, "agent_id": built.agent_id, "model": built.model,
-        "workspace": str(built.workspace),
+        **riga_base, "agent_id": agent_id, "model": model,
+        "workspace": str(workspace),
     }
     try:
-        _scrivi_file(built.workspace, task.files)
-        setup_ok = not task.setup or shell(built.workspace, task.setup) == 0
+        _scrivi_file(workspace, task.files)
+        setup_ok = not task.setup or shell(workspace, task.setup) == 0
     except Exception as errore:
         setup_ok = False
         row["error_type"] = type(errore).__name__
@@ -192,8 +206,18 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
         row.update(status="setup_failed", verified=False, success=False, total_cost=0.0)
         return row
 
+    total_cost = 0.0
     try:
-        result = built.assign(task.prompt, max_iterations=max_iterations)
+        if swarm_runner is not None:
+            result = swarm_runner(factory, task.prompt, workspace, out_dir,
+                                  budget_usd=factory.budget_usd, max_iterations=max_iterations)
+            total_cost = result.total_cost
+            row.update(run_ids=result.run_ids,
+                       run_id=result.run_ids[0] if result.run_ids else None,
+                       swarm_log=str(result.log_path))
+        else:
+            assert built is not None
+            result = built.assign(task.prompt, max_iterations=max_iterations)
         status = result.status
     except Exception as errore:  # una run guasta non deve fermare la campagna
         status = RunStatus.UNEXPECTED_ERROR
@@ -202,8 +226,8 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
     try:
         # I file da ripristinare (i test originali) si riscrivono PRIMA di
         # verificare: se l'agente li ha toccati, cio' non conta.
-        _scrivi_file(built.workspace, task.restore)
-        verifica = as_verifier(task.verify)(built.workspace, out_dir, shell)
+        _scrivi_file(workspace, task.restore)
+        verifica = as_verifier(task.verify)(workspace, out_dir, shell)
         verified = verifica.verified
         row.update(verifica.summary)
     except VerificationError as errore:
@@ -218,11 +242,13 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
         verified = False
         row["error_type"] = row["error_type"] or type(errore).__name__
 
+    if built is not None:
+        row["run_id"] = built.ledgers[-1].run_id if built.ledgers else None
+        total_cost = built.accountant.total_cost
     row.update(
-        run_id=built.ledgers[-1].run_id if built.ledgers else None,
         status=status, verified=verified,
         success=status == RunStatus.COMPLETED and verified,
-        total_cost=built.accountant.total_cost)
+        total_cost=total_cost)
     return row
 
 
@@ -233,7 +259,8 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
                  max_iterations: int | None = None,
                  environment: dict[str, Any] | None = None,
                  workers: int = 1,
-                 reserve_per_run_usd: float | None = None) -> list[dict[str, Any]]:
+                 reserve_per_run_usd: float | None = None,
+                 swarm_runner: Callable[..., Any] | None = None) -> list[dict[str, Any]]:
     """Lancia ogni task `repetitions` volte, fino a `workers` run alla volta, e annota il manifesto.
 
     Ogni run ha un agente nuovo e quindi un workspace nuovo: le ripetizioni
@@ -338,7 +365,8 @@ def run_campaign(factory: Any, tasks: list[Task], *, role: str, repetitions: int
         jobs,
         lambda job: _esegui_run(factory, job[0], job[1], role=role, shell=shell,
                                 max_iterations=max_iterations,
-                                out_dir=campaigns_dir / campaign_id / f"{job[0].id}-{job[1]}"),
+                                out_dir=campaigns_dir / campaign_id / f"{job[0].id}-{job[1]}",
+                                swarm_runner=swarm_runner),
         max_workers=workers, admit=admit, on_done=on_done)
 
     rows = [righe_run[i] for i in sorted(righe_run)]
@@ -433,46 +461,50 @@ def report(manifest_path: Path, runs_root: Path, registry: Any) -> CampaignRepor
     senza_usage = 0
     chiamate_non_prezzabili = 0
     for r in run:
-        cartella = Path(runs_root) / str(r.get("run_id"))
-        eventi = cartella / "events.jsonl"
-        if r.get("run_id") and eventi.exists():
-            for linea in eventi.read_text().splitlines():
-                evento = json.loads(linea)
-                if evento.get("event_type") != "unpriced_usage":
-                    continue
-                dettagli = evento.get("details", {})
-                chiamate_non_prezzabili += 1
-                if dettagli.get("request_id"):
-                    request_id_visti[dettagli["request_id"]] = request_id_visti.get(dettagli["request_id"], 0) + 1
-                if dettagli.get("reported_cost") is not None:
-                    costo_riportato = (costo_riportato or 0.0) + dettagli["reported_cost"]
+        has_usage = False
+        for run_id in r.get("run_ids") or [r.get("run_id")]:
+            cartella = Path(runs_root) / str(run_id)
+            eventi = cartella / "events.jsonl"
+            if run_id and eventi.exists():
+                for linea in eventi.read_text().splitlines():
+                    evento = json.loads(linea)
+                    if evento.get("event_type") != "unpriced_usage":
+                        continue
+                    dettagli = evento.get("details", {})
+                    chiamate_non_prezzabili += 1
+                    if dettagli.get("request_id"):
+                        request_id_visti[dettagli["request_id"]] = request_id_visti.get(dettagli["request_id"], 0) + 1
+                    if dettagli.get("reported_cost") is not None:
+                        costo_riportato = (costo_riportato or 0.0) + dettagli["reported_cost"]
+                        record_con_costo_riportato += 1
+            percorso = cartella / "usage.jsonl"
+            if not run_id or not percorso.exists():
+                continue
+            has_usage = True
+            for linea in percorso.read_text().splitlines():
+                record = json.loads(linea)["record"]
+                record_senza_prezzo = False
+                if record.get("request_id"):
+                    request_id_visti[record["request_id"]] = request_id_visti.get(record["request_id"], 0) + 1
+                if record.get("reported_cost") is not None:
+                    costo_riportato = (costo_riportato or 0.0) + record["reported_cost"]
                     record_con_costo_riportato += 1
-        percorso = cartella / "usage.jsonl"
-        if not r.get("run_id") or not percorso.exists():
-            senza_usage += 1
-            continue
-        for linea in percorso.read_text().splitlines():
-            record = json.loads(linea)["record"]
-            record_senza_prezzo = False
-            if record.get("request_id"):
-                request_id_visti[record["request_id"]] = request_id_visti.get(record["request_id"], 0) + 1
-            if record.get("reported_cost") is not None:
-                costo_riportato = (costo_riportato or 0.0) + record["reported_cost"]
-                record_con_costo_riportato += 1
-            for unita, quantita in record["quantities"].items():
-                if unita.endswith("_tokens"):
-                    token_totali += quantita
+                for unita, quantita in record["quantities"].items():
+                    if unita.endswith("_tokens"):
+                        token_totali += quantita
+                        if unita == "output_tokens":
+                            token_output += quantita
+                    try:
+                        costo = registry.cost(record["model"], unita, quantita)
+                    except (UnitNotFound, ModelNotFound):
+                        record_senza_prezzo = True
+                        continue
+                    costo_totale += costo
                     if unita == "output_tokens":
-                        token_output += quantita
-                try:
-                    costo = registry.cost(record["model"], unita, quantita)
-                except (UnitNotFound, ModelNotFound):
-                    record_senza_prezzo = True
-                    continue
-                costo_totale += costo
-                if unita == "output_tokens":
-                    costo_output += costo
-            non_prezzati += record_senza_prezzo
+                        costo_output += costo
+                non_prezzati += record_senza_prezzo
+        if not has_usage:
+            senza_usage += 1
 
     return CampaignReport(
         runs=len(run),
@@ -698,7 +730,8 @@ def build_parser() -> argparse.ArgumentParser:
                           "(vedi fetch-polyglot)")
     run.add_argument("--only", default=None,
                      help="solo questi task, separati da virgola (utile per le prove)")
-    run.add_argument("--role", default="worker")
+    run.add_argument("--role", default=None)
+    run.add_argument("--arm", choices=("B", "C", "D"), default=None)
     run.add_argument("--repetitions", type=int, default=3)
     run.add_argument("--budget-usd", type=float, required=True,
                      help="tetto in USD per ogni agente (obbligatorio: ogni run reale ha un tetto)")
@@ -817,6 +850,18 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
               f"dentro quello riportato)")
         return 0
 
+    swarm_runner = None
+    if args.arm is not None:
+        expected_role = ARM_ROLES.get(args.arm)
+        if args.role is not None and args.role != expected_role:
+            print(f"errore: --arm {args.arm} e --role {args.role} sono incoerenti", file=sys.stderr)
+            return 2
+        if args.arm == "C":
+            swarm_runner = run_swarm
+        else:
+            args.role = expected_role
+    args.role = args.role or "worker"
+
     try:
         if args.workers < 1:
             raise CampaignError(f"workers deve essere almeno 1, non {args.workers}")
@@ -842,7 +887,8 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
             max_total_usd=args.max_total_usd, max_iterations=args.max_iterations,
             environment={**sandbox_environment(config.DOCKER_IMAGE, args.network),
                          "orphans_removed": orfani},
-            workers=args.workers, reserve_per_run_usd=args.budget_usd)
+            workers=args.workers, reserve_per_run_usd=args.budget_usd,
+            swarm_runner=swarm_runner)
     except CampaignError as errore:
         print(f"errore: {errore}", file=sys.stderr)
         return 2

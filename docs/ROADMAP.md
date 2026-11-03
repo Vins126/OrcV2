@@ -75,10 +75,28 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
    compreso quello che garantisce che il cancello non legga la valutazione.
 5. ✅ **R2.5 ridotto** (2 nov) — τ_piace = 1 fissato prima di qualunque misura, senza pilota, con la motivazione
    sulla scala in `PROTOCOLLO.md` §7. Con «piace» descrittiva (R1.12) e' una linea di riferimento, non un criterio.
-6. **R3 minimo** — piano JSON validato di Opus (R3.1, opzione (a): scheletro comune, poi le sezioni); ondate in
+6. ✅ **R3 minimo** (2-3 nov) — piano JSON validato di Opus (R3.1, opzione (a): scheletro comune, poi le sezioni); ondate in
    parallelo su un workspace comune (R3.2); integrazione = avvio con `start.sh` e cancello; **una sola escalation**:
    se il cancello rifiuta il sito finale, Opus lo corregge una volta; tetto unico in dollari per la squadra sopra
    `TeamAccountant`; registro con ruolo, pezzo e verdetto del cancello. Test con modelli finti.
+   **Esito.** `swarm_plan.py` (rotte lette dalla tabella del contratto; piano rifiutato per JSON assente, campi
+   mancanti, id doppi, ciclo, dipendenza inesistente, file condiviso o fuori dal workspace, rotta senza un unico
+   responsabile, worker non ammesso; al massimo 2 rigenerazioni con l'errore rimandato al planner; ondate per
+   livello nel grafo). `swarm.py` (`run_swarm`: pezzi della stessa ondata in parallelo, un pezzo fallito blocca solo
+   chi ne dipende; cancello in `sciame/`; correzione affidata a un agente Opus nuovo, una volta; al tetto nessun
+   lavoro nuovo e consegna di cio' che c'e'; registro `sciame/swarm.jsonl` con piano, pezzi, modello, costo,
+   verdetti, fine). Scelte prese durante il lavoro, scritte in `PROTOCOLLO.md` §0: il worker di ogni pezzo lo
+   sceglie il planner fra DeepSeek V4.1 Flash e Kimi K3.1 Pro, vedendo prezzi e dato di Design Arena; Kimi ragiona
+   a `high` come gli altri; il cancello si vede attraverso `view_site`, che ora riporta lo stato HTTP di `/`.
+   Tetto di squadra: `Team` in `agent_factory.py`, il gateway legge la spesa della squadra (`spend_reader`).
+   Campagna: `campaign.py run --arm B|C|D` (B = `planner`, D = `worker_cheap`, C = sciame); il report somma tutte le
+   run di una riga di C. Test: `tests/test_swarm_plan.py`, `tests/test_swarm.py`, aggiunte in
+   `test_agent_factory.py`, `test_campaign.py`, `test_view_site.py`, `test_openrouter.py`; 1326 passati, 61
+   saltati, pyright 0 errori. **Non provato con fornitori veri ne' con Docker**: prompt di planner, worker ed
+   escalation, Kimi in una run con strumenti e la correzione si vedono per la prima volta nella run di prova.
+   Limiti: nessun controllo che un worker scriva solo i file del suo pezzo; con N worker in volo il tetto puo'
+   essere superato di una chiamata per worker; se lo sciame solleva un'eccezione non gestita la riga del
+   manifesto riporta costo 0 (la spesa resta nei ledger delle singole run).
 7. **Campagna MVP** (sostituisce R2.4 e R6) — preventivo sul listino di `models.toml`, una run di prova su un
    compito, poi B, D e C una volta ciascuno sui 5 compiti; V composta da B e D; giudice sulle coppie C-B e D-B in
    entrambi gli ordini; analisi di `PROTOCOLLO.md` §10 presentata come stima.
@@ -105,7 +123,7 @@ R6.4); H se non c'e' tempo.
 - [x] R1.12 prova del giudice su Vibe Design Arena, regola registrata prima (2 nov: non accettato, «piace» descrittiva).
 - [ ] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (test dedicato).
 - [ ] Regole di parita' (scritte il 2 nov; valori dei tetti dopo la run di prova) e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
-- [ ] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti.
+- [x] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti (3 nov).
 - [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
 - [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.
 

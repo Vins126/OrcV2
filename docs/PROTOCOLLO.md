@@ -26,19 +26,29 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
     (D47, confermato contro Kimi K3.1 Pro: sui siti Kimi e' avanti di circa 15 Elo nella classifica Website di
     Design Arena, cioe' circa il 52% di preferenze, a un prezzo 13-17 volte maggiore; la tesi misura il costo a
     qualita' pari e con 5 compiti si legge solo una differenza di costo grande).
+    **Modifica del 2 nov 2026 (R3), prima di qualunque run:** il worker di ogni pezzo di C lo sceglie il planner
+    nel piano, fra DeepSeek V4.1 Flash (ruolo `worker_cheap`) e Kimi K3.1 Pro (ruolo `worker`). Il planner vede i
+    prezzi del listino e il dato di Design Arena qui sopra, con la regola di usare il worker caro solo dove la
+    difficolta' del pezzo lo giustifica. C diventa cosi' uno sciame con instradamento dei costi deciso dal planner,
+    senza addestramento. Il braccio D resta DeepSeek V4.1 Flash da solo (`--arm D`). Il registro dello sciame
+    riporta il modello di ogni pezzo: la quota di spesa di Kimi si dichiara nell'analisi, perche' rende meno
+    netto il confronto C contro V (il vantaggio di C puo' venire dalla scomposizione o dal worker piu' forte).
   - *Strumenti.* Gli stessi per ogni agente di ogni braccio (`tools/__init__.py`, `build_default_tools`).
   - *Rete.* Durante la generazione `bridge` con il firewall del progetto per tutti i bracci, come in §5: la
     cornice di R1.2 chiede di installare le dipendenze nella run. La valutazione resta senza rete. I default del
     codice sono `none`: il programma della campagna passa `bridge` in modo esplicito, con un test che lo controlla.
   - *Uscita per turno.* `max_tokens` = 32.000 per ogni modello (`config.MAX_TOKENS_TURNO`, R2.2).
   - *Ragionamento.* Fissato nella richiesta a `reasoning.effort = "high"` per Opus 5.5 e DeepSeek V4.1 Flash
-    (`models.toml`, `extra_body`). Era anche il default del catalogo OpenRouter letto il 2 nov 2026 (Opus:
+    (`models.toml`, `extra_body`); dal 2 nov (R3) anche per Kimi K3.1 Pro, che il planner puo' scegliere come
+    worker. Era anche il default del catalogo OpenRouter letto il 2 nov 2026 (Opus:
     ragionamento obbligatorio; DeepSeek: acceso). Limite: lo stesso livello non e' la stessa quantita' di
     ragionamento su due modelli diversi.
   - *Temperatura.* Non si invia a nessun modello: vale quella del fornitore. Opus 5.5 non accetta il parametro,
     quindi un valore comune non e' fissabile. Limite dichiarato.
   - *Ciclo di verifica.* B non ha un passo di autocritica, perche' C non ha critico; B vede gli stessi strumenti e
-    lo stesso cancello di C.
+    lo stesso cancello di C. Il cancello si vede attraverso lo strumento «guarda il sito» (`view_site`), che
+    restituisce le stesse osservazioni su cui decide: avvio, motivo del mancato avvio, stato HTTP di `/` (aggiunto
+    il 2 nov, R3) ed errori JavaScript. Non esiste uno strumento a parte che dia il verdetto.
   - *Tetti.* Uguali per tutti: stesso tetto in dollari per compito (per C vale per la squadra intera), stesso
     tetto di iterazioni per ogni agente, stesso tempo massimo per compito. Un tetto serve a fermare i guasti, non
     deve scattare nel lavoro normale: un tetto stretto in dollari interromperebbe soprattutto B. I valori si

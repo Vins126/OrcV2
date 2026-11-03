@@ -571,7 +571,9 @@ def test_x6_la_fabbrica_non_condivide_i_dizionari_con_il_registro(fabbrica):
 def test_p6_solo_opus_ha_la_cache_esplicita_nel_models_toml_reale(reale):
     assert (reale.extra_body_for("opus-5-5") or {}).get("cache_control") == {"type": "ephemeral"}
     assert "cache_control" not in (reale.extra_body_for("deepseek-v4-1-flash") or {})
-    for modello in ("kimi-k3", "kimi-k3-1-pro", "minimax-m3", "text-embedding-3-small"):
+    # Da R3 (P3) Kimi K3.1 Pro ha `extra_body` per il ragionamento, ma senza cache esplicita.
+    assert "cache_control" not in (reale.extra_body_for("kimi-k3-1-pro") or {})
+    for modello in ("kimi-k3", "minimax-m3", "text-embedding-3-small"):
         assert reale.extra_body_for(modello) is None, modello
 
 
@@ -624,8 +626,10 @@ def test_p7_la_richiesta_di_opus_porta_fornitore_fissato_e_cache(tmp_path, monke
         "cache_control": {"type": "ephemeral"},
         "reasoning": {"effort": "high"},
     }
+    # Da R3 (P3) anche Kimi ragiona a `high`: il planner puo' sceglierlo come worker.
     assert worker.extra_body == {
-        "provider": {"order": ["moonshotai/mxfp4"], "allow_fallbacks": False}}
+        "provider": {"order": ["moonshotai/mxfp4"], "allow_fallbacks": False},
+        "reasoning": {"effort": "high"}}
     assert worker.model == "kimi-k3-1-pro"
     assert worker.api_model == "moonshotai/kimi-k3.1-pro"
 
@@ -676,3 +680,8 @@ def test_p8_vede_le_immagini_chi_dovra_fare_critico_o_giudice(reale):
                     "deepseek-v4-1-flash"):
         assert "vision_input" in reale.models[modello]["capabilities"], modello
     assert "vision_input" not in reale.models["deepseek-v4-pro"]["capabilities"]
+
+
+def test_p11_kimi_ragiona_a_effort_high_come_gli_altri_worker(reale):
+    """R3 (P3): Opus puo' scegliere Kimi come worker; la parita' sul ragionamento vale anche per lui."""
+    assert (reale.extra_body_for("kimi-k3-1-pro") or {}).get("reasoning") == {"effort": "high"}

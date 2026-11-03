@@ -44,7 +44,8 @@ import openai
 
 import config
 from accounting import InMemoryAccountant, ModelRegistry
-from accounting.base import Accountant
+from accounting.base import Accountant, SpendReader
+from accounting.team import TeamAccountant
 from accounting.current_run import CurrentRun
 from accounting.ledger import RunLedger
 from accounting.ledger_accountant import LedgerAccountant
@@ -242,6 +243,14 @@ class BuiltAgent:
         }
 
 
+class Team:
+    """Tetto unico di squadra (R3.5, P6-D1), condiviso fra tutti i membri."""
+
+    def __init__(self, budget_usd: float | None) -> None:
+        self.guard = BudgetGuard(budget_usd)
+        self.accountant = TeamAccountant()
+
+
 class AgentFactory:
     """Costruisce agenti per ruolo, ciascuno con le proprie risorse.
 
@@ -312,7 +321,8 @@ class AgentFactory:
             return self._lookups[provider]
 
     def make_gateway(self, model: str, accountant: Accountant,
-                     budget_guard: BudgetGuard | None, *, role: str | None = None) -> ChatGatewayBase:
+                     budget_guard: BudgetGuard | None, *, role: str | None = None,
+                     spend_reader: SpendReader | None = None) -> ChatGatewayBase:
         """Il gateway di un modello: fornitore fissato, parametri propri, streaming e rilettura dei costi.
 
         Lo usa `build` per gli agenti; chi deve soltanto interrogare un modello (per
@@ -324,6 +334,7 @@ class AgentFactory:
             accountant: dove si registrano i consumi.
             budget_guard: tetto di spesa, o `None` per nessun tetto.
             role: il ruolo per cui si costruisce, solo per i messaggi d'errore.
+            spend_reader: spesa condivisa per il tetto, oppure solo quella locale.
 
         Raises:
             UnsupportedProvider: se il fornitore del modello non ha un gateway di chat.
@@ -373,11 +384,13 @@ class AgentFactory:
             api_provider=provider,
             billing_provider=provider,
             budget_guard=budget_guard,
+            spend_reader=spend_reader,
         )
         return gateway
 
 
-    def build(self, role: str) -> BuiltAgent:
+    def build(self, role: str, *, workspace: Path | None = None,
+              team: Team | None = None) -> BuiltAgent:
         """Costruisce un agente persistente per il ruolo dato.
 
         L'ordine e' voluto: prima si risolve e si controlla tutto cio' che puo'
@@ -402,27 +415,33 @@ class AgentFactory:
 
         agent_id = f"{role}-{uuid4().hex[:8]}"
         # Un guardiano e un contabile per agente: vedi la nota di design.
-        guardiano = BudgetGuard(self.budget_usd)
+        guardiano = team.guard if team is not None else BudgetGuard(self.budget_usd)
         # Il punto unico verso il ledger dell'incarico in corso: vedi `accounting/current_run.py`.
         corrente = CurrentRun()
         accountant = LedgerAccountant(InMemoryAccountant(self.registry), corrente)
 
-        gateway = self.make_gateway(model, accountant, guardiano, role=role)
+        gateway = self.make_gateway(
+            model, accountant, guardiano, role=role,
+            spend_reader=team.accountant if team is not None else None)
         gateway.event_sink = corrente
 
         # Il workspace porta l'id dell'agente, non quello di una run: vale per
         # tutta la sua vita, incarichi compresi.
-        workspace = self.workspaces_root / agent_id
+        own_workspace = workspace is None
+        workspace = self.workspaces_root / agent_id if workspace is None else Path(workspace)
         try:
             strumenti = self.tools_builder(str(workspace), event_sink=corrente)
         except BaseException:
             # Il costruttore degli strumenti crea il workspace e poi puo'
             # fallire (per esempio Docker assente): non si lascia una cartella
             # orfana. `rmdir` toglie solo una cartella vuota, mai contenuti.
-            with suppress(OSError):
-                workspace.rmdir()
+            if own_workspace:
+                with suppress(OSError):
+                    workspace.rmdir()
             raise
         agent = Agent(gateway, strumenti)
+        if team is not None:
+            team.accountant.add(agent_id, accountant)
 
         def open_ledger(task: str) -> RunLedger:
             """Crea il ledger di un incarico, con la policy di budget in testa."""

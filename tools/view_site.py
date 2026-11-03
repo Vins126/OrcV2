@@ -69,6 +69,7 @@ class ViewSiteTool(Tool):
                 view = result.widths[width]
                 data["widths"][str(width)] = {
                     "errors": view.errors, "overflow": view.overflow, "a11y": view.a11y,
+                    "status": view.status,
                 }
                 if view.screenshot is not None:
                     images.append(view.screenshot)

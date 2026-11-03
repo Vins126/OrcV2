@@ -403,3 +403,31 @@ def test_i1_con_docker_vero_arriva_uno_screenshot_png(tmp_path):
     assert esito.data["started"] is True
     [img] = esito.images
     assert img.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# ── R3 (P5-D1): il cancello si vede attraverso view_site ─────────────────
+
+class _RenderConStato(_RenderFinto):
+    """Come il finto di base, ma `/` risponde con lo stato dato."""
+
+    def __init__(self, status):
+        super().__init__()
+        self.status = status
+
+    def __call__(self, workspace, out_dir, **kwargs):
+        resa = super().__call__(workspace, out_dir, **kwargs)
+        larghezze = {w: WidthResult(width=r.width, errors=r.errors, overflow=r.overflow,
+                                    screenshot=r.screenshot, a11y=r.a11y, status=self.status)
+                     for w, r in resa.widths.items()}
+        return RenderResult(started=True, widths=larghezze, versions=resa.versions)
+
+
+@pytest.mark.parametrize("stato", [200, 404, None])
+def test_v10_lo_stato_http_di_slash_arriva_all_agente(tmp_path, stato):
+    """Il cancello rifiuta uno stato >= 400 o mancante: l'agente deve poterlo vedere."""
+    tool, _, _ = _strumento(tmp_path, render=_RenderConStato(stato))
+
+    esito = tool.execute({})
+
+    for voce in esito.data["widths"].values():
+        assert voce["status"] == stato

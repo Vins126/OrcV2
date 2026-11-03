@@ -25,7 +25,7 @@ import httpx
 import openai
 
 import config
-from accounting.base import Accountant
+from accounting.base import Accountant, SpendReader
 from accounting.errors import InvalidUsage, RegistryError
 from accounting.mappers.anthropic import AnthropicMessagesUsageMapper
 from accounting.mappers.base import non_zero
@@ -114,7 +114,8 @@ class ChatGatewayBase:
                  event_sink: RunEventSink | None = None,
                  budget_guard: BudgetGuard | None = None,
                  api_model: str | None = None,
-                 generation_lookup: GenerationLookup | None = None):
+                 generation_lookup: GenerationLookup | None = None,
+                 spend_reader: SpendReader | None = None):
         """Registra le dipendenze del gateway.
 
         Args:
@@ -131,6 +132,7 @@ class ChatGatewayBase:
                 sottoclasse.
             event_sink: dove annotare i fatti che non sono consumi.
             budget_guard: tetto di spesa della run, se previsto.
+            spend_reader: spesa di squadra per il tetto; `None` legge il contabile locale.
             api_model: nome con cui il fornitore conosce il modello, da
                 `ModelRegistry.api_model_for`; `None` usa `model`. Va nella
                 richiesta, mentre record e ledger continuano a usare `model`:
@@ -148,6 +150,7 @@ class ChatGatewayBase:
         self.model = model
         self.api_model = api_model or model
         self.accountant = accountant
+        self.spend_reader = spend_reader
         self.mapper = mapper or self.MAPPER
         self.retry_max = retry_max
         self.retry_delay = retry_delay
@@ -316,7 +319,8 @@ class ChatGatewayBase:
         if self.budget_guard is None:
             return
 
-        total_cost = self.accountant.total_cost
+        lettore = self.spend_reader if self.spend_reader is not None else self.accountant
+        total_cost = lettore.total_cost
         verdict = self.budget_guard.check(total_cost)
         if verdict is BudgetVerdict.SOFT_LIMIT_REACHED:
             log.warning("Soglia morbida budget raggiunta: $%.6f", total_cost)
