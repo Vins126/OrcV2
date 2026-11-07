@@ -26,6 +26,7 @@ from executors import docker as sandbox
 from executors.docker import RETI_AMMESSE, DockerExecutor, SandboxImageMissing
 from parallel_runner import Admission, JobOutcome, run_parallel
 from tools import build_default_tools
+from tools.load_skill import REQUIRED_SKILLS_SINGLE
 from swarm import run_swarm
 
 # PROTOCOLLO §0: i bracci a un solo agente usano questi ruoli.
@@ -153,6 +154,7 @@ def shell_docker(workspace: Path, command: str) -> int:
     executor = DockerExecutor(
         str(workspace), image=config.DOCKER_IMAGE, timeout=config.EXEC_TIMEOUT,
         memory=config.DOCKER_MEMORY, pids_limit=config.DOCKER_PIDS_LIMIT,
+        shm_size=config.DOCKER_SHM_SIZE,
         network="none")
     return int(executor.run(command)["exit_code"])
 
@@ -176,7 +178,7 @@ def _esegui_run(factory: Any, task: Task, rep: int, *, role: str,
     built = None
     try:
         if swarm_runner is None:
-            built = factory.build(role)
+            built = factory.build(role, required_skills=REQUIRED_SKILLS_SINGLE)
             workspace = built.workspace
             agent_id, model = built.agent_id, built.model
         else:
@@ -527,14 +529,28 @@ def report(manifest_path: Path, runs_root: Path, registry: Any) -> CampaignRepor
 # ── Riga di comando ────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+WEB_DATA_DIR = PROJECT_ROOT / "campaigns" / "data" / "webtasks"
 
 
 def _carica_task(percorso: Path, only: list[str] | None) -> list[Task]:
-    """Task da un file TOML o da una cartella di esercizi polyglot, con filtro per nome."""
+    """Carica task generici, verdetti R1 con `seed` o esercizi polyglot.
+
+    I verdetti (campaigns/r1_compiti.toml) selezionano i siti da WEB_DATA_DIR.
+    Il filtro per nome rifiuta i nomi sconosciuti.
+    """
     if Path(percorso).is_dir():
         from polyglot import load_tasks as carica_polyglot
         return carica_polyglot(percorso, only)
-    tasks = load_tasks(percorso)
+    try:
+        data = tomllib.loads(Path(percorso).read_text())
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        raise CampaignError(f"{percorso}: file dei task non leggibile: {error}") from error
+    if "seed" in data:
+        from webtasks import load_selection
+        from webcampaign import web_task_to_task
+        tasks = [web_task_to_task(t) for t in load_selection(percorso, WEB_DATA_DIR)]
+    else:
+        tasks = load_tasks(percorso)
     if only is not None:
         ignoti = [nome for nome in only if nome not in {t.id for t in tasks}]
         if ignoti:
@@ -726,7 +742,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sotto.add_parser("run", help="lancia i task (in serie, o in parallelo con --workers)")
     run.add_argument("--tasks", type=Path, default=PROJECT_ROOT / "campaigns" / "m2s4a.toml",
-                     help="file TOML dei task, oppure cartella di esercizi polyglot "
+                     help="file TOML dei task o dei verdetti R1 (campaigns/r1_compiti.toml), "
+                          "oppure cartella di esercizi polyglot "
                           "(vedi fetch-polyglot)")
     run.add_argument("--only", default=None,
                      help="solo questi task, separati da virgola (utile per le prove)")
@@ -753,7 +770,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     web = sotto.add_parser("fetch-webtasks",
                            help="scarica WebGen-Bench e ArtifactsBench ai commit fissati (R1)")
-    web.add_argument("--dest", type=Path, default=PROJECT_ROOT / "campaigns" / "data" / "webtasks")
+    web.add_argument("--dest", type=Path, default=WEB_DATA_DIR)
 
     calibration = sotto.add_parser("calibration", help="prepara coppie e pacchetto di voto (R1.8)")
     phases = calibration.add_subparsers(dest="fase", required=True)
@@ -779,6 +796,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")
+
+    serve = sotto.add_parser("serve", help="mostra un sito vivo per l'autore, fuori dalla misura")
+    serve.add_argument("campaign_id")
+    serve.add_argument("task_id")
+    serve.add_argument("--port", type=int, default=8080)
+
+    gallery = sotto.add_parser("gallery", help="crea una galleria dei siti per l'autore")
+    gallery.add_argument("--arm", action="append", required=True, help="braccio e campagna: B=<id>")
+    gallery.add_argument("--out", type=Path, default=None)
     return parser
 
 
@@ -787,6 +813,34 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
     args = build_parser().parse_args(argv)
     runs_root = PROJECT_ROOT / "runs"
     campaigns_dir = runs_root / "campaigns"
+
+    if args.comando in ("serve", "gallery"):
+        from showcase import ShowcaseError, build_gallery, manifest_rows, serve_site
+
+        try:
+            if args.comando == "serve":
+                rows = manifest_rows(campaigns_dir / f"{args.campaign_id}.jsonl")
+                if args.task_id not in rows:
+                    raise ShowcaseError(f"task non trovato: {args.task_id}")
+                workspace = rows[args.task_id].get("workspace")
+                if not isinstance(workspace, str) or not workspace:
+                    raise ShowcaseError(f"workspace mancante per il task: {args.task_id}")
+                return serve_site(Path(workspace), host_port=args.port)
+            arms: dict[str, Path] = {}
+            for entry in args.arm:
+                label, separator, campaign_id = entry.partition("=")
+                if not separator or not label or not campaign_id:
+                    raise ShowcaseError(f"--arm richiede etichetta=<campaign_id>: {entry}")
+                if label in arms:
+                    raise ShowcaseError(f"braccio ripetuto: {label}")
+                arms[label] = campaigns_dir / f"{campaign_id}.jsonl"
+            out = args.out or runs_root / "vetrina" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            print(build_gallery(arms, out))
+            return 0
+        except ShowcaseError as error:
+            print(f"errore: {error}", file=sys.stderr)
+            return 2
+
     registry = ModelRegistry.from_file(PROJECT_ROOT / "models.toml")
     dotenv = dotenv_path if dotenv_path is not None else PROJECT_ROOT / ".env"
 

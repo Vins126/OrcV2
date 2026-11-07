@@ -24,7 +24,7 @@ from run_status import RunStatus
 from budget_guard import BudgetVerdict
 from gate import GateVerdict
 from renderer import RenderError
-from swarm import SwarmResult, planner_prompt, run_swarm, worker_prompt
+from swarm import SwarmResult, escalation_prompt, planner_prompt, run_swarm, worker_prompt
 from swarm_plan import parse_plan
 
 REGISTRO = ModelRegistry.from_file("models.toml")
@@ -45,7 +45,10 @@ def _pezzo(id_, files, depends_on=(), routes=(), worker="worker_cheap"):
             "description": f"descrizione di {id_}", "routes": list(routes), "worker": worker}
 
 
-PIANO = json.dumps({"style": ":root { --accent: #c33; }", "pieces": [
+FORME = {"GET /api/cars": '200 [{"id": number, "model": string}]',
+         "POST /api/bookings": '201 {"id": number}; 400 {"error": string}'}
+
+PIANO = json.dumps({"style": ":root { --accent: #c33; }", "contract": FORME, "pieces": [
     _pezzo("skeleton", ["start.sh", "server.js"]),
     _pezzo("cars", ["routes/cars.js"], ["skeleton"], ["GET /api/cars"]),
     _pezzo("bookings", ["routes/bookings.js"], ["skeleton"], ["POST /api/bookings"], worker="worker"),
@@ -122,9 +125,10 @@ class FabbricaFinta:
         self.lock = threading.Lock()
         self.escalation = ("completed", "corretto", 0.05)
 
-    def build(self, role, *, workspace=None, team=None):
+    def build(self, role, *, workspace=None, team=None, required_skills=()):
         with self.lock:
-            self.build_args.append({"role": role, "workspace": workspace, "team": team})
+            self.build_args.append({"role": role, "workspace": workspace, "team": team,
+                                    "required_skills": required_skills})
             agente = AgenteFinto(self, len(self.costruiti), role, workspace, team)
             self.costruiti.append(agente)
         return agente
@@ -237,10 +241,11 @@ def test_w5_i_pezzi_della_stessa_ondata_girano_in_parallelo(tmp_path):
 # ── Pezzi falliti ─────────────────────────────────────────────────────────
 
 def test_w6_un_pezzo_fallito_blocca_solo_chi_ne_dipende(tmp_path):
-    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    """Cambio di contratto (S4, task 7): prima qui c'era `max_iterations`, che ora non blocca piu'."""
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "loop_detected"})
     esito, _, cancello = _esegui(tmp_path, fabbrica=fabbrica)
 
-    assert esito.pieces == {"skeleton": "completed", "cars": "max_iterations", "bookings": "completed",
+    assert esito.pieces == {"skeleton": "completed", "cars": "loop_detected", "bookings": "completed",
                             "page": "skipped"}
     assert "page" not in fabbrica.pezzi_costruiti()
     assert len(cancello.chiamate) >= 1  # il sito si consegna e si controlla comunque
@@ -429,3 +434,313 @@ def test_w23_un_compito_senza_contratto_si_pianifica_senza_rotte(tmp_path):
     esito, _, _ = _esegui(tmp_path, fabbrica=FabbricaFinta(piani=(piano,)), prompt="Build a static page.\n")
 
     assert esito.status == "completed" and esito.pieces == {"s": "completed"}
+
+
+# ── H3 (task 7): il piano valido si salva accanto al registro ─────────────
+
+def test_h3_il_piano_valido_si_salva_in_sciame(tmp_path):
+    esito, _, _ = _esegui(tmp_path)
+
+    piano = json.loads((esito.log_path.parent / "plan.json").read_text())
+    assert [p["id"] for p in piano["pieces"]] == ["skeleton", "cars", "bookings", "page"]
+    assert "style" in piano
+
+
+# ── S1 (task 7): il worker costoso solo dove serve ────────────────────────
+
+def test_s1_il_planner_parte_dal_worker_economico():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert "Default to worker_cheap" in testo
+    assert "front-end stuff" not in testo, "la frase che spingeva Kimi su tutta l'interfaccia"
+    assert "Design Arena" in testo
+
+
+# ── S2 (task 7): la correzione parte anche con pezzi non completati ───────
+
+def _correttori(fabbrica):
+    return [a for a in fabbrica.costruiti if a.role == "planner"][1:]
+
+
+def test_s2_un_pezzo_non_completato_fa_partire_la_correzione_anche_se_il_cancello_accetta(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    esito, _, cancello = _esegui(tmp_path, fabbrica=fabbrica)
+
+    correttori = _correttori(fabbrica)
+    assert len(correttori) == 1 and esito.escalated is True
+    assert "cars" in correttori[0].prompts[0] and "max_iterations" in correttori[0].prompts[0]
+    assert [e["phase"] for e in _eventi(esito, "gate")] == ["initial", "after_escalation"]
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"cars": "max_iterations"}
+    assert len(cancello.chiamate) == 2
+
+
+def test_s2_pezzi_caduti_e_saltati_sono_tutti_nella_correzione(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"bookings": RuntimeError("esploso")})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is True
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"bookings": "unexpected_error", "page": "skipped"}
+    testo = _correttori(fabbrica)[0].prompts[0]
+    assert "routes/bookings.js" in testo and "public/index.html" in testo
+
+
+def test_s2_tutti_completati_e_cancello_che_accetta_nessuna_correzione(tmp_path):
+    esito, fabbrica, _ = _esegui(tmp_path)
+
+    assert _correttori(fabbrica) == [] and esito.escalated is False
+
+
+def test_s2_la_correzione_e_una_sola_anche_con_rifiuto_e_pezzi_incompleti(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    cancello = CancelloFinto(GateVerdict(False, "non parte"), GateVerdict(False, "ancora no"))
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, cancello=cancello)
+
+    assert len(_correttori(fabbrica)) == 1
+    testo = _correttori(fabbrica)[0].prompts[0]
+    assert "non parte" in testo and "cars" in testo
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"cars": "max_iterations"}
+
+
+def test_s2_con_il_cancello_guasto_i_pezzi_incompleti_bastano_per_correggere(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, cancello=CancelloFinto(RenderError("Docker spento")))
+
+    assert esito.escalated is True and esito.gate is None
+
+
+def test_s2_la_correzione_dopo_un_rifiuto_registra_un_elenco_vuoto(tmp_path):
+    cancello = CancelloFinto(GateVerdict(False, "404"), GateVerdict(True))
+    esito, _, _ = _esegui(tmp_path, cancello=cancello)
+
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {}
+
+
+def test_s2_il_prompt_di_correzione_nomina_solo_i_problemi_che_ci_sono():
+    piano = parse_plan(PIANO, routes=("GET /api/cars", "POST /api/bookings"), workers=("worker", "worker_cheap"))
+
+    solo_pezzi = escalation_prompt(PROMPT, piano, None, {"cars": "max_iterations"})
+    assert "GATE REJECTION" not in solo_pezzi
+    assert "INCOMPLETE PIECES" in solo_pezzi and "cars: max_iterations" in solo_pezzi
+    assert "routes/cars.js" in solo_pezzi
+    assert "temporary" in solo_pezzi, "chiede di togliere codice e file provvisori lasciati dai worker"
+
+    solo_cancello = escalation_prompt(PROMPT, piano, "404", {})
+    assert "GATE REJECTION" in solo_cancello and "404" in solo_cancello
+    assert "INCOMPLETE PIECES" not in solo_cancello
+
+
+# ── S3 (task 7): regola nel prompt del worker ─────────────────────────────
+
+def test_s3_il_worker_non_deve_nascondere_gli_altri_ne_lasciare_file_provvisori():
+    piano = parse_plan(PIANO, routes=("GET /api/cars", "POST /api/bookings"), workers=("worker", "worker_cheap"))
+    testo = worker_prompt(PROMPT, piano, piano.pieces[3])
+
+    assert "Never hide, disable or restyle other pieces" in testo
+    assert "Do not leave backup, preview or temporary files" in testo
+
+
+# ── S4 (task 7): il limite di iterazioni non blocca chi dipende ───────────
+
+def test_s4_un_pezzo_fermato_dal_limite_di_iterazioni_non_blocca_chi_ne_dipende(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.pieces["cars"] == "max_iterations"
+    assert esito.pieces["page"] == "completed"
+    assert "page" in fabbrica.pezzi_costruiti()
+
+
+@pytest.mark.parametrize("stato", ["unexpected_error", "loop_detected", "output_truncated", "provider_error"])
+def test_s4_gli_altri_esiti_bloccano_ancora(tmp_path, stato):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": RuntimeError("x") if stato == "unexpected_error" else stato})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.pieces["page"] == "skipped"
+
+
+# ── S5 (task 7): forma delle risposte nei prompt e nel piano salvato ──────
+
+def test_s5_il_planner_chiede_la_forma_delle_risposte():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert '"contract"' in testo
+    assert "response shape" in testo
+
+
+def test_s5_ogni_worker_vede_la_forma_di_tutte_le_rotte():
+    piano = parse_plan(PIANO, routes=("GET /api/cars", "POST /api/bookings"), workers=("worker", "worker_cheap"))
+    testo = worker_prompt(PROMPT, piano, piano.pieces[3])  # page, che non possiede rotte
+
+    assert "ROUTE CONTRACT" in testo
+    for rotta, forma in FORME.items():
+        assert f"{rotta}: {forma}" in testo
+
+
+def test_s5_il_piano_salvato_contiene_il_contratto(tmp_path):
+    esito, _, _ = _esegui(tmp_path)
+
+    piano = json.loads((esito.log_path.parent / "plan.json").read_text())
+    assert piano["contract"] == FORME
+
+
+# ── S3 (task 7, P31-D1 (b)): controllo dei file a fine ondata ─────────────
+#
+# A fine ondata si confronta il workspace con quello d'inizio ondata. Si segnalano
+# i file di pezzi che non stavano girando e i file provvisori senza proprietario;
+# nessun pezzo si blocca, la segnalazione fa partire la correzione di S2.
+
+def _scrive(tmp_path, *scritture, cancella=()):
+    """Comportamento di un worker finto che tocca il workspace e poi riesce."""
+    def azione():
+        for percorso, testo in scritture:
+            file = tmp_path / "ws" / percorso
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(testo)
+        for percorso in cancella:
+            (tmp_path / "ws" / percorso).unlink()
+        return "completed"
+    return azione
+
+
+def test_f1_un_file_di_un_pezzo_di_un_ondata_precedente_si_segnala_e_si_corregge(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "skeleton": _scrive(tmp_path, ("server.js", "base")),
+        "cars": _scrive(tmp_path, ("server.js", "toccato da cars"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert set(esito.pieces.values()) == {"completed"}, "nessun pezzo si blocca"
+    assert esito.escalated is True
+    controlli = _eventi(esito, "file_check")
+    assert [c["wave"] for c in controlli] == [0, 1, 2]
+    assert controlli[1]["foreign"] == {"server.js": "skeleton"} and controlli[1]["temporary"] == []
+    assert _eventi(esito, "escalation")[0]["file_issues"] == {"server.js": "changed, owned by skeleton"}
+    testo = _correttori(fabbrica)[0].prompts[0]
+    assert "FILE ISSUES" in testo and "server.js: changed, owned by skeleton" in testo
+
+
+def test_f11_i_segnaposto_dello_scheletro_per_pezzi_futuri_non_si_segnalano(tmp_path):
+    # Prova di C su 000058 (7 nov): lo scheletro crea file vuoti dei pezzi successivi perche' la build
+    # parta; il proprietario non ha ancora lavorato e li riscrive, quindi nessun danno da correggere.
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "skeleton": _scrive(tmp_path, ("server.js", "base"), ("routes/cars.js", "// segnaposto"),
+                            ("public/index.html", "<!-- segnaposto -->"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert [c["foreign"] for c in _eventi(esito, "file_check")] == [{}, {}, {}]
+    assert esito.escalated is False
+
+
+def test_f12_toccare_il_file_di_un_pezzo_di_un_ondata_successiva_non_si_segnala(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": _scrive(tmp_path, ("public/index.html", "anticipato"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert _eventi(esito, "file_check")[1]["foreign"] == {}
+    assert esito.escalated is False
+
+
+def test_f13_un_segnaposto_riscritto_da_un_pezzo_estraneo_dopo_il_proprietario_si_segnala(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "skeleton": _scrive(tmp_path, ("routes/cars.js", "// segnaposto")),
+        "cars": _scrive(tmp_path, ("routes/cars.js", "vero")),
+        "page": _scrive(tmp_path, ("routes/cars.js", "rovinato"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert [c["foreign"] for c in _eventi(esito, "file_check")] == [{}, {}, {"routes/cars.js": "cars"}]
+    assert esito.escalated is True
+
+
+def test_f2_cancellare_il_file_di_un_altro_pezzo_si_segnala(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "skeleton": _scrive(tmp_path, ("server.js", "base")),
+        "page": _scrive(tmp_path, cancella=["server.js"])})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert _eventi(esito, "file_check")[2]["foreign"] == {"server.js": "skeleton"}
+    assert esito.escalated is True
+
+
+@pytest.mark.parametrize("provvisorio", ["routes/cars.js.bak", "public/goals.css.preview", "tmp-check.js",
+                                         "notes.tmp", "server.js.orig", "app.old", "index.html~"])
+def test_f3_un_file_provvisorio_senza_proprietario_si_segnala(tmp_path, provvisorio):
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": _scrive(tmp_path, (provvisorio, "x"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert _eventi(esito, "file_check")[1]["temporary"] == [provvisorio]
+    assert _eventi(esito, "escalation")[0]["file_issues"] == {provvisorio: "temporary file"}
+
+
+def test_f4_un_file_nuovo_non_provvisorio_e_ammesso(tmp_path):
+    """Con React un worker crea componenti di supporto che il piano non elenca."""
+    fabbrica = FabbricaFinta(esiti_pezzi={"page": _scrive(tmp_path, ("src/components/CarCard.jsx", "x"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is False
+    assert all(c["foreign"] == {} and c["temporary"] == [] for c in _eventi(esito, "file_check"))
+
+
+@pytest.mark.parametrize("prodotto", ["node_modules/pkg/index.js.bak", "dist/assets/tmp-x.js",
+                                      ".taste-skill/shot.tmp", ".git/HEAD.old", "node_modules/.vite/x.tmp"])
+def test_f5_le_cartelle_prodotte_dagli_strumenti_si_ignorano(tmp_path, prodotto):
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "skeleton": _scrive(tmp_path, ("server.js", "base")),
+        "cars": _scrive(tmp_path, (prodotto, "x"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is False
+
+
+def test_f6_un_pezzo_che_riscrive_i_suoi_file_non_si_segnala(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={
+        "cars": _scrive(tmp_path, ("routes/cars.js", "v1")),
+        "page": _scrive(tmp_path, ("public/index.html", "v1"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is False
+
+
+def test_f7_limite_dichiarato_fra_pezzi_della_stessa_ondata_non_si_sa_chi_ha_scritto(tmp_path):
+    """cars e bookings girano insieme: un file di bookings toccato in quell'ondata non e' attribuibile."""
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": _scrive(tmp_path, ("routes/bookings.js", "da cars"))})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert _eventi(esito, "file_check")[1]["foreign"] == {}
+    assert esito.escalated is False
+
+
+def test_f8_i_file_presenti_prima_dello_sciame_non_si_segnalano(tmp_path):
+    (tmp_path / "ws").mkdir()
+    (tmp_path / "ws" / "vecchio.bak").write_text("c'era gia'")
+    esito, _, _ = _esegui(tmp_path)
+
+    assert esito.escalated is False
+
+
+def test_f9_al_tetto_le_segnalazioni_non_fanno_partire_la_correzione(tmp_path):
+    fabbrica = FabbricaFinta(esiti_pezzi={"skeleton": _scrive(tmp_path, ("x.bak", "x"))}, costo=0.01)
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, budget_usd=0.015)
+
+    assert esito.escalated is False
+    assert _eventi(esito, "file_check")[0]["temporary"] == ["x.bak"]
+
+
+def test_f10_il_prompt_di_correzione_ha_la_sezione_file_solo_se_serve():
+    piano = parse_plan(PIANO, routes=("GET /api/cars", "POST /api/bookings"), workers=("worker", "worker_cheap"))
+
+    assert "FILE ISSUES" not in escalation_prompt(PROMPT, piano, "404", {})
+    testo = escalation_prompt(PROMPT, piano, None, {}, {"x.bak": "temporary file"})
+    assert "FILE ISSUES" in testo and "x.bak: temporary file" in testo
+    assert "GATE REJECTION" not in testo and "INCOMPLETE PIECES" not in testo
+
+
+# -- Skill obbligatorie (P45-D1, 7 nov 2026) --------------------------------
+
+def test_p45_planner_skill_di_design_worker_e_correzione_skill_di_lavoro(tmp_path):
+    from tools.load_skill import REQUIRED_SKILLS_PLANNER, REQUIRED_SKILLS_WORKER
+
+    cancello = CancelloFinto(GateVerdict(False, "non partito"), GateVerdict(True))
+    _, fabbrica, _ = _esegui(tmp_path, cancello=cancello)
+
+    elenchi = [(a["role"], a["required_skills"]) for a in fabbrica.build_args]
+    assert elenchi[0] == ("planner", REQUIRED_SKILLS_PLANNER)
+    assert elenchi[-1] == ("planner", REQUIRED_SKILLS_WORKER), "la correzione scrive codice"
+    assert all(skill == REQUIRED_SKILLS_WORKER for _, skill in elenchi[1:])

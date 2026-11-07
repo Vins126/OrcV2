@@ -33,3 +33,6 @@ docs/STUDIO.md
 
 # Esercizi scaricati da `campaign.py fetch-polyglot` (contenuto di terzi, MIT, fissato a un commit)
 campaigns/data/
+
+# Skill di terzi scaricate per costruire l'immagine; si ricostruiscono con fetch_skills.py.
+docker/skills/

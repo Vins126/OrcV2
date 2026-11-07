@@ -8,6 +8,7 @@ facile da testare e riutilizzare con provider o ruoli diversi.
 import base64
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,12 +19,14 @@ from llm_contracts import AssistantTurn, ChatGateway, TurnOutcome
 from loop_detector import RilevatoreLoop
 from run_status import RunStatus
 from tools.base import ToolResult
+from tools.load_skill import SkillCatalogError
 
 # Un logger per modulo. Il nome segue la gerarchia dei moduli (__name__).
 log = logging.getLogger(__name__)
 
 #: Istruzioni di sistema anteposte a ogni conversazione. Dichiarano al modello
-#: quali strumenti ha (quelli di `tools.build_default_tools`), il metodo per un
+#: quali strumenti ha (quelli di `tools.build_default_tools`), il caricamento
+#: delle skill, i programmi preinstallati, il metodo per un
 #: sito, che gli errori sono recuperabili in autonomia e — punto essenziale — qual
 #: e' la condizione di terminazione: rispondere senza chiamare tool. Senza
 #: quest'ultima il ciclo non avrebbe una fine naturale. In inglese come la cornice
@@ -37,6 +40,11 @@ SYSTEM_PROMPT = (
     "- `bash`: run a shell command in the workspace. Very long output is shortened in the middle.\n"
     "- `view_site`: start the site with start.sh and get back console errors, layout problems "
     "and screenshots.\n"
+    "- `load_skill`: load the full instructions of a skill (expert guidance with its own scripts); "
+    "the available skills are listed in the tool description.\n"
+    "Preinstalled in the sandbox: playwright (Python, with Chromium at /usr/bin/chromium), "
+    "lighthouse, biome, htmlhint, vnu (Nu HTML checker), hurl, vitest. Every bash command runs "
+    "in a fresh container: start the server and test it in the same command.\n"
     "Write the files, then use `view_site` to check the site and fix what you see. Follow the "
     "delivery rules given in the task. If a tool returns an error, read it and try to fix the "
     "cause yourself. When the site is finished, reply in words WITHOUT calling any tool: that "
@@ -140,15 +148,20 @@ class RunResult:
 class Agent:
     """Modello linguistico in un ciclo ReAct, dotato di strumenti.
 
-    Le dipendenze (gateway del modello, tool) sono iniettate dall'esterno
-    anziché costruite internamente. Ne derivano due proprietà: la classe è
-    testabile con un gateway finto, senza chiamate di rete né costi; ed è
-    riutilizzabile con modelli e set di strumenti diversi, che è il
+    Le skill obbligatorie bloccano strumenti e conclusione finche' caricate;
+    il loro caricamento resta valido per tutta la vita dell'agente.
+
+    Le dipendenze (gateway del modello, tool, registro eventi opzionale) sono
+    iniettate dall'esterno invece di essere costruite internamente. La classe e'
+    testabile con un gateway finto, senza chiamate di rete ne' costi, ed e'
+    riutilizzabile con modelli e set di strumenti diversi, che e' il
     presupposto del routing per ruolo (M2s) e dello swarm (M4).
 
     Attributes:
         llm: confine che invoca il modello, senza esporre SDK o prezzi.
         tools: strumenti messi a disposizione del modello.
+        event_sink: registro opzionale con `append_event(event_type, details)`;
+            riceve un evento `tool_call` per ogni esito, con argomenti riassunti.
         tool_schemas: descrizioni dei tool nel formato atteso dall'API.
         tool_registry: mappa nome→tool, per ritrovare lo strumento richiesto
             dal modello in tempo costante.
@@ -164,7 +177,8 @@ class Agent:
         decidere quando un agente ha finito il suo ciclo (ROADMAP, M4.2b).
     """
 
-    def __init__(self, llm: ChatGateway, tools):
+    def __init__(self, llm: ChatGateway, tools: Any, event_sink: Any = None,
+                 required_skills: Sequence[str] = ()) -> None:
         """Registra le dipendenze e precalcola le strutture di lookup.
 
         Schemi e registro sono costruiti una sola volta qui, non a ogni
@@ -173,12 +187,30 @@ class Agent:
         Args:
             llm: gateway del modello (o un suo sostituto nei test).
             tools: lista di istanze di `tools.base.Tool`.
+            event_sink: registro eventi iniettato; se assente non si registrano
+                le chiamate ai tool. I testi lunghi sono ridotti alla lunghezza.
+            required_skills: nomi da caricare prima degli altri tool o della conclusione.
         """
         self.llm = llm
         self.tools = tools
+        self.event_sink = event_sink
         self.tool_schemas = [t.schema for t in tools]
         self.tool_registry = {t.name: t for t in tools}
+        self.required_skills = tuple(required_skills)
+        self.loaded_skills: set[str] = set()
+        if self.required_skills:
+            skill_tool = self.tool_registry.get("load_skill")
+            if skill_tool is None:
+                raise SkillCatalogError("tool load_skill mancante per le skill obbligatorie")
+            catalog = getattr(skill_tool, "catalog", None)
+            for skill in self.required_skills:
+                if not isinstance(catalog, dict) or skill not in catalog:
+                    raise SkillCatalogError(f"skill obbligatoria fuori catalogo: {skill}")
         self.messages: list[Any] = []
+
+    def _missing_skills(self) -> list[str]:
+        """Restituisce le skill ancora da caricare nell'ordine richiesto."""
+        return [skill for skill in self.required_skills if skill not in self.loaded_skills]
 
     def run(self, task, max_iterations=config.MAX_ITERAZIONI):
         """Esegue un incarico fino al completamento o all'esaurimento delle iterazioni.
@@ -330,6 +362,18 @@ class Agent:
             # La risposta finale entra nella storia: se l'agente riceve un altro
             # incarico, deve ricordare cosa ha concluso per questo.
             messages.append(msg)
+            missing = self._missing_skills()
+            if missing:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Required skills still missing: {', '.join(missing)}. "
+                        "The work cannot end until you load each of them with `load_skill`."
+                    ),
+                })
+                if self.event_sink is not None:
+                    self.event_sink.append_event("skill_gate", {"missing": missing, "at": "final_reply"})
+                return None, None
             log.info("Task completato in %d iterazioni", iterazione)
             return RunStatus.COMPLETED, msg.content
 
@@ -359,8 +403,15 @@ class Agent:
         Returns:
             Lista con il messaggio di sistema seguito dal task dell'utente.
         """
+        system_prompt = SYSTEM_PROMPT
+        if self.required_skills:
+            system_prompt += (
+                "\nRequired skills: before using any other tool, load each of these with "
+                f"`load_skill`: {', '.join(self.required_skills)}. "
+                "Other tools and your final reply are refused until all of them are loaded."
+            )
         return [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
 
@@ -469,18 +520,39 @@ class Agent:
             args = json.loads(tool_call.arguments)
         except json.JSONDecodeError as e:
             log.warning("argomenti JSON non validi per '%s': %s", name, e)
-            return {"error": f"argomenti JSON non validi: {e}"}
+            return self._record_tool_call(name, None, {"error": f"argomenti JSON non validi: {e}"})
 
         tool = self.tool_registry.get(name)
         if tool is None:
             log.warning("tool non trovato: %s", name)
-            return {"error": f"tool non trovato: {name}"}
+            return self._record_tool_call(name, args, {"error": f"tool non trovato: {name}"})
+
+        missing = self._missing_skills()
+        if name != "load_skill" and missing:
+            return self._record_tool_call(name, args, {
+                "error": f"Required skills missing: {', '.join(missing)}. Call `load_skill` first.",
+            })
 
         try:
-            return tool.execute(args)
+            result = tool.execute(args)
         except Exception as e:
             log.warning("errore eseguendo '%s': %s", name, e)
-            return {"error": f"{type(e).__name__}: {e}"}
+            result = {"error": f"{type(e).__name__}: {e}"}
+        if (name == "load_skill" and isinstance(result, dict) and "error" not in result
+                and isinstance(args, dict) and isinstance(args.get("name"), str)):
+            self.loaded_skills.add(args["name"])
+        return self._record_tool_call(name, args, result)
+
+    def _record_tool_call(self, name: str, args: Any, result: Any) -> Any:
+        """Registra un esito senza riversare testi lunghi e lo restituisce intatto."""
+        if self.event_sink is not None:
+            summary = {
+                key: {"chars": len(value)} if isinstance(value, str) and len(value) > 200 else value
+                for key, value in args.items()
+            } if isinstance(args, dict) else None
+            error = str(result["error"])[:300] if isinstance(result, dict) and "error" in result else None
+            self.event_sink.append_event("tool_call", {"tool": name, "args": summary, "error": error})
+        return result
 
 
 if __name__ == "__main__":

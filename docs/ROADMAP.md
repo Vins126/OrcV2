@@ -100,6 +100,22 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
 7. **Campagna MVP** (sostituisce R2.4 e R6) — preventivo sul listino di `models.toml`, una run di prova su un
    compito, poi B, D e C una volta ciascuno sui 5 compiti; V composta da B e D; giudice sulle coppie C-B e D-B in
    entrambi gli ordini; analisi di `PROTOCOLLO.md` §10 presentata come stima.
+   **Ambiente comune del 4 nov 2026, prima della campagna:** catalogo di sei skill fissate in
+   `docker/skills.toml`, strumento `load_skill`, programmi preinstallati e immagine `orc-sandbox:r3h`
+   (limiti in `PROTOCOLLO.md` §0). Interfaccia in React con Vite per tutti i bracci (cornice di R1.2).
+   Correzioni dell'harness emerse dalla prova: percorsi `/workspace/...` accettati da `write_file` e
+   `read_file`, cartelle intermedie create da `write_file`, chiamate agli strumenti e piano dello sciame
+   salvati nel registro.
+   **Sciame (solo C), 5 nov 2026:** worker economico come scelta predefinita del planner; correzione di
+   Opus anche quando un pezzo non e' completato; un pezzo fermato dal limite di iterazioni non blocca chi
+   ne dipende; il piano riporta la forma delle risposte di ogni rotta, mostrata a tutti i worker; regola
+   nel prompt dei worker contro codice e file provvisori; a fine ondata un controllo segnala i file di
+   pezzi di ondate gia' chiuse modificati da altri (i segnaposto per pezzi futuri non contano, 7 nov) e i file provvisori senza proprietario, e la segnalazione fa
+   partire la correzione senza bloccare pezzi. Limite: fra pezzi della stessa ondata non si sa chi ha
+   scritto un file. Messa a punto su un compito fuori dai cinque della campagna.
+   **Skill obbligatorie, 7 nov 2026 (tutti i bracci):** ogni agente deve caricare il suo elenco di skill
+   prima di usare altri strumenti o di chiudere; design a chi decide lo stile, lavoro e verifica a chi
+   scrive il codice (dettagli in `PROTOCOLLO.md` §0).
 8. **Facoltativo, se avanza tempo:** braccio H (R2.7).
 
 **Tolto e passato a lavoro futuro (↪️).** R2.1b (genera immagine); pilota R2.4, sostituito dalla run di prova;
@@ -121,8 +137,8 @@ R6.4); H se non c'e' tempo.
 **Definition of Done — MVP**
 - [x] R1.10 chiuso, esito in `PROTOCOLLO.md` §6 (29 ott: non conclusivo per dati insufficienti).
 - [x] R1.12 prova del giudice su Vibe Design Arena, regola registrata prima (2 nov: non accettato, «piace» descrittiva).
-- [ ] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (test dedicato).
-- [ ] Regole di parita' (scritte il 2 nov; valori dei tetti dopo la run di prova) e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
+- [x] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (`tests/test_gate.py`, `test_g15`).
+- [x] Regole di parita' (scritte il 2 nov; tetti fissati il 7 nov dopo le run di prova) e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
 - [x] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti (3 nov).
 - [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
 - [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.

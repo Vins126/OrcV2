@@ -16,13 +16,19 @@ Docker. Questo evita effetti collaterali nei test e permette a run concorrenti d
 ricevere workspace distinti.
 """
 
+from pathlib import Path
+
 import config
 from executors.docker import DockerExecutor, EventSink
 from tools.bash import BashTool
+from tools.load_skill import LoadSkillTool, load_catalog
 from tools.read_file import ReadFileTool
 from tools.view_site import ViewSiteTool
 from tools.write_file import WriteFileTool
 from workspace import Workspace
+
+SKILLS_MANIFEST = Path(__file__).resolve().parent.parent / "docker" / "skills.toml"
+
 
 def build_default_tools(workspace_path: str, *, network: str = "none",
                         event_sink: EventSink | None = None) -> list:
@@ -35,15 +41,18 @@ def build_default_tools(workspace_path: str, *, network: str = "none",
         event_sink: dove l'esecutore annota i propri eventi (attese per un posto
             nella sandbox). Dalla fabbrica arriva il `CurrentRun` dell'agente.
     """
+    # Un manifesto errato si scopre prima di creare la cartella di lavoro.
+    catalog = load_catalog(SKILLS_MANIFEST)
     workspace = Workspace(workspace_path)
     executor = DockerExecutor(
         workspace.path,
         image=config.DOCKER_IMAGE,
         timeout=config.EXEC_TIMEOUT,
         memory=config.DOCKER_MEMORY,
+        shm_size=config.DOCKER_SHM_SIZE,
         pids_limit=config.DOCKER_PIDS_LIMIT,
         network=network,
         event_sink=event_sink,
     )
     return [BashTool(executor), ReadFileTool(workspace), WriteFileTool(workspace),
-            ViewSiteTool(workspace.path, event_sink)]
+            ViewSiteTool(workspace.path, event_sink), LoadSkillTool(executor, catalog)]

@@ -160,10 +160,9 @@ ALERT_THRESHOLD = 4
 # -- SANDBOX DOCKER --
 # Limiti del container in cui gira il tool `bash`, per contenere i danni di un
 # comando sbagliato o malevolo.
-# Immagine costruita da `docker/sandbox.Dockerfile` (Python, pytest, Node a
-# versioni fissate). Le run fatte prima del 9 ottobre 2026 usavano
-# `debian:bookworm-slim`, senza Python: non sono confrontabili con quelle nuove.
-DOCKER_IMAGE = "orc-sandbox:m2s4"
+# Immagine costruita da `docker/sandbox.Dockerfile`: dal 4 nov 2026 include
+# skill e programmi dell'harness; le run precedenti non sono confrontabili.
+DOCKER_IMAGE = "orc-sandbox:r3h"
 # Docker Desktop spegne il motore a riposo e lo riavvia al primo comando: finche' non risponde,
 # l'immagine non si puo' cercare. All'avvio si aspetta fino a (tentativi - 1) x attesa = 55 secondi
 # di pause, con un tetto di 60 s sul tempo reale, prima di dichiararla mancante. (Il «No such
@@ -173,8 +172,12 @@ DOCKER_ATTESA_AVVIO_S = 5.0
 # Tetto sul tempo reale (tentativi compresi): con Docker bloccato ogni `inspect` puo' durare
 # fino al suo timeout di 30 s, e contare solo le pause non basterebbe.
 DOCKER_ATTESA_AVVIO_MAX_S = 60.0
-DOCKER_MEMORY = "512m"
-DOCKER_PIDS_LIMIT = "256"
+# Dal 4 nov 2026 Chromium (Playwright, Lighthouse), npm install e build di Vite
+# non stanno in 512m, 256 processi e 60 s; /dev/shm di 64m fa cadere Chromium.
+# Limiti uguali per tutti i bracci. Docker Desktop portato a 16 GB per 6 container.
+DOCKER_MEMORY = "2g"
+DOCKER_PIDS_LIMIT = "1024"
+DOCKER_SHM_SIZE = "1g"
 # Container Docker contemporanei (limitatore unico, executors/docker.py). Il limite vale
 # fra tutti i processi che usano la stessa cartella dei posti: due campagne lanciate da due
 # terminali lo rispettano insieme. Fuori dal progetto e da `runs/` (che e' il dataset).
@@ -183,7 +186,7 @@ DOCKER_SLOTS_DIR = "~/.cache/orcv2/docker-slots"
 # Attesa massima per un posto della sandbox (R1.11, P19-D3): oltre, e' un guasto della
 # macchina (`SandboxSlotTimeout`), non del modello.
 DOCKER_ATTESA_POSTO_MAX_S = 300
-EXEC_TIMEOUT = 60
+EXEC_TIMEOUT = 300
 
 # -- LOGGING --
 # Unica costante con default: il livello di log è comodità di sviluppo, non

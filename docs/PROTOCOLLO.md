@@ -34,6 +34,22 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
     riporta il modello di ogni pezzo: la quota di spesa di Kimi si dichiara nell'analisi, perche' rende meno
     netto il confronto C contro V (il vantaggio di C puo' venire dalla scomposizione o dal worker piu' forte).
   - *Strumenti.* Gli stessi per ogni agente di ogni braccio (`tools/__init__.py`, `build_default_tools`).
+    Dal 4 nov 2026, prima della campagna, ogni agente ha anche `load_skill` (sei skill fissate a un commit
+    in `docker/skills.toml`) e i programmi preinstallati Playwright (Python, Chromium in `/usr/bin/chromium`),
+    Lighthouse, Biome, HTMLHint, vnu (Nu HTML checker), Hurl e Vitest. I limiti della sandbox sono 2 GB di
+    memoria, 1024 processi e 300 s per comando, uguali per tutti i bracci.
+    *Skill obbligatorie (7 nov 2026, prima della campagna).* Le skill non sono piu' solo offerte: ogni agente
+    ha un elenco che il prompt di sistema nomina e che l'harness impone, rifiutando ogni altro strumento e la
+    risposta finale finche' l'elenco non e' caricato (`tools/load_skill.py`, `agent.py`). Le skill di design
+    (frontend-design, design-taste-frontend) vanno a chi decide lo stile, quelle di lavoro (frontend-design,
+    webapp-testing, verification-before-completion) a chi scrive il codice: B e D ricevono l'unione, in C il
+    planner le prime e worker e correzione le seconde. Le altre due restano facoltative. Si garantisce che le
+    istruzioni siano lette, non che gli script delle skill siano eseguiti.
+  - *Tecnologia (4 nov 2026, prima della campagna).* L'interfaccia si costruisce in React con Vite per tutti i
+    bracci: la cornice di R1.2 lo chiede, la tecnologia del server resta libera. Prima la tecnologia era libera e
+    i siti della prova sono usciti in HTML e JavaScript semplici; la regola comune toglie una fonte di varianza
+    fra bracci e permette componenti condivisi (shadcn/ui). La build si fa durante la generazione, `start.sh`
+    avvia soltanto.
   - *Rete.* Durante la generazione `bridge` con il firewall del progetto per tutti i bracci, come in §5: la
     cornice di R1.2 chiede di installare le dipendenze nella run. La valutazione resta senza rete. I default del
     codice sono `none`: il programma della campagna passa `bridge` in modo esplicito, con un test che lo controlla.
@@ -49,13 +65,17 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
     lo stesso cancello di C. Il cancello si vede attraverso lo strumento «guarda il sito» (`view_site`), che
     restituisce le stesse osservazioni su cui decide: avvio, motivo del mancato avvio, stato HTTP di `/` (aggiunto
     il 2 nov, R3) ed errori JavaScript. Non esiste uno strumento a parte che dia il verdetto.
-  - *Tetti.* Uguali per tutti: stesso tetto in dollari per compito (per C vale per la squadra intera), stesso
-    tetto di iterazioni per ogni agente, stesso tempo massimo per compito. Un tetto serve a fermare i guasti, non
-    deve scattare nel lavoro normale: un tetto stretto in dollari interromperebbe soprattutto B. I valori si
-    ricavano dalla run di prova con questa regola, fissata prima di vederla: dollari = 2 × la spesa piu' alta di
-    un braccio sul compito di prova; iterazioni = 2 × il massimo usato da un agente, e almeno 30; tempo = 2 × la
-    durata piu' lunga. Si scrivono qui dopo la run di prova e prima del primo compito della campagna; la run di
-    prova non entra nei dati e ha il suo tetto di spesa con preventivo (§11). Valori: 🔲 dopo la run di prova.
+  - *Tetti.* Uguali per tutti. Un tetto serve a fermare i guasti, non deve scattare nel lavoro normale.
+    *Iterazioni: 80 per ogni agente (5 nov 2026)*: e' l'unico tetto che fa parte della misura. La run di prova di D
+    con l'ambiente comune definitivo si e' fermata al limite predefinito di 30 con il sito gia' costruito e in
+    verifica, quindi la regola iniziale (2 × il massimo usato) non era applicabile e il valore si e' fissato prima
+    della campagna. Il tempo resta limitato dalle iterazioni e dai 300 s per comando.
+    *Dollari: 5 $ per run, uguale per tutti i bracci (per C vale per la squadra intera), 7 nov 2026.* E' una rete di
+    sicurezza sulla spesa, non una regola di misura: le run di prova sono costate 0,05 $ (D) e 0,36-1,42 $ (C).
+    Se una run la tocca, lo si dichiara nei risultati. Il tetto della campagna intera si fissa con il preventivo
+    (§11). La regola iniziale (dollari e tempo pari al doppio dei massimi della run di prova) e' stata abbandonata
+    prima della campagna: un secondo e un terzo tetto avrebbero aggiunto modi di tagliare una run senza proteggere
+    di piu'.
 - **§7 τ_piace = 1** (2 nov 2026, fissato prima di qualunque misura, senza pilota). Un gradino intero della scala
   −2..+2; motivazione e ruolo descrittivo in §7.
 - **§10 Analisi.** Stessi calcoli (bootstrap sui compiti, test t appaiato, rapporto di costo C/B) sui 5 compiti.

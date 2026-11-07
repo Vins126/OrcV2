@@ -156,11 +156,38 @@ def test_se_la_sostituzione_fallisce_il_file_vecchio_resta_e_il_temporaneo_spari
     assert sorted(os.listdir(tmp_path / "ws")) == ["f.txt"]
 
 
-def test_cartella_intermedia_assente_resta_un_errore_del_sistema(tmp_path):
+def test_h2_le_cartelle_intermedie_assenti_si_creano(tmp_path):
+    # Cambio di contratto (H2, task 7): prima era un OSError, e nella prova del
+    # 3 nov 2026 costava un'iterazione all'agente (`public/` non ancora creata).
     ws = Workspace(tmp_path / "ws")
 
+    WriteFileTool(ws).execute({"path": "manca/anche/f.txt", "content": "x"})
+
+    assert (tmp_path / "ws" / "manca" / "anche" / "f.txt").read_text() == "x"
+
+
+def test_h2_il_percorso_del_container_crea_le_cartelle_dentro_il_workspace(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+
+    WriteFileTool(ws).execute({"path": "/workspace/public/app.js", "content": "x"})
+
+    assert (tmp_path / "ws" / "public" / "app.js").read_text() == "x"
+
+
+def test_h2_una_cartella_intermedia_che_e_un_file_resta_un_errore(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    (tmp_path / "ws" / "occupato").write_text("sono un file")
+
     with pytest.raises(OSError):
-        WriteFileTool(ws).execute({"path": "manca/f.txt", "content": "x"})
+        WriteFileTool(ws).execute({"path": "occupato/f.txt", "content": "x"})
+
+
+def test_h2_un_percorso_respinto_non_crea_cartelle(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+
+    with pytest.raises(ValueError):
+        WriteFileTool(ws).execute({"path": "../fuori/f.txt", "content": "x"})
+    assert not (tmp_path / "fuori").exists()
 
 
 # -- rilievi della revisione del 17 ott -------------------------------------

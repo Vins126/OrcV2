@@ -4,7 +4,7 @@ import json
 import posixpath
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class PlanError(Exception):
@@ -56,6 +56,7 @@ class Plan:
 
     style: str
     pieces: tuple[Piece, ...]
+    contract: dict[str, str] = field(default_factory=dict)
 
 
 def parse_plan(text: str, *, routes: Sequence[str], workers: Sequence[str]) -> Plan:
@@ -113,7 +114,22 @@ def parse_plan(text: str, *, routes: Sequence[str], workers: Sequence[str]) -> P
         normalized = normalize_route(route)
         if sum(piece.routes.count(normalized) for piece in pieces) != 1:
             raise PlanError(f"rotta senza responsabile unico: {normalized}")
-    return plan
+    if "contract" not in data and routes:
+        raise PlanError("contract mancante per le rotte richieste")
+    raw_contract = data.get("contract", {})
+    if not isinstance(raw_contract, dict):
+        raise PlanError("contract deve essere un oggetto JSON")
+    contract: dict[str, str] = {}
+    for route, shape in raw_contract.items():
+        normalized = normalize_route(route)
+        if not isinstance(shape, str) or not shape.strip():
+            raise PlanError(f"{normalized}: forma della risposta non valida")
+        contract[normalized] = shape.strip()
+    for route in routes:
+        normalized = normalize_route(route)
+        if normalized not in contract:
+            raise PlanError(f"{normalized}: forma della risposta mancante")
+    return Plan(plan.style, plan.pieces, contract)
 
 
 def _levels(plan: Plan) -> dict[str, int]:

@@ -350,7 +350,7 @@ def ensure_image(image: str, *, inspect=None, attempts: int = 1, delay: float = 
     raise SandboxImageMissing(
         f"immagine '{image}' non trovata (o Docker non raggiungibile). "
         f"Costruiscila dalla radice del progetto con: "
-        f"docker build -f docker/sandbox.Dockerfile -t {image} docker/")
+        f"python fetch_skills.py && docker build -f docker/sandbox.Dockerfile -t {image} docker/")
 
 
 class DockerExecutor(CommandExecutor):
@@ -362,12 +362,14 @@ class DockerExecutor(CommandExecutor):
         timeout: secondi oltre i quali l'esecuzione viene interrotta.
         memory: tetto di memoria del container (formato Docker, es. "512m").
         pids_limit: numero massimo di processi, come difesa contro le fork bomb.
+        shm_size: memoria condivisa per Chromium; None lascia il valore di Docker.
     """
 
     def __init__(self, workspace="workspace", image="debian:bookworm-slim", timeout=60,
                  memory="512m", pids_limit="256", network="none",
                  limiter: ContainerLimiter | None = None,
-                 event_sink: EventSink | None = None):
+                 event_sink: EventSink | None = None,
+                 shm_size: str | None = None) -> None:
         """Prepara la configurazione del container e la cartella condivisa.
 
         Args:
@@ -376,6 +378,7 @@ class DockerExecutor(CommandExecutor):
             timeout: secondi concessi a ogni comando.
             memory: limite di memoria del container.
             pids_limit: limite di processi del container.
+            shm_size: dimensione di /dev/shm, se diversa dal valore di Docker.
             network: `none` (nessuna rete, la base delle misure) oppure `bridge`
                 (rete normale di Docker, la condizione "con internet"). La rete
                 e' una proprieta' dell'agente per tutta la sua vita.
@@ -400,6 +403,7 @@ class DockerExecutor(CommandExecutor):
         self.image = image
         self.timeout = timeout
         self.memory = memory
+        self.shm_size = shm_size
         self.pids_limit = pids_limit
         self.limiter = limiter if limiter is not None else shared_limiter()
         self.event_sink = event_sink
@@ -440,6 +444,7 @@ class DockerExecutor(CommandExecutor):
             --tmpfs /tmp    area temporanea in memoria, necessaria perché molti
                             comandi falliscono senza una /tmp scrivibile;
             --memory        tetto di memoria;
+            --shm-size      memoria condivisa di /dev/shm, se configurata;
             --pids-limit    tetto di processi (anti fork bomb);
             --user          esecuzione come utente non privilegiato, non root;
             --volume        unico canale verso l'host: la cartella di lavoro.
@@ -466,6 +471,7 @@ class DockerExecutor(CommandExecutor):
             "--read-only",
             "--tmpfs", "/tmp",
             "--memory", self.memory,
+            *(["--shm-size", self.shm_size] if self.shm_size is not None else []),
             "--pids-limit", self.pids_limit,
             *self._utente_e_permessi(),
             "--workdir", "/workspace",

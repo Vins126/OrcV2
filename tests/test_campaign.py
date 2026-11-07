@@ -56,7 +56,8 @@ class FabbricaFinta:
         self.costruiti = []
         self.build_riusciti_o_no = []
 
-    def build(self, role):
+    def build(self, role, **opzioni):
+        self.opzioni_build = getattr(self, "opzioni_build", []) + [opzioni]
         indice = len(self.costruiti) + len(self.build_riusciti_o_no)
         self.build_riusciti_o_no.append(indice)
         if indice in self.build_falliti:
@@ -461,8 +462,8 @@ def test_c1_i_file_del_task_sono_nel_workspace_prima_dell_incarico(tmp_path):
             return super().assign(task, max_iterations)
 
     class Fabbrica(FabbricaFinta):
-        def build(self, role):
-            agente = super().build(role)
+        def build(self, role, **opzioni):
+            agente = super().build(role, **opzioni)
             agente.__class__ = AgenteCheLeggeIlWorkspace
             return agente
 
@@ -486,8 +487,8 @@ def test_c2_i_test_modificati_dall_agente_sono_ripristinati_prima_della_verifica
             return super().assign(task, max_iterations)
 
     class Fabbrica(FabbricaFinta):
-        def build(self, role):
-            agente = super().build(role)
+        def build(self, role, **opzioni):
+            agente = super().build(role, **opzioni)
             agente.__class__ = AgenteCheBara
             return agente
 
@@ -596,8 +597,8 @@ def test_r3c_in_campagna_un_tentativo_di_link_e_una_verifica_fallita_con_traccia
             return super().assign(task, max_iterations)
 
     class Fabbrica(FabbricaFinta):
-        def build(self, role):
-            agente = super().build(role)
+        def build(self, role, **opzioni):
+            agente = super().build(role, **opzioni)
             agente.__class__ = AgenteCheFaUnLink
             return agente
 
@@ -898,7 +899,7 @@ class FabbricaConcorrente:
         self.lock = threading.Lock()
         self.costruiti, self.attivi, self.massimo = [], 0, 0
 
-    def build(self, role):
+    def build(self, role, **opzioni):
         with self.lock:
             indice = len(self.costruiti)
             workspace = self.tmp_path / "ws" / f"conc-{indice}"
@@ -1263,3 +1264,83 @@ def test_b7_il_report_somma_l_uso_di_tutte_le_run_di_uno_sciame(tmp_path):
 
     assert esito.total_cost == pytest.approx(3 * 0.0009)
     assert esito.runs_without_usage == 0
+
+
+# ── Campagna MVP (task 7, P1-D1 scelta (a)): i compiti dei siti da `--tasks` ──
+# Un file con `seed` e' il file dei verdetti di R1 (`campaigns/r1_compiti.toml`):
+# `_carica_task` lo riconosce da solo, rifa' la scelta con `webtasks.load_selection`
+# sui dati di `fetch-webtasks` e costruisce ogni task con `web_task_to_task`.
+
+WEB_VERDETTI = Path(__file__).resolve().parent.parent / "campaigns" / "r1_compiti.toml"
+WEB_DATI = Path(__file__).resolve().parent.parent / "campaigns" / "data" / "webtasks"
+
+
+def _web_finto(monkeypatch, ids=("000098", "000040", "842")):
+    """Sostituisce scelta e conversione: si prova solo l'instradamento di `_carica_task`."""
+    import webcampaign
+    import webtasks
+    chiamate = []
+
+    def scelta(config, data_dir, **_):
+        chiamate.append((Path(config), Path(data_dir)))
+        return [NS(candidate=NS(id=i)) for i in ids]
+
+    monkeypatch.setattr(webtasks, "load_selection", scelta)
+    monkeypatch.setattr(webcampaign, "web_task_to_task",
+                        lambda t, **_: Task(id=t.candidate.id, prompt=f"p{t.candidate.id}", verify="SITO"))
+    return chiamate
+
+
+def test_m1_un_file_con_seed_e_la_scelta_dei_siti_letta_dai_dati_scaricati(tmp_path, monkeypatch):
+    chiamate = _web_finto(monkeypatch)
+    verdetti = tmp_path / "v.toml"
+    verdetti.write_text("seed = 1\n[webgen]\ncount = 0\n")
+
+    tasks = campaign._carica_task(verdetti, None)
+
+    assert [t.id for t in tasks] == ["000098", "000040", "842"]
+    assert [t.verify for t in tasks] == ["SITO"] * 3
+    # I dati sono quelli che `fetch-webtasks` scarica per difetto.
+    assert chiamate == [(verdetti, WEB_DATI)]
+
+
+def test_m2_only_filtra_i_siti_e_un_nome_ignoto_e_un_errore(tmp_path, monkeypatch):
+    _web_finto(monkeypatch)
+    verdetti = tmp_path / "v.toml"
+    verdetti.write_text("seed = 1\n")
+
+    assert [t.id for t in campaign._carica_task(verdetti, ["000040"])] == ["000040"]
+    with pytest.raises(CampaignError, match="999"):
+        campaign._carica_task(verdetti, ["000040", "999"])
+
+
+def test_m3_un_file_di_task_generico_non_passa_dalla_scelta_dei_siti(tmp_path, monkeypatch):
+    chiamate = _web_finto(monkeypatch)
+    percorso = tmp_path / "t.toml"
+    percorso.write_text('[[task]]\nid="a"\nprompt="p"\nverify="true"\n')
+
+    assert campaign._carica_task(percorso, None) == [Task(id="a", prompt="p", setup=None, verify="true")]
+    assert chiamate == []
+
+
+@pytest.mark.skipif(not (WEB_DATI / "webgen_test.jsonl").is_file(),
+                    reason="dati dei compiti non scaricati: python campaign.py fetch-webtasks")
+def test_m4_i_dati_veri_danno_i_cinque_compiti_con_il_verificatore_dei_siti():
+    from webcampaign import WebVerifier
+
+    tasks = campaign._carica_task(WEB_VERDETTI, None)
+
+    assert [t.id for t in tasks] == ["000098", "000040", "000058", "842", "684"]
+    assert all(isinstance(t.verify, WebVerifier) for t in tasks)
+    assert all(t.prompt for t in tasks)
+
+
+# -- Skill obbligatorie (P45-D1, 7 nov 2026) --------------------------------
+
+def test_p45_l_agente_singolo_della_campagna_riceve_le_skill_del_braccio_singolo(tmp_path):
+    from tools.load_skill import REQUIRED_SKILLS_SINGLE
+
+    fabbrica = FabbricaFinta(tmp_path)
+    _esegui(tmp_path, fabbrica, shell_che_registra(fabbrica.eventi))
+
+    assert fabbrica.opzioni_build == [{"required_skills": REQUIRED_SKILLS_SINGLE}] * 2

@@ -380,7 +380,7 @@ def test_c3_il_formato_openai_lascia_intatto_il_messaggio_tool_con_immagini():
 def test_f1_view_site_e_fra_gli_strumenti_comuni(tmp_path):
     corrente = _Corrente(tmp_path / "run")
     tools = build_default_tools(str(tmp_path / "ws"), event_sink=corrente)
-    assert [t.name for t in tools] == ["bash", "read_file", "write_file", "view_site"]
+    assert [t.name for t in tools] == ["bash", "read_file", "write_file", "view_site", "load_skill"]
 
 
 # ── C4: Docker vero ───────────────────────────────────────────────────────

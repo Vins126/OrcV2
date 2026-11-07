@@ -23,6 +23,10 @@ Nota di design (tesi):
 
 import os
 
+# Bash usa --workdir /workspace nel container (executors/docker.py); il modello
+# riusa quel percorso con read_file e write_file, che operano invece sull'host.
+CONTAINER_ROOT = "/workspace"
+
 class Workspace:
     """Radice del filesystem accessibile all'agente, con guardia anti-traversal.
 
@@ -43,9 +47,11 @@ class Workspace:
         self.path = os.path.realpath(path)
         os.makedirs(self.path, exist_ok=True)
 
-    def resolve(self, user_path):
+    def resolve(self, user_path: str) -> str:
         """Traduce un percorso richiesto dal modello in percorso assoluto sicuro.
 
+        Il prefisso esatto `/workspace` del container viene tradotto nella radice
+        locale: il resto del percorso viene trattato come relativo al workspace.
         La verifica avviene **dopo** la canonicalizzazione, non prima: controllare
         la stringa grezza sarebbe aggirabile (con `..`, link simbolici o percorsi
         assoluti). Si risolve quindi il percorso fino alla sua forma reale e si
@@ -53,7 +59,8 @@ class Workspace:
 
         Args:
             user_path: percorso indicato dal modello, atteso come relativo alla
-                cartella di lavoro.
+                cartella di lavoro, oppure con il prefisso `/workspace/` del
+                container. `/workspace` e `/workspace/` indicano la radice.
 
         Returns:
             Il percorso assoluto corrispondente, garantito interno al workspace.
@@ -61,11 +68,17 @@ class Workspace:
         Raises:
             ValueError: se il percorso risolto cade fuori dal workspace. Copre sia
                 i tentativi di risalita (`../../etc/passwd`) sia i percorsi
-                assoluti (`/etc/passwd`), perché `os.path.join` scarta la base
-                quando il secondo argomento è assoluto.
+                assoluti esterni (`/etc/passwd`), perche' `os.path.join` scarta la
+                base quando il secondo argomento e' assoluto.
         """
+        if user_path == CONTAINER_ROOT:
+            user_path = ""
+        elif user_path.startswith(CONTAINER_ROOT + "/"):
+            user_path = user_path[len(CONTAINER_ROOT) + 1:]
         p = os.path.join(self.path, user_path)
         p = os.path.realpath(p)
         if os.path.commonpath([p, self.path]) != self.path:
-            raise ValueError("Path is outside the workspace")
+            raise ValueError(
+                "Path is outside the workspace: use a path relative to the workspace root"
+            )
         return p

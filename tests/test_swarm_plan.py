@@ -41,8 +41,19 @@ def _pezzo(id_, files, depends_on=(), routes=(), worker="worker_cheap"):
             "description": f"pezzo {id_}", "routes": list(routes), "worker": worker}
 
 
-def _piano(*pezzi, style=":root { --accent: #c33; }"):
-    return json.dumps({"style": style, "pieces": list(pezzi)})
+FORME = {
+    "GET /api/cars": '200 [{"id": number, "name": string}]',
+    "GET /api/cars/:id/availability": '200 {"available": boolean}; 404 {"error": string}',
+    "POST /api/bookings": '201 {"id": number}; 400 {"error": string}',
+}
+
+
+def _piano(*pezzi, style=":root { --accent: #c33; }", contract=FORME):
+    """S5 (task 7): ogni piano porta la forma delle risposte delle rotte del contratto."""
+    documento = {"style": style, "pieces": list(pezzi)}
+    if contract is not None:
+        documento["contract"] = contract
+    return json.dumps(documento)
 
 
 def _valido():
@@ -216,3 +227,51 @@ def test_p23_un_pezzo_va_nell_ondata_dopo_la_sua_dipendenza_piu_lontana():
     piano = parse_plan(_piano(_pezzo("a", ["a"]), _pezzo("b", ["b"], ["a"]), _pezzo("c", ["c"], ["a", "b"]),
                               _pezzo("d", ["d"], ["a"])), routes=(), workers=WORKERS)
     assert [[p.id for p in onda] for onda in waves(piano)] == [["a"], ["b", "d"], ["c"]]
+
+
+# ── S5 (task 7): forma delle risposte di ogni rotta ───────────────────────
+
+def test_s5_il_piano_porta_la_forma_delle_risposte_normalizzata():
+    contratto = {"get `/api/cars?x=1`": "lista", "GET /api/cars/:id/availability": "disp",
+                 "POST /api/bookings": "creata"}
+    piano = parse_plan(_piano(*json.loads(_valido())["pieces"], contract=contratto),
+                       routes=ROTTE, workers=WORKERS)
+    assert piano.contract == {"GET /api/cars": "lista", "GET /api/cars/:id/availability": "disp",
+                              "POST /api/bookings": "creata"}
+
+
+def test_s5_una_rotta_del_contratto_senza_forma_e_un_errore():
+    contratto = {k: v for k, v in FORME.items() if k != "POST /api/bookings"}
+    errore = _errore(_piano(*json.loads(_valido())["pieces"], contract=contratto))
+    assert "POST /api/bookings" in errore
+
+
+@pytest.mark.parametrize("forma", ["", "   ", 3, None, ["200"]])
+def test_s5_una_forma_vuota_o_non_testuale_e_un_errore(forma):
+    contratto = {**FORME, "GET /api/cars": forma}
+    assert "GET /api/cars" in _errore(_piano(*json.loads(_valido())["pieces"], contract=contratto))
+
+
+@pytest.mark.parametrize("contratto", [["GET /api/cars"], "GET /api/cars", 3])
+def test_s5_un_contratto_che_non_e_un_oggetto_e_un_errore(contratto):
+    assert "contract" in _errore(_piano(*json.loads(_valido())["pieces"], contract=contratto))
+
+
+def test_s5_senza_contratto_nel_piano_e_un_errore_se_il_compito_ha_rotte():
+    assert "contract" in _errore(_piano(*json.loads(_valido())["pieces"], contract=None))
+
+
+def test_s5_un_compito_senza_rotte_non_chiede_il_contratto():
+    piano = parse_plan(_piano(_pezzo("s", ["start.sh"]), contract=None), routes=(), workers=WORKERS)
+    assert piano.contract == {}
+
+
+def test_s5_una_forma_per_una_rotta_in_piu_e_ammessa():
+    contratto = {**FORME, "GET /api/health": '200 {"ok": true}'}
+    piano = parse_plan(_piano(*json.loads(_valido())["pieces"], contract=contratto),
+                       routes=ROTTE, workers=WORKERS)
+    assert piano.contract["GET /api/health"] == '200 {"ok": true}'
+
+
+def test_s5_una_chiave_che_non_e_una_rotta_e_un_errore():
+    assert "rotta" in _errore(_piano(*json.loads(_valido())["pieces"], contract={**FORME, "cars": "x"}))

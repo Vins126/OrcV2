@@ -1,0 +1,76 @@
+# Compito fuori campione per la messa a punto dello sciame (task 7, 5 nov 2026).
+#
+# 000020 e' il primo compito della fonte webgen dopo i tre tenuti, nell'ordine estratto
+# con il seme (`campaigns/r1_ordine.json`). Non entra nella campagna: serve a provare
+# e correggere il braccio C senza guardare i compiti d'esame.
+# Il prompt e' costruito come `webprompt.build_prompt`: testo del benchmark, cornice
+# comune (`campaigns/r1_prompt/cornice.md`), materiale (`000020.md` in questa cartella).
+# Il verificatore controlla solo la consegna: la qualita' si guarda a mano sul sito.
+
+[[task]]
+id = "000020"
+verify = "test -f start.sh"
+prompt = """Please implement a website for a phone operator to display service plans and provide customer support. The website should have functionalities for displaying service plan details and an online customer support tool. Users should be able browse service plans, get help, manage their account information, and access their personal details. Assign light goldenrod to body backgrounds and olive drab to main components.
+
+## How to deliver the site
+
+These rules are the same for every task.
+
+- Build the site in the current working directory (the workspace) by writing files there. Do not answer with code
+  blocks only: only the files in the workspace are delivered.
+- Put a `start.sh` in the root of the workspace; it is run with `bash start.sh`. It must start the site in the
+  foreground and serve it on port 8080 (`http://localhost:8080/`).
+- Build the interface as a React application with Vite. Run the Vite build now, inside the workspace: `start.sh`
+  serves the built files, together with the server routes if the task has any. The server technology is up to you.
+- Install dependencies and run any build step now, inside the workspace. If you install dependencies, keep the
+  lockfile (`package-lock.json` or equivalent; pinned versions for Python). `start.sh` must only start the site: it
+  must not install or download anything, and the site must answer within 60 seconds.
+- The site is opened without network access. Do not load anything from a CDN or another external host (JS
+  libraries, styles, fonts, images, APIs): everything the page uses must come from the workspace.
+- Every element listed under "data-testid markers" must carry exactly that `data-testid` attribute. An element
+  that appears several times (for example one card per item) carries the same value on every copy.
+- Whenever the user picks a date and a time, use a single `<input type="datetime-local">` (date and time in the same
+  field).
+- If the task has a routes contract, implement it exactly: paths, field names, JSON shapes and status codes. The
+  internal structure of the server is up to you. Store the data where the contract says, inside the workspace, so
+  that it survives a restart of `start.sh`.
+
+## Routes contract
+
+Prefix `/api`, request and response bodies in JSON. Prices are numbers (monthly price in euros).
+
+| Method | Path | Request body | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/plans` | — | `200` `[{"id": str, "name": str, "monthlyPrice": number, "dataGb": number}]` (at least 3 plans) | — |
+| GET | `/api/plans/{id}` | — | `200` `{"id": str, "name": str, "monthlyPrice": number, "dataGb": number, "features": [str], "benefits": [str]}` (`features` and `benefits` non-empty) | `404` unknown id |
+| GET | `/api/account` | — | `200` `{"name": str, "email": str, "phone": str}` | — |
+| PUT | `/api/account` | `{"name": str, "email": str, "phone": str}` (`phone` optional) | `200` the updated account | `400` if `name` is missing or empty, or `email` does not contain `@` |
+| GET | `/api/support/messages` | — | `200` `[{"id": str, "text": str, "reply": str}]` in sending order | — |
+| POST | `/api/support/messages` | `{"text": str}` | `201` `{"id": str, "text": str, "reply": str}` with a non-empty `reply` (an automatic answer, or a confirmation that an agent will assist shortly) | `400` if `text` is missing or empty |
+
+**Persistence:** account and support messages in a JSON file (`data/db.json`) or SQLite (`data/app.db`) in the
+workspace; they survive a restart of `start.sh`. The plans may be static in the code.
+
+## data-testid markers
+
+| Marker | Element |
+|---|---|
+| `site-nav` | the navigation bar, visible on every page (container of the `nav-link-<section>` links) |
+| `nav-link-<section>` | link of the navigation bar, one per section: `nav-link-plans`, `nav-link-support`, `nav-link-account` |
+| `plan-card` | card of a plan in the list (one per plan); clicking it opens the plan page |
+| `plan-detail` | container of the plan page, with name, features, benefits and price |
+| `support-open` | button on the home page that opens the customer support chat |
+| `support-input` | text field of the chat |
+| `support-send` | button that sends the chat message |
+| `support-reply` | a reply shown in the chat (one per reply) |
+| `account-name` | text field for the name in the account form |
+| `account-email` | text field for the email in the account form |
+| `account-save` | button that saves the account |
+| `account-success` | success message shown after the account is saved |
+
+## Notes
+
+- Every plan has its own page with its own URL (for example `/plans/<id>`); opening that URL directly, or reloading
+  it, shows the same page.
+- The account form shows the saved values again after a reload.
+"""

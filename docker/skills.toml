@@ -1,0 +1,53 @@
+# Skill di terzi disponibili agli agenti dell'harness, uguali per tutti i bracci.
+# I commit fissati mantengono le stesse skill per tutta la campagna.
+# Soglia di scelta: almeno 3.000 stelle GitHub al 4 nov 2026.
+# Per aggiornare: cambiare il commit, rilanciare fetch_skills.py e ricostruire
+# l'immagine con un tag nuovo, per distinguere gli ambienti delle campagne.
+
+[[skills]]
+name = "frontend-design"
+repo = "anthropics/skills"
+commit = "ca45fc496a3436251f191354091d557da31c15b5"
+path = "skills/frontend-design"
+license = "Apache-2.0"
+description = "Art direction for distinctive, production-grade interfaces that avoid a generic AI look: typography, colour, composition, motion."
+
+[[skills]]
+name = "webapp-testing"
+repo = "anthropics/skills"
+commit = "ca45fc496a3436251f191354091d557da31c15b5"
+path = "skills/webapp-testing"
+license = "Apache-2.0"
+description = "Test the running site with Python Playwright scripts: click through user flows, read console logs, take screenshots. Includes a helper that starts the server."
+
+[[skills]]
+name = "ui-ux-pro-max"
+repo = "nextlevelbuilder/ui-ux-pro-max-skill"
+commit = "ccce51cba388476d4f403091ddb91636d5cd9fed"
+path = ".claude/skills/ui-ux-pro-max"
+license = "MIT"
+description = "Searchable UI/UX knowledge base: styles, palettes, font pairings, UX and accessibility rules, stack-specific guidance (React, Tailwind, shadcn/ui)."
+
+[[skills]]
+name = "design-taste-frontend"
+repo = "Leonxlnx/taste-skill"
+commit = "12af471f627f866411b4bd785b19646d3672784c"
+path = "skills/taste-skill"
+license = "MIT"
+description = "Art direction distilled from curated award sites: scripts deal a visual direction, then lint and inspect the page in Chromium; fix it from screenshots."
+
+[[skills]]
+name = "verification-before-completion"
+repo = "obra/superpowers"
+commit = "22f0b463e7a5e579904dd6211a520321035526f7"
+path = "skills/verification-before-completion"
+license = "MIT"
+description = "Before claiming the work is done, run the checks and read their output."
+
+[[skills]]
+name = "systematic-debugging"
+repo = "obra/superpowers"
+commit = "22f0b463e7a5e579904dd6211a520321035526f7"
+path = "skills/systematic-debugging"
+license = "MIT"
+description = "Find the root cause of a bug before changing any code."

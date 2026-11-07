@@ -5,7 +5,9 @@ These rules are the same for every task.
 - Build the site in the current working directory (the workspace) by writing files there. Do not answer with code
   blocks only: only the files in the workspace are delivered.
 - Put a `start.sh` in the root of the workspace; it is run with `bash start.sh`. It must start the site in the
-  foreground and serve it on port 8080 (`http://localhost:8080/`). Any technology is allowed: static files, Node, Python, a framework.
+  foreground and serve it on port 8080 (`http://localhost:8080/`).
+- Build the interface as a React application with Vite. Run the Vite build now, inside the workspace: `start.sh`
+  serves the built files, together with the server routes if the task has any. The server technology is up to you.
 - Install dependencies and run any build step now, inside the workspace. If you install dependencies, keep the
   lockfile (`package-lock.json` or equivalent; pinned versions for Python). `start.sh` must only start the site: it
   must not install or download anything, and the site must answer within 60 seconds.

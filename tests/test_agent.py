@@ -387,3 +387,84 @@ def test_il_turno_del_modello_torna_al_gateway_con_il_suo_ragionamento():
 
     assert turno in messaggi
     assert next(m for m in messaggi if isinstance(m, AssistantTurn)).reasoning_details == turno.reasoning_details
+
+
+# ── H3 (task 7): ogni chiamata a uno strumento finisce nel registro ────────
+# Nella prova del 3 nov 2026 non si poteva sapere quali percorsi passasse il
+# modello a write_file: il registro aveva consumi ma non strumenti.
+
+class _RegistroEventi:
+    def __init__(self):
+        self.eventi = []
+
+    def append_event(self, event_type, details):
+        self.eventi.append((event_type, details))
+
+
+class _GatewayUnTool:
+    """Chiede uno strumento al primo turno, poi risponde a parole."""
+
+    def __init__(self, *chiamate):
+        self.turni = [AssistantTurn(tool_calls=chiamate), AssistantTurn(content="fatto")]
+
+    def complete(self, messages, tools):
+        return self.turni.pop(0)
+
+
+def _tool_eventi(registro):
+    return [d for t, d in registro.eventi if t == "tool_call"]
+
+
+def test_h3_una_chiamata_riuscita_lascia_nome_argomenti_ed_esito(tmp_path):
+    registro = _RegistroEventi()
+    gateway = _GatewayUnTool(ToolCall(id="1", name="ok", arguments=json.dumps({"path": "a.txt"})))
+    agent = Agent(gateway, [_ToolFinto("ok", {"status": "ok"})], event_sink=registro)
+
+    agent.run("task", max_iterations=3)
+
+    assert _tool_eventi(registro) == [{"tool": "ok", "args": {"path": "a.txt"}, "error": None}]
+
+
+def test_h3_un_errore_dello_strumento_finisce_nel_registro():
+    registro = _RegistroEventi()
+    gateway = _GatewayUnTool(ToolCall(id="1", name="ok", arguments="{}"))
+    agent = Agent(gateway, [_ToolFinto("ok", {"error": "Path is outside the workspace"})],
+                  event_sink=registro)
+
+    agent.run("task", max_iterations=3)
+
+    assert _tool_eventi(registro)[0]["error"] == "Path is outside the workspace"
+
+
+def test_h3_i_testi_lunghi_si_registrano_solo_come_lunghezza():
+    # Il contenuto di un file intero non entra nel registro: resta il percorso.
+    registro = _RegistroEventi()
+    lungo = "x" * 5000
+    gateway = _GatewayUnTool(ToolCall(id="1", name="ok",
+                                      arguments=json.dumps({"path": "a.txt", "content": lungo})))
+    agent = Agent(gateway, [_ToolFinto("ok", {"status": "ok"})], event_sink=registro)
+
+    agent.run("task", max_iterations=3)
+
+    args = _tool_eventi(registro)[0]["args"]
+    assert args["path"] == "a.txt"
+    assert args["content"] == {"chars": 5000}
+
+
+def test_h3_argomenti_illeggibili_e_strumento_ignoto_si_registrano():
+    registro = _RegistroEventi()
+    gateway = _GatewayUnTool(ToolCall(id="1", name="ok", arguments="{rotto"),
+                             ToolCall(id="2", name="inventato", arguments="{}"))
+    agent = Agent(gateway, [_ToolFinto("ok", {"status": "ok"})], event_sink=registro)
+
+    agent.run("task", max_iterations=3)
+
+    eventi = _tool_eventi(registro)
+    assert [e["tool"] for e in eventi] == ["ok", "inventato"]
+    assert all(e["error"] for e in eventi)
+
+
+def test_h3_senza_registro_l_agente_funziona_come_prima():
+    gateway = _GatewayUnTool(ToolCall(id="1", name="ok", arguments="{}"))
+
+    assert Agent(gateway, [_ToolFinto("ok", {"status": "ok"})]).run("task", max_iterations=3).status == "completed"

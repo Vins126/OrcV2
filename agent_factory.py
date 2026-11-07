@@ -32,7 +32,7 @@ Nota di design (tesi):
 
 import copy
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -390,7 +390,7 @@ class AgentFactory:
 
 
     def build(self, role: str, *, workspace: Path | None = None,
-              team: Team | None = None) -> BuiltAgent:
+              team: Team | None = None, required_skills: Sequence[str] = ()) -> BuiltAgent:
         """Costruisce un agente persistente per il ruolo dato.
 
         L'ordine e' voluto: prima si risolve e si controlla tutto cio' che puo'
@@ -401,6 +401,7 @@ class AgentFactory:
 
         Args:
             role: nome del ruolo, come compare in `[roles.*]`.
+            required_skills: skill da caricare prima degli altri strumenti e della conclusione.
 
         Returns:
             L'agente, senza ancora alcun incarico.
@@ -431,6 +432,7 @@ class AgentFactory:
         workspace = self.workspaces_root / agent_id if workspace is None else Path(workspace)
         try:
             strumenti = self.tools_builder(str(workspace), event_sink=corrente)
+            agent = Agent(gateway, strumenti, event_sink=corrente, required_skills=required_skills)
         except BaseException:
             # Il costruttore degli strumenti crea il workspace e poi puo'
             # fallire (per esempio Docker assente): non si lascia una cartella
@@ -439,7 +441,6 @@ class AgentFactory:
                 with suppress(OSError):
                     workspace.rmdir()
             raise
-        agent = Agent(gateway, strumenti)
         if team is not None:
             team.accountant.add(agent_id, accountant)
 
