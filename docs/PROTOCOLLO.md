@@ -76,6 +76,20 @@ Scritta prima di qualunque esecuzione di B, C o D sui compiti. Dove contraddice 
     (§11). La regola iniziale (dollari e tempo pari al doppio dei massimi della run di prova) e' stata abbandonata
     prima della campagna: un secondo e un terzo tetto avrebbero aggiunto modi di tagliare una run senza proteggere
     di piu'.
+  - *Guasti della macchina (8 nov 2026, fissato dopo le prime run interrotte e prima di leggerne la qualita').*
+    Una run che arriva alla fine (esito `completed`, `max_iterations` o `budget_exhausted`) conta com'e', anche se
+    al suo interno un agente e' stato interrotto da un guasto (per C: un pezzo o la correzione); lo si dichiara nei
+    risultati. Si ripete invece, sullo stesso compito e con gli stessi parametri, in una campagna di ripetizione
+    `<id>-r` (poi `-r2`), una run che non e' arrivata alla fine perche' un errore del fornitore (`provider_error`
+    nel registro) l'ha fermata mentre il computer che esegue la campagna era in stop (registro di sistema) o il
+    credito del fornitore era esaurito (HTTP 402): esito `service_unavailable`, o `plan_failed` con errore
+    `service_unavailable`. Si ripete allo stesso modo un compito che non e' partito per il tetto di spesa del
+    braccio. Per ogni compito conta la prima run arrivata alla fine; le run interrotte, e quelle lanciate in
+    ripetizione su compiti che avevano gia' una run arrivata alla fine, restano in `runs/` ma non entrano nei
+    dati. Un errore del fornitore a computer acceso e con credito disponibile conta com'e'. Origine: nella
+    campagna MVP del 7-8 nov il computer, a batteria, e' rimasto in stop dalle 19:18 alle 10:48 (ora locale), e
+    alle 11:21 il credito del fornitore si e' esaurito. Regola corretta l'8 nov (scelta dell'autore): in una
+    prima versione si ripetevano anche le run arrivate alla fine con un agente interrotto.
 - **§7 τ_piace = 1** (2 nov 2026, fissato prima di qualunque misura, senza pilota). Un gradino intero della scala
   −2..+2; motivazione e ruolo descrittivo in §7.
 - **§10 Analisi.** Stessi calcoli (bootstrap sui compiti, test t appaiato, rapporto di costo C/B) sui 5 compiti.

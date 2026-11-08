@@ -130,13 +130,19 @@ def worker_prompt(task_prompt: str, plan: Plan, piece: Piece) -> str:
     others = [f"{other.id}: {', '.join(other.files)}" for other in plan.pieces if other.id != piece.id]
     contract = (["ROUTE CONTRACT", *[f"{route}: {shape}" for route, shape in plan.contract.items()]]
                 if plan.contract else [])
+    # Chi e' solo nella sua ondata non deve aspettare nessuno: lo scheletro di 842 (campagna MVP,
+    # 8 nov 2026) ha atteso 300 s i file di pezzi che partono solo dopo di lui.
+    wave = next(batch for batch in waves(plan) if piece in batch)
+    company = ("The workspace is shared with other workers working in parallel. " if len(wave) > 1 else
+               "You are the only worker running now: the pieces that depend on you start after you "
+               "finish, so their files may not exist yet. Do not wait for them or check for them. ")
     return "\n".join([
         "TASK", task_prompt, "SHARED STYLE", plan.style,
         "YOUR PIECE", piece.id, piece.description,
         "YOUR FILES", *piece.files, "YOUR ROUTES", *piece.routes,
         *contract,
         "OTHER PIECES (id and files)", *others,
-        "Write only your own files. The workspace is shared with other workers working in parallel. "
+        "Write only your own files. " + company +
         "Do not modify files owned by other pieces. The skeleton writes start.sh. "
         "Never hide, disable or restyle other pieces to inspect your own; "
         "if you add temporary code, remove it before you finish. "
@@ -323,7 +329,18 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
         return verdict
 
     verdict = inspect("initial")
-    incomplete = {piece.id: states[piece.id] for piece in plan.pieces if states[piece.id] != "completed"}
+    accepted = verdict is not None and verdict.accepted
+
+    # Un pezzo fermato dal limite di iterazioni con tutti i suoi file, in un sito che il
+    # cancello accetta, ha fatto il suo lavoro: DeepSeek continua a verificare finche' non lo
+    # ferma il limite, e la correzione di Opus partiva lo stesso (1,05 $ su 000040, 8 nov 2026).
+    def finished(piece: Piece) -> bool:
+        status = states[piece.id]
+        return status == "completed" or (
+            status == "max_iterations" and accepted
+            and all((workspace / path).is_file() for path in piece.files))
+
+    incomplete = {piece.id: states[piece.id] for piece in plan.pieces if not finished(piece)}
     rejected = verdict is not None and not verdict.accepted
     if not (budget_stop or exhausted or at_limit()) and (rejected or incomplete or file_issues):
         escalated = True

@@ -744,3 +744,101 @@ def test_p45_planner_skill_di_design_worker_e_correzione_skill_di_lavoro(tmp_pat
     assert elenchi[0] == ("planner", REQUIRED_SKILLS_PLANNER)
     assert elenchi[-1] == ("planner", REQUIRED_SKILLS_WORKER), "la correzione scrive codice"
     assert all(skill == REQUIRED_SKILLS_WORKER for _, skill in elenchi[1:])
+
+
+# ── S6 (8 nov): lo scheletro sa di lavorare da solo ───────────────────────
+# Nella campagna MVP lo scheletro di 842 ha aspettato 300 s i file dei pezzi che partono dopo
+# di lui, perche' il prompt diceva a tutti che altri worker lavoravano in parallelo.
+
+def _piano():
+    return parse_plan(PIANO, routes=("GET /api/cars", "POST /api/bookings"), workers=("worker", "worker_cheap"))
+
+
+def test_s6_lo_scheletro_solo_nella_sua_ondata_non_deve_aspettare_gli_altri():
+    piano = _piano()
+    testo = worker_prompt(PROMPT, piano, piano.pieces[0])
+
+    assert "only worker running now" in testo
+    assert "Do not wait for" in testo
+    assert "working in parallel" not in testo
+
+
+def test_s6_un_pezzo_con_compagni_di_ondata_sa_che_lavorano_in_parallelo():
+    piano = _piano()
+    testo = worker_prompt(PROMPT, piano, piano.pieces[1])
+
+    assert "working in parallel" in testo
+    assert "only worker running now" not in testo
+
+
+def test_s6_anche_un_pezzo_solo_in_un_ondata_successiva_lavora_da_solo():
+    piano = _piano()
+    testo = worker_prompt(PROMPT, piano, piano.pieces[3])
+
+    assert "only worker running now" in testo
+
+
+def test_s6_due_radici_nella_stessa_ondata_lavorano_in_parallelo():
+    piano = parse_plan(json.dumps({"style": "s", "contract": {}, "pieces": [
+        _pezzo("skeleton", ["start.sh"]), _pezzo("assets", ["public/logo.svg"])]}),
+        routes=(), workers=("worker", "worker_cheap"))
+
+    assert "working in parallel" in worker_prompt(PROMPT, piano, piano.pieces[0])
+
+
+# ── S7 (8 nov): un pezzo fermo al limite non basta per la correzione ──────
+# Lo scheletro di DeepSeek arriva spesso a 80 iterazioni con il lavoro fatto; la correzione di
+# Opus partiva lo stesso (1,05 $ su 000040). Ora un pezzo `max_iterations` non conta come
+# incompleto se il cancello accetta e tutti i suoi file esistono.
+
+def _scrivi(tmp_path, *percorsi):
+    for percorso in percorsi:
+        file = tmp_path / "ws" / percorso
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("ok")
+
+
+def test_s7_pezzo_al_limite_con_file_e_cancello_che_accetta_nessuna_correzione(tmp_path):
+    _scrivi(tmp_path, "routes/cars.js")
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    esito, _, cancello = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is False and _correttori(fabbrica) == []
+    assert esito.pieces["cars"] == "max_iterations", "lo stato vero resta nel registro"
+    assert len(cancello.chiamate) == 1
+
+
+def test_s7_pezzo_al_limite_con_un_file_mancante_fa_partire_la_correzione(tmp_path):
+    _scrivi(tmp_path, "start.sh")
+    fabbrica = FabbricaFinta(esiti_pezzi={"skeleton": "max_iterations"})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is True
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"skeleton": "max_iterations"}
+
+
+def test_s7_pezzo_al_limite_con_file_ma_cancello_che_rifiuta_resta_nella_correzione(tmp_path):
+    _scrivi(tmp_path, "routes/cars.js")
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    cancello = CancelloFinto(GateVerdict(False, "non parte"), GateVerdict(True))
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, cancello=cancello)
+
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"cars": "max_iterations"}
+
+
+def test_s7_pezzo_al_limite_con_file_e_cancello_guasto_resta_nella_correzione(tmp_path):
+    _scrivi(tmp_path, "routes/cars.js")
+    fabbrica = FabbricaFinta(esiti_pezzi={"cars": "max_iterations"})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, cancello=CancelloFinto(RenderError("Docker spento")))
+
+    assert esito.escalated is True
+    assert _eventi(esito, "escalation")[0]["incomplete"] == {"cars": "max_iterations"}
+
+
+def test_s7_gli_altri_esiti_contano_sempre_come_incompleti_anche_con_i_file(tmp_path):
+    _scrivi(tmp_path, "routes/bookings.js")
+    fabbrica = FabbricaFinta(esiti_pezzi={"bookings": "loop_detected"})
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica)
+
+    assert esito.escalated is True
+    assert "bookings" in _eventi(esito, "escalation")[0]["incomplete"]

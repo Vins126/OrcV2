@@ -116,6 +116,17 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
    **Skill obbligatorie, 7 nov 2026 (tutti i bracci):** ogni agente deve caricare il suo elenco di skill
    prima di usare altri strumenti o di chiudere; design a chi decide lo stile, lavoro e verifica a chi
    scrive il codice (dettagli in `PROTOCOLLO.md` §0).
+   **Esecuzione, 7-8 nov 2026:** ✅ B, C e D su tutti i 5 compiti (manifesti `runs/campaigns/mvp-*.jsonl`).
+   Due guasti della macchina: stop del computer a batteria nella notte e credito del fornitore esaurito
+   (HTTP 402); le run fermate prima della fine si sono ripetute secondo la regola «Guasti della macchina» di
+   `PROTOCOLLO.md` §0. Costo misurato delle run valide: B 14,02 $, C 7,19 $, D 0,62 $.
+   **Correzioni dello sciame durante la campagna (8 nov, solo C):** il pezzo solo nella sua ondata (lo
+   scheletro) sa di essere l'unico worker attivo e non aspetta i file degli altri; un pezzo fermato dal limite
+   di iterazioni con tutti i suoi file, in un sito accettato dal cancello, non fa partire la correzione. C su
+   842 e 684 e' stato eseguito con queste correzioni, C su 000098, 000040 e 000058 senza: va dichiarato.
+   **Problema aperto:** l'agente si ferma solo quando il modello chiude da se'; D arriva sempre al limite
+   di 80 iterazioni con il lavoro gia' finito.
+   **Prossimo:** giudice sulle coppie, V, analisi §10.
 8. **Facoltativo, se avanza tempo:** braccio H (R2.7).
 
 **Tolto e passato a lavoro futuro (↪️).** R2.1b (genera immagine); pilota R2.4, sostituito dalla run di prova;
