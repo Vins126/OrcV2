@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 260" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="680" height="260" fill="white"/>
+<text x="340.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Sciame C: costo per ruolo e compito</text>
+<text x="102" y="66" text-anchor="end">000040</text>
+<rect x="110" y="50" width="95.57216765782977" height="24" fill="#c8553d"/>
+<text x="157.78608382891488" y="66" text-anchor="middle" fill="white" font-size="10">0.53</text>
+<rect x="205.57216765782977" y="50" width="113.60836971285454" height="24" fill="#5b8c5a"/>
+<text x="262.37635251425706" y="66" text-anchor="middle" fill="white" font-size="10">0.63</text>
+<rect x="319.1805373706843" y="50" width="100.13755773170044" height="24" fill="#d9a441"/>
+<text x="369.2493162365345" y="66" text-anchor="middle" fill="white" font-size="10">0.55</text>
+<rect x="419.31809510238475" y="50" width="190.68190489761525" height="24" fill="#7a2e22"/>
+<text x="514.6590475511923" y="66" text-anchor="middle" fill="white" font-size="10">1.05</text>
+<text x="614.0" y="66" font-size="10">2.76 $</text>
+<text x="102" y="100" text-anchor="end">000058</text>
+<rect x="110" y="84" width="211.15421251034633" height="24" fill="#c8553d"/>
+<text x="215.57710625517316" y="100" text-anchor="middle" fill="white" font-size="10">1.16</text>
+<rect x="321.1542125103463" y="84" width="76.65987875853918" height="24" fill="#5b8c5a"/>
+<text x="359.48415188961593" y="100" text-anchor="middle" fill="white" font-size="10">0.42</text>
+<rect x="397.8140912688855" y="84" width="51.69961197284161" height="24" fill="#7a2e22"/>
+<text x="423.66389725530627" y="100" text-anchor="middle" fill="white" font-size="10">0.29</text>
+<text x="453.51370324172706" y="100" font-size="10">1.87 $</text>
+<text x="102" y="134" text-anchor="end">000098</text>
+<rect x="110" y="118" width="132.06700947764102" height="24" fill="#c8553d"/>
+<text x="176.0335047388205" y="134" text-anchor="middle" fill="white" font-size="10">0.73</text>
+<rect x="242.06700947764102" y="118" width="20.610979636779547" height="24" fill="#5b8c5a"/>
+<rect x="262.6779891144206" y="118" width="13.736231814080881" height="24" fill="#7a2e22"/>
+<text x="280.4142209285015" y="134" font-size="10">0.92 $</text>
+<text x="102" y="168" text-anchor="end">684</text>
+<rect x="110" y="152" width="90.81828869776444" height="24" fill="#c8553d"/>
+<text x="155.40914434888222" y="168" text-anchor="middle" fill="white" font-size="10">0.50</text>
+<rect x="200.81828869776444" y="152" width="39.49917737961081" height="24" fill="#5b8c5a"/>
+<text x="220.56787738756987" y="168" text-anchor="middle" fill="white" font-size="10">0.22</text>
+<text x="244.31746607737526" y="168" font-size="10">0.72 $</text>
+<text x="102" y="202" text-anchor="end">842</text>
+<rect x="110" y="186" width="45.72989087247589" height="24" fill="#c8553d"/>
+<text x="132.86494543623795" y="202" text-anchor="middle" fill="white" font-size="10">0.25</text>
+<rect x="155.7298908724759" y="186" width="31.891336313004615" height="24" fill="#5b8c5a"/>
+<text x="171.6755590289782" y="202" text-anchor="middle" fill="white" font-size="10">0.18</text>
+<rect x="187.6212271854805" y="186" width="89.51565248292087" height="24" fill="#d9a441"/>
+<text x="232.37905342694094" y="202" text-anchor="middle" fill="white" font-size="10">0.49</text>
+<text x="281.1368796684014" y="202" font-size="10">0.92 $</text>
+<rect x="110" y="230" width="10" height="10" fill="#c8553d"/><text x="124" y="239">piano (Opus)</text>
+<rect x="260" y="230" width="10" height="10" fill="#5b8c5a"/><text x="274" y="239">worker DeepSeek</text>
+<rect x="410" y="230" width="10" height="10" fill="#d9a441"/><text x="424" y="239">worker Kimi</text>
+<rect x="560" y="230" width="10" height="10" fill="#7a2e22"/><text x="574" y="239">correzione (Opus)</text>
+<text x="650" y="254" text-anchor="end" fill="#666">dollari</text></svg>

@@ -520,7 +520,74 @@ combattute: dato descrittivo, non parte della regola.*
 - Code aperte nel codice, senza effetto sui numeri: riga troncata in coda al file dei giudizi dopo un arresto,
   π non definito su un votante con una sola categoria (saltato e contato), α ordinale come media a coppie.
 
-### 5.13 Limiti della campagna MVP (8 novembre 2026)
+### 5.13 Risultati della campagna MVP (8 novembre 2026)
+
+> Campagna del 7-8 novembre 2026: bracci B (Opus 5.5 da solo), C (sciame: Opus pianifica, DeepSeek V4.1 Flash e
+> Kimi K3.1 Pro eseguono) e D (DeepSeek V4.1 Flash da solo), una esecuzione per compito sui 5 compiti di sviluppo,
+> stessi strumenti e tetti (`PROTOCOLLO.md` §0). Run valide in `campaigns/mvp_giudizio.toml`; cifre riproducibili
+> con `python -m analisi.estrai` e `python -m analisi.rapporto` (i dati grezzi stanno in `runs/`). Intervalli con
+> bootstrap esatto sui 5 compiti (tutti i 3125 ricampionamenti, `PROTOCOLLO.md` §10). E' una **stima su 5
+> compiti** (D55): i limiti sono in §5.14.
+
+**Tabella principale.**
+
+| Braccio | Costo dei 5 siti | Costo / B | Funziona medio (0-100) | Piace medio contro B (−2..+2) |
+|---|---|---|---|---|
+| B | 14,02 $ | 1 | 91,7 | riferimento |
+| C | 7,19 $ | 0,51 | 93,3 | −0,50 |
+| D | 0,62 $ | 0,04 | 86,0 | +0,40 |
+| V | 0,62 $ | 0,04 | 86,0 | +0,40 |
+
+Per compito (costo in dollari / funziona / piace contro B):
+
+| Compito | B | C | D |
+|---|---|---|---|
+| 000040 | 5,26 / 77,8 / rif. | 2,76 / 100 / +1,5 | 0,14 / 61,1 / +1,0 |
+| 000058 | 2,66 / 100 / rif. | 1,87 / 100 / −1,5 | 0,13 / 80,0 / +1,0 |
+| 000098 | 2,96 / 91,7 / rif. | 0,92 / 100 / +1,0 | 0,11 / 100 / +1,0 |
+| 684 | 1,51 / 100 / rif. | 0,72 / 100 / −2,0 | 0,12 / 100 / −1,0 |
+| 842 | 1,63 / 88,9 / rif. | 0,92 / 66,7 / −1,5 | 0,12 / 88,9 / 0 |
+
+**Esito della regola di §10 (C contro B).**
+- **Costo: «C costa meno» e' dimostrato.** Rapporto C/B 0,513, intervallo [0,397; 0,625], tutto sotto 1; test t
+  sui logaritmi dei rapporti per compito p = 0,007.
+- **Funziona: la non inferiorita' non e' dimostrata.** Differenza media C − B +1,7 punti, intervallo bootstrap
+  [−11,7; +13,3], test t [−18,4; +21,7]: il limite basso e' sotto −τ = −10. La differenza dipende da un compito: su
+  842 C perde 22,2 punti, sugli altri quattro guadagna in media 7,6 e non perde mai. C costa meno e funziona almeno
+  quanto B su 4 compiti su 5.
+- **Piace (descrittiva, §6):** −0,50, intervallo [−1,70; +0,80]; la media sta sopra la linea τ_piace = −1, il
+  limite basso no.
+
+**Politiche semplici.** D costa il 4% di B e funziona in media 5,7 punti meno (intervallo [−15,3; +3,3],
+descrittivo). Il cancello di R2.6 accetta tutti e 5 i siti di D, compresi quelli a 61 e 80 punti: **V coincide con
+D** e la cascata non migliora nulla. Il cancello controlla avvio, stato HTTP ed errori JavaScript, non i requisiti
+del compito.
+
+**Giudizi aggiuntivi (descrittivi).** Il confronto diretto C-D, deciso dopo i risultati, da' −0,70: il giudice
+preferisce D in 4 compiti su 5. Rifatte le stesse coppie con la pagina intera divisa in riquadri invece degli
+screenshot tagliati a 4000 px, C-B resta −0,50 mentre D-B passa da +0,40 a −0,20: il vantaggio di D su «piace» non
+regge a un cambio del modo di mostrare le pagine, quello di B su C si'. «Piace» e «funziona» vanno nella stessa
+direzione solo in 4 coppie su 10: su 000040 e 000058 il giudice preferisce D, che funziona 17-20 punti meno di B.
+
+**Dove vanno i soldi di C.** Opus, fra piano e correzione, e' il 64% della spesa di C; i worker DeepSeek scrivono
+quasi tutto il codice e ne sono il 22%; i due pezzi affidati a Kimi il 15%. Il primo piano di Opus e' stato
+rifiutato dal validatore in 4 compiti su 5 per voci della tabella che non erano rotte, e la rigenerazione e' costata
+il 27% della spesa di C. Il risparmio di C su B viene da quanto poco scrive Opus, non da quanto lavorano i worker.
+
+**Tempo.** Mediana del tempo dall'avvio alla consegna, sulle run non attraversate dallo stop della macchina: B 10
+minuti, D 19, C 31. C lavora in parallelo ma resta il braccio piu' lento: costa meno e consegna dopo.
+
+**Grafici.** `docs/figure/mvp/costo_funziona.svg` (costo e «funziona» per compito, scala logaritmica, con la linea
+media di B − τ), `costo_piace.svg`, `costo_sciame.svg` (costo di C per ruolo), `funziona_compito.svg`,
+`costo_compito.svg`.
+
+**Lettura.** Sui 5 compiti lo sciame costa circa la meta' di Opus da solo, e questo e' l'unico risultato che supera
+la regola scritta prima delle misure. Sulla qualita' misurata C e' in media alla pari con B, ma 5 compiti non bastano
+per dimostrarlo. Il modello economico da solo costa circa dodici volte meno di C e funziona qualche punto meno: senza un
+cancello che controlli i requisiti del compito, la cascata V non sa distinguere i suoi siti buoni da quelli meno
+buoni, ed e' qui che lo sciame si giustifica.
+
+### 5.14 Limiti della campagna MVP (8 novembre 2026)
 
 Limiti emersi dalla lettura dei registri delle 15 run valide (5 compiti, bracci B, C e D). Non cambiano le cifre:
 dicono come leggerle.

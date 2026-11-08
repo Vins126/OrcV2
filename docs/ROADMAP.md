@@ -136,7 +136,7 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
    due ordini danno direzioni opposte come atteso; in D-B/842 il giudice preferisce la seconda posizione in
    entrambi (pari per posizione). «Piace» resta descrittiva (`PROTOCOLLO.md` §6). La motivazione testuale
    del giudice non e' conservata (come in calibrazione). Consumo della finestra di Codex non misurato.
-   **Prossimo:** V, analisi §10.
+   **Analisi §10 (8 nov):** ✅ risultati in `TESI_master.md` §5.13, limiti in §5.14, codice in `analisi/`.
 8. **Facoltativo, se avanza tempo:** braccio H (R2.7).
 
 **Tolto e passato a lavoro futuro (↪️).** R2.1b (genera immagine); pilota R2.4, sostituito dalla run di prova;
@@ -161,8 +161,8 @@ R6.4); H se non c'e' tempo.
 - [x] R2.2 e cancello testati con modelli finti; il cancello non legge mai la valutazione (`tests/test_gate.py`, `test_g15`).
 - [x] Regole di parita' (scritte il 2 nov; tetti fissati il 7 nov dopo le run di prova) e τ_piace scritti in `PROTOCOLLO.md` e committati prima della prima run della campagna.
 - [x] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti (3 nov).
-- [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
-- [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.
+- [x] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate (8 nov: V coincide con D, il cancello accetta D su 5 compiti su 5).
+- [x] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi (8 nov: `TESI_master.md` §5.13 risultati e §5.14 limiti; grafici in `docs/figure/mvp/`; analisi riproducibile con `python -m analisi.estrai` e `python -m analisi.rapporto`).
 
 ---
 
