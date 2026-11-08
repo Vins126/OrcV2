@@ -481,7 +481,7 @@ pmod = collections.Counter(p["model"] for p in pieces)
 out(f"**Pezzi dello sciame.** {len(pieces)} pezzi in tutto (media {fmt(len(pieces)/5,1)} a compito); modelli scelti dal planner: "
     + ", ".join(f"{m} {n}" for m, n in pmod.most_common()) + "; esito: " + ", ".join(f"{s} {n}" for s, n in pst.most_common()) + ". "
     "Su 000098 lo scheletro termina con il sito non avviabile (`service_unavailable`) e gli altri 9 pezzi vengono saltati: "
-    "il sito consegnato e' quello dello scheletro sistemato dalla correzione di Opus (0,08 $). Questa run e' attraversata dallo stop notturno del Mac (regola «Guasti della macchina»: arrivata alla fine, conta com'e'): su 000098 C e' di fatto «DeepSeek scheletro + correzione di Opus», non uno sciame, e va dichiarato. Lo scheletro fermato dal limite di "
+    "il sito consegnato e' quello dello scheletro: anche la correzione di Opus (0,08 $) si interrompe dopo aver caricato le skill, senza scrivere file. Questa run e' attraversata dallo stop notturno del Mac (regola «Guasti della macchina»: arrivata alla fine, conta com'e'): su 000098 C e' di fatto «piano di Opus + scheletro DeepSeek», non uno sciame, e va dichiarato. Lo scheletro fermato dal limite di "
     "80 iterazioni (000040, 000058) e' il pezzo che fa partire la correzione: su quei due compiti C ha speso 1,05 e 0,29 $ in correzione.")
 out()
 
@@ -807,7 +807,8 @@ for t in TASKS:
         out(f"| {t} | {a} | {l['h']}{' (taglio)' if l['h'] >= 4000 else ''} | {fmt(l['lum'],2)} | {'scuro' if l['lum'] < 0.45 else 'chiaro'} | {l['photos']} | {'si' if l['credit'] else 'no'} |")
 out()
 cut = [f"{a} {t}" for (a, t), l in look.items() if l["h"] >= 4000]
-out(f"Gli screenshot sono tagliati a 4000 px di altezza (`docker/render_site.py`): tagliati {', '.join(cut)}. Su C 000058 il "
+out(f"Gli screenshot sono tagliati a 4000 px di altezza (`docker/render_site.py`): a 1440 px sono al limite {', '.join(cut)}; "
+    "contando tutte e tre le larghezze le immagini al limite sono 12 su 45 (`TESI_master.md` §5.14). Su C 000058 il "
     "giudice non vede la sezione degli obiettivi, che sta sotto il taglio.")
 out()
 photo_sites = [f"{a} {t}" for (a, t), l in look.items() if l["photos"]]

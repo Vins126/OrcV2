@@ -27,10 +27,11 @@
 | R0 | Decisioni e protocollo | ✅ 21 ott 2026 (D35-D47); rivista il 21 ott durante R1 e il 23 ott (D48-D50, vedi sotto) |
 | **R1** | **Banco di prova: compiti, esecuzione dei siti, controlli, giudice, voti umani** | ✅ **chiuso**: R1.1-R1.9 fatti (giudice su 150 coppie il 26 ott); R1.10 non conclusivo il 29 ott (3 votanti utili): R1.12 il 2 nov: giudice non accettato su Vibe Design Arena, «piace» secondaria e descrittiva |
 | R2 | Strumenti comuni, baseline e politiche semplici | 🟡 R2.1, R2.2, R2.3 e R2.6 (a) fatti; ridotta a R2.2, R2.3, R2.5 e R2.6 dal piano MVP (D55) |
-| R3 | OrcV2 minimo: sciame per sezioni | ⬜ ridotta dal piano MVP (D55): niente critico ne' proiezione della spesa |
+| R3 | OrcV2 minimo: sciame per sezioni | ✅ versione minima (3 nov, D55: niente critico ne' proiezione della spesa); versione nuova dopo la campagna (8 nov) nel codice, non ancora misurata |
 | R4.0 / R4 | Studio delle ottimizzazioni / ottimizzazione manuale | ↪️ lavoro futuro (D55) |
 | R5 | Ottimizzazione automatica (facoltativa) | ↪️ lavoro futuro (D55) |
 | R6 | Campagna finale, scala di politiche e ablazioni | ⬜ sostituita dalla campagna MVP sui 5 compiti di sviluppo (D55) |
+| **MVP** | **Campagna MVP, giudizio e analisi** | ✅ **chiuso l'8 nov 2026**: Definition of Done tutta spuntata; risultati in `TESI_master.md` §5.13, limiti in §5.14; migliorie successive da ordinare (sezione dedicata) |
 | R7 | Router grossolano | ❌ tolta il 23 ott 2026 (D48): lavoro futuro |
 
 **Dal 29 ottobre 2026 vale il piano MVP (D55), nella sezione subito sotto.** Il percorso e le fasi che seguono

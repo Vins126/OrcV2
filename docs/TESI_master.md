@@ -571,8 +571,8 @@ direzione solo in 4 coppie su 10: su 000040 e 000058 il giudice preferisce D, ch
 
 **Dove vanno i soldi di C.** Opus, fra piano e correzione, e' il 64% della spesa di C; i worker DeepSeek scrivono
 quasi tutto il codice e ne sono il 22%; i due pezzi affidati a Kimi il 15%. Il primo piano di Opus e' stato
-rifiutato dal validatore in 4 compiti su 5 per voci della tabella che non erano rotte, e la rigenerazione e' costata
-il 27% della spesa di C. Il risparmio di C su B viene da quanto poco scrive Opus, non da quanto lavorano i worker.
+rifiutato dal validatore in 4 compiti su 5 per voci della tabella che non erano rotte, e il secondo tentativo e'
+costato 0,99 $, il 14% della spesa di C. Il risparmio di C su B viene da quanto poco scrive Opus, non da quanto lavorano i worker.
 
 **Tempo.** Mediana del tempo dall'avvio alla consegna, sulle run non attraversate dallo stop della macchina: B 10
 minuti, D 19, C 31. C lavora in parallelo ma resta il braccio piu' lento: costa meno e consegna dopo.
