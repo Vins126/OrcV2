@@ -42,7 +42,8 @@ def manifest_rows(manifest: Path) -> dict[str, dict]:
             raise ShowcaseError(f"{manifest}, riga {number}: JSON non valido") from error
         if not isinstance(row, dict):
             raise ShowcaseError(f"{manifest}, riga {number}: serve un oggetto")
-        if "environment" in row:
+        # Ambiente e stop per tetto di spesa sono righe di campagna, non di un compito.
+        if "environment" in row or "stopped" in row:
             continue
         task = row.get("task_id")
         if not isinstance(task, str) or not task:

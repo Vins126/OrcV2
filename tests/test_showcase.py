@@ -71,6 +71,15 @@ def test_v1_le_righe_del_manifesto_per_compito_saltano_l_ambiente(tmp_path):
     assert righe["t2"]["total_cost"] == 2.0
 
 
+def test_v1b_la_riga_di_campagna_fermata_dal_tetto_si_salta(tmp_path):
+    # Campagna MVP (8 nov 2026): `mvp-C.jsonl` finisce con la riga dello stop per tetto di spesa.
+    manifesto = _manifesto(tmp_path, "c", [
+        _riga(tmp_path, "C", "t1", costo=1.0, accettato=True),
+        {"stopped": "max_total_usd", "spent": 3.0, "max_total_usd": 8.0}])
+
+    assert sorted(manifest_rows(manifesto)) == ["t1"]
+
+
 def test_v2_manifesto_mancante_o_compito_doppio_sono_errori_parlanti(tmp_path):
     assert issubclass(ShowcaseError, CampaignError)
     with pytest.raises(ShowcaseError, match="non trovato"):
