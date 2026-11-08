@@ -1,15 +1,17 @@
-"""Giudice a coppie, isolato e riprendibile, per la calibrazione R1.9."""
+"""Giudice a coppie, isolato e riprendibile: calibrazione R1.9 e coppie della campagna MVP."""
 
 import hashlib
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterator, Sequence
+import tomllib
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -160,7 +162,7 @@ def load_guides(path: Path) -> dict[str, Guide]:
         raise JudgeError(f"{path}: formato delle guide non valido: {error}") from error
 
 
-def _prompt(name: str, task: str, guide: Guide) -> str:
+def _prompt(name: str, task: str, guide: Guide, extra: Mapping[str, str] | None = None) -> str:
     try:
         prompt = (PROMPT_DIR / name).read_text(encoding="utf-8")
     except (OSError, ValueError) as error:
@@ -172,6 +174,7 @@ def _prompt(name: str, task: str, guide: Guide) -> str:
         "<<NOTA>>": f"\nNota: {guide.note}\n" if guide.note else "",
         "<<DOMANDE>>": "\n".join(f"{index}. {question}" for index, question in enumerate(FIXED_QUESTIONS, 1)),
         "<<RICHIESTA>>": task,
+        **(extra or {}),
     }
     for placeholder, value in replacements.items():
         prompt = prompt.replace(placeholder, value)
@@ -246,20 +249,39 @@ def _check_images(images: Sequence[Path]) -> None:
         raise JudgeError(f"servono {len(WIDTH_ORDER)} immagini per sito, in ordine {WIDTH_ORDER}")
 
 
+#: Prompt di un ordine costruito da chi chiama (compito, scheda, primo sito, secondo sito).
+#: Serve al giudizio a riquadri (`judge_tiles.py`), dove il numero di immagini per sito varia.
+PromptFor = Callable[[str, Guide, Sequence[Path], Sequence[Path]], str]
+
+
 def judge_order(task: str, guide: Guide, first: Sequence[Path], second: Sequence[Path], *,
-                runner: Runner) -> OrderResult:
-    """Vota un ordine; i tempi scaduti si ripetono entro ciascun tentativo."""
-    _check_images(first)
-    _check_images(second)
-    value, attempts, outputs = _attempts(vote_prompt(task, guide), [*first, *second], VOTE_SCHEMA, parse_vote, runner)
+                runner: Runner, prompt: str | None = None) -> OrderResult:
+    """Vota un ordine; i tempi scaduti si ripetono entro ciascun tentativo.
+
+    Senza `prompt` vale il protocollo calibrato: `voto.txt` e tre immagini per sito.
+    Con un `prompt` proprio basta che ogni sito abbia almeno un'immagine.
+    """
+    if prompt is None:
+        _check_images(first)
+        _check_images(second)
+        prompt = vote_prompt(task, guide)
+    elif not first or not second:
+        raise JudgeError("serve almeno un'immagine per sito")
+    value, attempts, outputs = _attempts(prompt, [*first, *second], VOTE_SCHEMA, parse_vote, runner)
     return OrderResult(value, attempts, outputs, sum(output.timed_out for output in outputs))
 
 
 def judge_pair(task: str, guide: Guide, left: Sequence[Path], right: Sequence[Path], *,
-               runner: Runner) -> PairResult:
-    """Vota comunque entrambi gli ordini e conserva i mezzi punti della media."""
-    forward = judge_order(task, guide, left, right, runner=runner)
-    backward = judge_order(task, guide, right, left, runner=runner)
+               runner: Runner, prompt_for: PromptFor | None = None) -> PairResult:
+    """Vota comunque entrambi gli ordini e conserva i mezzi punti della media.
+
+    Con `prompt_for` il prompt si costruisce per ciascun ordine: scambiando i siti
+    cambia anche quali immagini appartengono alla proposta A.
+    """
+    forward_prompt = prompt_for(task, guide, left, right) if prompt_for is not None else None
+    backward_prompt = prompt_for(task, guide, right, left) if prompt_for is not None else None
+    forward = judge_order(task, guide, left, right, runner=runner, prompt=forward_prompt)
+    backward = judge_order(task, guide, right, left, runner=runner, prompt=backward_prompt)
     value = None
     if forward.value is not None and backward.value is not None:
         value = (forward.value - backward.value) / 2
@@ -528,3 +550,215 @@ def judge_package(package_dir: Path, key_file: Path, guides_file: Path, out_file
         return judgments
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise JudgeError(f"{out_file}: elaborazione dei giudizi non riuscita: {error}") from error
+
+
+# --- Coppie della campagna MVP (task 7, D52) ---
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    """Mappa versionata braccio -> compito -> campagna, con seme e riferimento."""
+
+    seed: int
+    tasks_file: Path
+    guides_file: Path
+    baseline: str
+    challengers: tuple[str, ...]
+    runs: dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
+class PlannedPair:
+    """Una coppia da giudicare: lato sinistro e destro deciso dal seme."""
+
+    item: str
+    pair_id: str
+    task_id: str
+    challenger: str
+    baseline: str
+    left_arm: str
+    right_arm: str
+    left: tuple[Path, ...]
+    right: tuple[Path, ...]
+    run_ids: dict[str, str]
+
+
+def load_run_config(path: Path) -> RunConfig:
+    """Legge la mappa; ogni braccio deve coprire esattamente gli stessi compiti."""
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        raise JudgeError(f"{path}: lettura della mappa non riuscita: {error}") from error
+    seed, tasks, guides = data.get("seed"), data.get("tasks"), data.get("guides")
+    baseline, challengers, runs = data.get("baseline"), data.get("challengers"), data.get("runs")
+    if (type(seed) is not int or not isinstance(tasks, str) or not isinstance(guides, str)
+            or not isinstance(baseline, str) or not isinstance(challengers, list) or not challengers
+            or not all(isinstance(arm, str) for arm in challengers)
+            or baseline in challengers or len(set(challengers)) != len(challengers)
+            or not isinstance(runs, dict)):
+        raise JudgeError(f"{path}: campi seed, tasks, guides, baseline, challengers o runs non validi")
+    arms = [baseline, *challengers]
+    if set(runs) != set(arms):
+        raise JudgeError(f"{path}: runs deve avere esattamente i bracci {arms}")
+    task_sets = set()
+    for arm in arms:
+        table = runs[arm]
+        if (not isinstance(table, dict) or not table
+                or not all(isinstance(campaign, str) and campaign for campaign in table.values())):
+            raise JudgeError(f"{path}: run del braccio {arm} non valide")
+        task_sets.add(frozenset(table))
+    if len(task_sets) != 1:
+        raise JudgeError(f"{path}: i bracci non coprono gli stessi compiti")
+    return RunConfig(seed, path.parent / tasks, path.parent / guides, baseline, tuple(challengers),
+                     {arm: dict(runs[arm]) for arm in arms})
+
+
+def _run_site(campaigns_dir: Path, campaign: str, task_id: str) -> tuple[str, tuple[Path, ...]]:
+    """La sola riga del compito nel manifesto e i suoi screenshot in ordine di larghezza."""
+    manifest = campaigns_dir / f"{campaign}.jsonl"
+    try:
+        rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, ValueError) as error:
+        raise JudgeError(f"{manifest}: lettura del manifesto non riuscita: {error}") from error
+    found = [row for row in rows if isinstance(row, dict) and row.get("task_id") == task_id]
+    if len(found) != 1:
+        raise JudgeError(f"{manifest}: attesa una riga per il compito {task_id}, trovate {len(found)}")
+    row = found[0]
+    evaluation = row.get("evaluation")
+    run_id = row.get("run_id")
+    if not isinstance(evaluation, dict) or not isinstance(evaluation.get("path"), str) or not isinstance(run_id, str):
+        raise JudgeError(f"{manifest}: valutazione o run_id mancante per il compito {task_id}")
+    data = _read_json(Path(evaluation["path"]))
+    shots = data.get("riservato", {}).get("screenshots") if isinstance(data, dict) else None
+    if not isinstance(shots, dict):
+        raise JudgeError(f"{evaluation['path']}: screenshot mancanti")
+    images = []
+    for width in WIDTH_ORDER:
+        shot = shots.get(str(width))
+        if not isinstance(shot, str) or not Path(shot).is_file():
+            raise JudgeError(f"{evaluation['path']}: screenshot a {width} mancante")
+        images.append(Path(shot))
+    return run_id, tuple(images)
+
+
+def plan_run_pairs(config: RunConfig, campaigns_dir: Path) -> list[PlannedPair]:
+    """Una coppia per compito e braccio in prova; il seme sceglie chi sta a sinistra."""
+    rng = random.Random(config.seed)
+    pairs = []
+    for task_id in sorted(config.runs[config.baseline]):
+        base_run, base_images = _run_site(campaigns_dir, config.runs[config.baseline][task_id], task_id)
+        for challenger in config.challengers:
+            run_id, images = _run_site(campaigns_dir, config.runs[challenger][task_id], task_id)
+            sides = [(config.baseline, base_run, base_images), (challenger, run_id, images)]
+            if rng.random() < 0.5:
+                sides.reverse()
+            (left_arm, left_run, left), (right_arm, right_run, right) = sides
+            pair_id = f"{challenger}-{config.baseline}"
+            pairs.append(PlannedPair(f"{pair_id}/{task_id}", pair_id, task_id, challenger, config.baseline,
+                                     left_arm, right_arm, left, right, {left_arm: left_run, right_arm: right_run}))
+    return pairs
+
+
+def freeze_plan(pairs: Sequence[PlannedPair], seed: int, path: Path) -> str:
+    """Scrive il piano con l'impronta di ogni immagine; un piano diverso blocca la ripresa."""
+    def images(paths: tuple[Path, ...]) -> list[dict[str, Any]]:
+        try:
+            return [{"width": width, "path": str(image), "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
+                    for width, image in zip(WIDTH_ORDER, paths)]
+        except OSError as error:
+            raise JudgeError(f"lettura di un'immagine non riuscita: {error}") from error
+
+    rows = [{"item": pair.item, "pair_id": pair.pair_id, "task_id": pair.task_id, "challenger": pair.challenger,
+             "baseline": pair.baseline, "left_arm": pair.left_arm, "right_arm": pair.right_arm,
+             "run_ids": pair.run_ids, "left": images(pair.left), "right": images(pair.right)} for pair in pairs]
+    text = json.dumps({"seed": seed, "widths": list(WIDTH_ORDER), "pairs": rows}, indent=2, ensure_ascii=False) + "\n"
+    try:
+        if path.exists():
+            if path.read_text(encoding="utf-8") != text:
+                raise JudgeError(f"{path}: piano congelato diverso da quello attuale (seme, run o immagini)")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+    except OSError as error:
+        raise JudgeError(f"{path}: piano non scritto: {error}") from error
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def judge_run_pairs(pairs: Sequence[PlannedPair], tasks: Mapping[str, str], guides_file: Path, out_file: Path, *,
+                    runner: Runner, meta: dict[str, Any], items: Sequence[str] | None = None,
+                    prompt_for: PromptFor | None = None) -> list[Judgment]:
+    """Positivo se vince il braccio in prova; riprende solo con metadati identici.
+
+    `prompt_for` e' per il giudizio a riquadri; senza, vale il protocollo calibrato.
+    """
+    guides = load_guides(guides_file)
+    by_item = {pair.item: pair for pair in pairs}
+    selected = set(items) if items is not None else None
+    if selected is not None and selected - set(by_item):
+        raise JudgeError("il filtro contiene coppie sconosciute al piano")
+    existing = {row.item: row for row in load_judgments(out_file)} if out_file.exists() else {}
+    for item, judgment in existing.items():
+        if judgment.meta != meta:
+            raise JudgeError(f"{out_file}: metadati diversi per il giudizio {item}")
+        if item not in by_item or judgment.pair_id != by_item[item].pair_id:
+            raise JudgeError(f"{out_file}: giudizio non appartenente al piano: {item}")
+    prepared = []
+    # Si controllano tutte le coppie prima di spendere una chiamata.
+    for pair in pairs:
+        if selected is not None and pair.item not in selected:
+            continue
+        task = tasks.get(pair.task_id)
+        if not isinstance(task, str):
+            raise JudgeError(f"{pair.item}: testo del compito mancante")
+        guide = guides.get(hashlib.sha256(task.encode("utf-8")).hexdigest())
+        if guide is None:
+            raise JudgeError(f"{pair.item}: scheda mancante per il compito {pair.task_id}")
+        prepared.append((pair, task, guide))
+    try:
+        json.dumps(meta, allow_nan=False)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        judgments = []
+        with out_file.open("a", encoding="utf-8") as stream:
+            for pair, task, guide in prepared:
+                if pair.item in existing:
+                    judgments.append(existing[pair.item])
+                    continue
+                result = judge_pair(task, guide, pair.left, pair.right, runner=runner, prompt_for=prompt_for)
+                outputs = result.forward.outputs + result.backward.outputs
+                usage: dict[str, int] = {}
+                for output in outputs:
+                    for name, count in output.usage.items():
+                        usage[name] = usage.get(name, 0) + count
+                # judge_pair e' positivo verso destra: si riporta dalla parte del braccio in prova.
+                sign = 1 if pair.right_arm == pair.challenger else -1
+                judgment = Judgment(
+                    item=pair.item, pair_id=pair.pair_id,
+                    value=result.value * sign if result.value is not None else None,
+                    forward=result.forward.value, backward=result.backward.value,
+                    attempts=result.forward.attempts + result.backward.attempts,
+                    seconds=sum(output.seconds for output in outputs), usage=usage,
+                    date=datetime.now(timezone.utc).isoformat(), meta=meta,
+                    timeouts=result.forward.timeouts + result.backward.timeouts,
+                )
+                stream.write(json.dumps(asdict(judgment), ensure_ascii=False, allow_nan=False) + "\n")
+                stream.flush()
+                judgments.append(judgment)
+        return judgments
+    except (OSError, ValueError, TypeError) as error:
+        raise JudgeError(f"{out_file}: elaborazione dei giudizi non riuscita: {error}") from error
+
+
+def summarize_run_judgments(judgments: Sequence[Judgment]) -> dict[str, dict[str, Any]]:
+    """Media per coppia sui soli giudizi valutabili, con il voto di ogni compito."""
+    summary: dict[str, dict[str, Any]] = {}
+    for judgment in sorted(judgments, key=lambda row: row.item):
+        entry = summary.setdefault(judgment.pair_id, {"mean": None, "rated": 0, "unratable": 0, "by_task": {}})
+        entry["by_task"][judgment.item.split("/", 1)[1]] = judgment.value
+        if judgment.value is None:
+            entry["unratable"] += 1
+        else:
+            entry["rated"] += 1
+    for entry in summary.values():
+        values = [value for value in entry["by_task"].values() if value is not None]
+        entry["mean"] = sum(values) / len(values) if values else None
+    return summary

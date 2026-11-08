@@ -728,6 +728,58 @@ def _calibration_phase(args: argparse.Namespace) -> None:
             print(f"rapporto: {report_file}")
 
 
+def _task_texts(tasks_file: Path) -> dict[str, str]:
+    """Testo originale di ogni compito selezionato, come lo vede il giudice."""
+    from webtasks import load_selection
+    return {task.candidate.id: task.candidate.text for task in load_selection(tasks_file, WEB_DATA_DIR)}
+
+
+def _codex_version() -> str:
+    import judge
+
+    try:
+        version = subprocess.run(["codex", "--version"], capture_output=True, text=True,
+                                 timeout=judge.CALL_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise judge.JudgeError(f"versione di Codex non disponibile: {error}") from error
+    if version.returncode != 0 or not version.stdout.strip():
+        raise judge.JudgeError(f"versione di Codex non disponibile: {version.stderr.strip()}")
+    return version.stdout.strip()
+
+
+def _judge_runs(args: argparse.Namespace, campaigns_dir: Path) -> None:
+    """Coppie della campagna MVP: piano congelato, giudizi riprendibili, riepilogo (task 7, D52)."""
+    import judge
+
+    run_config = judge.load_run_config(args.config)
+    pairs = judge.plan_run_pairs(run_config, args.campaigns_dir or campaigns_dir)
+    tasks = _task_texts(run_config.tasks_file)
+    plan_sha = judge.freeze_plan(pairs, run_config.seed, args.out / "coppie.json")
+    try:
+        meta = {
+            "model": judge.JUDGE_MODEL,
+            "effort": judge.JUDGE_EFFORT,
+            "codex_version": _codex_version(),
+            "vote_sha256": hashlib.sha256((judge.PROMPT_DIR / "voto.txt").read_bytes()).hexdigest(),
+            "guides_sha256": hashlib.sha256(run_config.guides_file.read_bytes()).hexdigest(),
+            "plan_sha256": plan_sha,
+        }
+    except OSError as error:
+        raise judge.JudgeError(f"preparazione del giudice non riuscita: {error}") from error
+    items = [item.strip() for item in args.items.split(",") if item.strip()] if args.items is not None else None
+    judgments = judge.judge_run_pairs(pairs, tasks, run_config.guides_file, args.out / "giudizi.jsonl",
+                                      runner=judge.codex_runner(), meta=meta, items=items)
+    print(f"coppie giudicate: {len(judgments)}; non valutabili: {sum(row.value is None for row in judgments)}")
+    base = run_config.baseline
+    print(f"voto dalla parte del braccio in prova: +2 molto meglio di {base}, -2 {base} molto meglio")
+    for pair_id, entry in judge.summarize_run_judgments(judgments).items():
+        mean = f"{entry['mean']:+.2f}" if entry["mean"] is not None else "n.d."
+        print(f"{pair_id}: media {mean} su {entry['rated']} compiti; non valutabili {entry['unratable']}")
+        for task_id, value in entry["by_task"].items():
+            print(f"  {task_id}: {f'{value:+.1f}' if value is not None else 'non valutabile'}")
+    print(f"giudizi: {args.out / 'giudizi.jsonl'}")
+
+
 def _positive_int(text: str) -> int:
     value = int(text)
     if value < 1:
@@ -794,6 +846,16 @@ def build_parser() -> argparse.ArgumentParser:
     vibe_agreement = phases.add_parser("vibe-agreement", help="applica la regola di R1.12 ai giudizi")
     vibe_agreement.add_argument("--samples", type=int, default=10_000)
 
+    judge_runs = sotto.add_parser("judge-runs",
+                                  help="giudica le coppie della campagna in entrambi gli ordini (task 7)")
+    judge_runs.add_argument("--config", type=Path, default=PROJECT_ROOT / "campaigns" / "mvp_giudizio.toml",
+                            help="mappa braccio -> compito -> campagna, seme e schede")
+    judge_runs.add_argument("--campaigns-dir", type=Path, default=None,
+                            help="cartella dei manifesti; predefinita runs/campaigns")
+    judge_runs.add_argument("--out", type=Path, default=PROJECT_ROOT / "runs" / "giudizio-mvp",
+                            help="cartella del piano congelato e dei giudizi")
+    judge_runs.add_argument("--items", default=None, help="solo queste coppie (es. C-B/842), separate da virgola")
+
     rep = sotto.add_parser("report", help="calcola f e quota di output di una campagna")
     rep.add_argument("campaign_id")
 
@@ -840,6 +902,14 @@ def main(argv: Sequence[str] | None = None, *, dotenv_path: Path | None = None) 
         except ShowcaseError as error:
             print(f"errore: {error}", file=sys.stderr)
             return 2
+
+    if args.comando == "judge-runs":
+        try:
+            _judge_runs(args, campaigns_dir)
+        except CampaignError as error:
+            print(f"errore: {error}", file=sys.stderr)
+            return 2
+        return 0
 
     registry = ModelRegistry.from_file(PROJECT_ROOT / "models.toml")
     dotenv = dotenv_path if dotenv_path is not None else PROJECT_ROOT / ".env"

@@ -273,5 +273,50 @@ def test_s5_una_forma_per_una_rotta_in_piu_e_ammessa():
     assert piano.contract["GET /api/health"] == '200 {"ok": true}'
 
 
-def test_s5_una_chiave_che_non_e_una_rotta_e_un_errore():
-    assert "rotta" in _errore(_piano(*json.loads(_valido())["pieces"], contract={**FORME, "cars": "x"}))
+# ── MS-1 (8 nov 2026): voci della tabella che non sono rotte ──────────────
+# Nella campagna MVP 4 piani su 5 erano rifiutati al primo tentativo per chiavi come `COMMON` o
+# `_persistence` in `contract`: regole comuni, non rotte. Cambio di contratto: prima erano un
+# errore (test S5 «una chiave che non e' una rotta»), ora si spostano nelle note del piano.
+
+@pytest.mark.parametrize("chiave", ["COMMON", "_persistence", "cars", "GET cars"])
+def test_ms1_una_chiave_che_non_e_una_rotta_diventa_una_nota(chiave):
+    piano = parse_plan(_piano(*json.loads(_valido())["pieces"], contract={**FORME, chiave: " errori comuni "}),
+                       routes=ROTTE, workers=WORKERS)
+
+    assert piano.notes == {chiave: "errori comuni"}
+    assert chiave not in piano.contract and len(piano.contract) == 3
+
+
+def test_ms1_le_note_esplicite_si_tengono_e_i_valori_non_testuali_diventano_json():
+    documento = json.loads(_valido())
+    documento["notes"] = {"errors": "400 {\"error\": string}"}
+    documento["contract"] = {**FORME, "COMMON": {"error": "string"}}
+    piano = parse_plan(json.dumps(documento), routes=ROTTE, workers=WORKERS)
+
+    assert piano.notes == {"errors": '400 {"error": string}', "COMMON": '{"error": "string"}'}
+
+
+@pytest.mark.parametrize("note", [["x"], "x", 3])
+def test_ms1_note_che_non_sono_un_oggetto_sono_un_errore(note):
+    documento = json.loads(_valido())
+    documento["notes"] = note
+    assert "notes" in _errore(json.dumps(documento))
+
+
+def test_ms1_una_nota_non_sostituisce_la_forma_di_una_rotta_mancante():
+    contratto = {k: v for k, v in FORME.items() if k != "POST /api/bookings"} | {"COMMON": "x"}
+    assert "POST /api/bookings" in _errore(_piano(*json.loads(_valido())["pieces"], contract=contratto))
+
+
+def test_ms1_un_piano_senza_note_ha_note_vuote():
+    assert parse_plan(_valido(), routes=ROTTE, workers=WORKERS).notes == {}
+
+
+def test_ms1_una_chiave_del_contratto_omonima_di_una_nota_non_la_cancella():
+    """Revisione dell'8 nov: le due note restano, quella del contratto con un nome distinto."""
+    documento = json.loads(_valido())
+    documento["notes"] = {"COMMON": "a"}
+    documento["contract"] = {**FORME, "COMMON": "b"}
+    piano = parse_plan(json.dumps(documento), routes=ROTTE, workers=WORKERS)
+
+    assert piano.notes == {"COMMON": "a", "contract COMMON": "b"}

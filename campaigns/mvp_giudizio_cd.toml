@@ -1,0 +1,28 @@
+# Giudizio a coppie C-D della campagna MVP (voce MM-1 di docs/ROADMAP.md).
+#
+# Confronto aggiunto dopo aver visto i risultati della campagna: in tesi si dichiara
+# come tale. Stesse run di campaigns/mvp_giudizio.toml (regola «Guasti della macchina»
+# di docs/PROTOCOLLO.md §0), stesse schede e stesso giudice; riferimento D, braccio
+# in prova C, voto positivo se vince C. Seme nuovo, scritto qui prima della prima
+# chiamata. Il piano si congela in runs/giudizio-mvp-cd/coppie.json; il piano
+# congelato di runs/giudizio-mvp/ resta com'e'.
+
+seed = 20261109
+tasks = "r1_compiti.toml"
+guides = "mvp_schede.json"
+baseline = "D"
+challengers = ["C"]
+
+[runs.D]
+"000058" = "mvp-D"
+"842" = "mvp-D"
+"684" = "mvp-D"
+"000098" = "mvp-D-r2"
+"000040" = "mvp-D-r2"
+
+[runs.C]
+"000098" = "mvp-C"
+"000058" = "mvp-C"
+"000040" = "mvp-C-r2"
+"842" = "mvp-C2-842"
+"684" = "mvp-C2-684"

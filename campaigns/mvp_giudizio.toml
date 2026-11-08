@@ -1,0 +1,34 @@
+# Giudizio a coppie della campagna MVP (task 7 di docs/ROADMAP.md, D52).
+#
+# Per ogni compito e braccio la run valida: la prima arrivata alla fine, secondo la
+# regola «Guasti della macchina» di docs/PROTOCOLLO.md §0. Ogni braccio in prova si
+# confronta con il riferimento in entrambi gli ordini; il seme decide quale sito
+# compare per primo. Il piano si congela in runs/giudizio-mvp/coppie.json prima
+# della prima chiamata.
+
+seed = 20261108
+tasks = "r1_compiti.toml"
+guides = "mvp_schede.json"
+baseline = "B"
+challengers = ["C", "D"]
+
+[runs.B]
+"000098" = "mvp-B"
+"000058" = "mvp-B"
+"842" = "mvp-B"
+"684" = "mvp-B"
+"000040" = "mvp-B-r2"
+
+[runs.C]
+"000098" = "mvp-C"
+"000058" = "mvp-C"
+"000040" = "mvp-C-r2"
+"842" = "mvp-C2-842"
+"684" = "mvp-C2-684"
+
+[runs.D]
+"000058" = "mvp-D"
+"842" = "mvp-D"
+"684" = "mvp-D"
+"000098" = "mvp-D-r2"
+"000040" = "mvp-D-r2"

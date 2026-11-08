@@ -400,6 +400,11 @@ Una esecuzione per compito e per braccio.
   dichiarazioni di significativita'. «Piace» di V: nei compiti in cui il cancello accetta vale il voto della coppia
   D-B, negli altri 0 (stesso sito di B); «piace» di H: coppie H-B giudicate come C-B. Si riportano anche `a` (quota di compiti in cui D supera il cancello) e la
   quota di spesa di Opus in H e in C.
+- ✅ **Semi delle analisi (8 nov 2026).** Il seme 20261108 dei bootstrap dell'analisi della campagna MVP e' stato
+  scelto durante l'analisi, non prima. Con 5 compiti gli intervalli coincidono con il bootstrap esatto (tutti i 3125
+  ricampionamenti), e con i semi gia' registrati 20261021, 20261025 e 20261029 nessun esito cambia (unica differenza:
+  limite basso di D−B −14,7 invece di −15,3). Dalle prossime misure ogni analisi usa il seme **20261021**, scritto
+  qui prima dei dati; con 8 compiti o meno si riporta il bootstrap esatto.
 
 ## 11. Spesa ✅ (D44)
 

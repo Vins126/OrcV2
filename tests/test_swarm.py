@@ -170,6 +170,8 @@ def _esegui(tmp_path, fabbrica=None, cancello=None, budget_usd=None, prompt=PROM
     cancello = cancello or CancelloFinto()
     ws, out = tmp_path / "ws", tmp_path / "out"
     ws.mkdir(exist_ok=True)
+    # La build vera gira in Docker: nei test si inietta una finta che non fa nulla (MS-6).
+    extra.setdefault("build_site", lambda _ws: None)
     esito = run_swarm(fabbrica, prompt, ws, out, budget_usd=budget_usd, gate=cancello, **extra)
     return esito, fabbrica, cancello
 
@@ -842,3 +844,217 @@ def test_s7_gli_altri_esiti_contano_sempre_come_incompleti_anche_con_i_file(tmp_
 
     assert esito.escalated is True
     assert "bookings" in _eventi(esito, "escalation")[0]["incomplete"]
+
+
+# ── Migliorie dello sciame dopo la campagna MVP (8 nov 2026, versione nuova di C) ──
+# MS-1 piano tollerante, MS-3 scheletro solo cablaggio, MS-5 sei posti e pezzi lunghi prima,
+# MS-6 build dal codice, MS-7 i data-testid del compito copiati e il compito che vince sul piano.
+
+def test_ms1_il_registro_del_piano_nomina_le_note_spostate(tmp_path):
+    documento = json.loads(PIANO)
+    documento["contract"] = {**FORME, "COMMON": "400 {error}"}
+    esito, _, _ = _esegui(tmp_path, fabbrica=FabbricaFinta(piani=(json.dumps(documento),)))
+
+    assert [e["valid"] for e in _eventi(esito, "plan")] == [True]
+    assert _eventi(esito, "plan")[0]["notes"] == ["COMMON"]
+
+
+def test_ms1_il_worker_vede_le_note_comuni_solo_se_ci_sono():
+    documento = json.loads(PIANO)
+    documento["notes"] = {"COMMON": "every error is 400 {error: string}"}
+    piano = parse_plan(json.dumps(documento), routes=("GET /api/cars", "POST /api/bookings"),
+                       workers=("worker", "worker_cheap"))
+
+    assert "SHARED NOTES" in worker_prompt(PROMPT, piano, piano.pieces[1])
+    assert "COMMON: every error is 400 {error: string}" in worker_prompt(PROMPT, piano, piano.pieces[1])
+    assert "SHARED NOTES" not in worker_prompt(PROMPT, _piano(), _piano().pieces[1])
+
+
+def test_ms1_il_planner_sa_che_le_chiavi_del_contratto_sono_solo_rotte():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert '"notes"' in testo
+    assert "Keys of \"contract\" are routes only" in testo
+
+
+def test_ms3_lo_scheletro_e_solo_cablaggio_e_finisce_quando_la_build_passa():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert "only the wiring" in testo
+    assert "no visual components and no section content" in testo
+    assert "does not inspect the site visually" in testo
+
+
+def test_ms5_i_posti_predefiniti_sono_quelli_della_sandbox():
+    import inspect
+
+    import config
+
+    assert inspect.signature(run_swarm).parameters["max_parallel"].default == config.DOCKER_MAX_CONCURRENT
+
+
+def test_ms5_nella_stessa_ondata_partono_prima_kimi_poi_l_interfaccia_poi_i_server(tmp_path):
+    descrizione = lambda id_, n: {**_pezzo(id_, [f"{id_}.js"], ["skeleton"]), "description": f"descrizione di {id_} " + "x " * n}
+    piano = json.dumps({"style": "s", "contract": FORME, "pieces": [
+        _pezzo("skeleton", ["start.sh"]),
+        {**descrizione("server", 50), "routes": ["GET /api/cars", "POST /api/bookings"]},
+        descrizione("corta", 5),
+        descrizione("lunga", 40),
+        {**descrizione("kimi", 1), "worker": "worker"},
+    ]})
+    _, fabbrica, _ = _esegui(tmp_path, fabbrica=FabbricaFinta(piani=(piano,)), max_parallel=1)
+
+    assert fabbrica.pezzi_costruiti() == ["skeleton", "kimi", "lunga", "corta", "server"]
+
+
+def test_ms6_il_planner_non_crea_pezzi_di_build_o_di_verifica():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert "Do not create build, integration or verification pieces" in testo
+
+
+class BuildFinta:
+    def __init__(self, *esiti):
+        self.esiti = list(esiti) or [{"exit_code": 0, "stdout": "built", "stderr": ""}]
+        self.chiamate = []
+
+    def __call__(self, workspace):
+        self.chiamate.append(Path(workspace))
+        esito = self.esiti[min(len(self.chiamate) - 1, len(self.esiti) - 1)]
+        if isinstance(esito, BaseException):
+            raise esito
+        return esito
+
+
+def test_ms6_la_build_gira_una_volta_dopo_l_ultimo_pezzo_e_prima_del_cancello(tmp_path):
+    ordine = []
+    build = BuildFinta()
+    cancello = CancelloFinto()
+
+    def build_registrata(ws):
+        ordine.append(("build", time.monotonic()))
+        return build(ws)
+
+    def cancello_registrato(ws, out):
+        ordine.append(("cancello", time.monotonic()))
+        return cancello(ws, out)
+
+    esito, fabbrica, _ = _esegui(tmp_path, cancello=cancello_registrato, build_site=build_registrata)
+
+    assert build.chiamate == [tmp_path / "ws"]
+    assert [nome for nome, _ in ordine] == ["build", "cancello"]
+    # Revisione dell'8 nov: la build deve partire dopo la fine di ogni pezzo, non solo prima del cancello.
+    assert len(fabbrica.pezzi_costruiti()) == 4
+    assert ordine[0][1] >= max(fine for _, fine in fabbrica.fini)
+    assert _eventi(esito, "build") == [{"event": "build", "phase": "initial", "exit_code": 0,
+                                        "skipped": False, "error": None}]
+    assert esito.escalated is False
+
+
+def test_ms6_senza_script_di_build_la_build_si_registra_come_saltata(tmp_path):
+    esito, _, _ = _esegui(tmp_path)
+
+    assert _eventi(esito, "build")[0]["skipped"] is True
+    assert esito.escalated is False
+
+
+def test_ms6_una_build_fallita_fa_partire_la_correzione_con_l_errore(tmp_path):
+    build = BuildFinta({"exit_code": 1, "stdout": "", "stderr": "src/App.jsx: Unexpected token"},
+                       {"exit_code": 0, "stdout": "built", "stderr": ""})
+    esito, fabbrica, _ = _esegui(tmp_path, build_site=build)
+
+    assert esito.escalated is True
+    correzione = _correttori(fabbrica)[0].prompts[0]
+    assert "BUILD FAILURE" in correzione and "src/App.jsx: Unexpected token" in correzione
+    assert [e["phase"] for e in _eventi(esito, "build")] == ["initial", "after_escalation"]
+
+
+def test_ms6_un_guasto_della_build_si_registra_e_non_fa_partire_la_correzione(tmp_path):
+    esito, _, _ = _esegui(tmp_path, build_site=BuildFinta(RuntimeError("docker assente")))
+
+    riga = _eventi(esito, "build")[0]
+    assert riga["error"] == "docker assente" and riga["exit_code"] is None
+    assert esito.escalated is False
+
+
+def test_ms6_al_tetto_la_build_gira_ma_la_correzione_no(tmp_path):
+    build = BuildFinta({"exit_code": 1, "stdout": "", "stderr": "rotto"})
+    fabbrica = FabbricaFinta(costo=0.3)
+    esito, _, _ = _esegui(tmp_path, fabbrica=fabbrica, budget_usd=1.0, build_site=build)
+
+    assert len(build.chiamate) == 1
+    assert esito.escalated is False
+
+
+def test_ms6_il_prompt_di_correzione_ha_la_sezione_build_solo_se_serve():
+    piano = _piano()
+
+    assert "BUILD FAILURE" not in escalation_prompt(PROMPT, piano, "404", {})
+    testo = escalation_prompt(PROMPT, piano, None, {}, build_error="exit 1: boom")
+    assert "BUILD FAILURE" in testo and "exit 1: boom" in testo
+    assert "npm run build" in testo
+
+
+def test_ms6_la_build_predefinita_salta_un_workspace_senza_script_di_build(tmp_path):
+    from swarm import build_site
+
+    assert build_site(tmp_path) is None
+    (tmp_path / "package.json").write_text('{"scripts": {"start": "node server.js"}}')
+    assert build_site(tmp_path) is None
+    (tmp_path / "package.json").write_text("non json")
+    assert build_site(tmp_path) is None
+
+
+def test_ms7_il_planner_copia_parola_per_parola_i_data_testid_del_compito():
+    testo = planner_prompt(PROMPT, REGISTRO, ("GET /api/cars", "POST /api/bookings"))
+
+    assert "copy verbatim" in testo and "data-testid" in testo
+    assert "do not add conditions the task does not state" in testo
+
+
+def test_ms7_il_worker_sa_che_il_compito_vince_sulla_descrizione_del_pezzo():
+    piano = _piano()
+    testo = worker_prompt(PROMPT, piano, piano.pieces[1])
+
+    assert "If YOUR PIECE contradicts the TASK" in testo
+    assert "follow the TASK" in testo
+
+
+def test_ms6_la_build_predefinita_gira_nella_sandbox_senza_rete(tmp_path, monkeypatch):
+    """Revisione dell'8 nov: il ramo che esegue davvero la build, con un esecutore finto."""
+    import config
+    import swarm
+
+    creati = []
+
+    class EsecutoreFinto:
+        def __init__(self, workspace, **opzioni):
+            self.workspace, self.opzioni, self.comandi = workspace, opzioni, []
+            creati.append(self)
+
+        def run(self, command):
+            self.comandi.append(command)
+            return {"exit_code": 0, "stdout": "built", "stderr": ""}
+
+    monkeypatch.setattr(swarm, "DockerExecutor", EsecutoreFinto)
+    (tmp_path / "package.json").write_text('{"scripts": {"build": "vite build"}}')
+
+    esito = swarm.build_site(tmp_path)
+
+    assert esito == {"exit_code": 0, "stdout": "built", "stderr": ""}
+    assert len(creati) == 1 and creati[0].workspace == str(tmp_path)
+    assert creati[0].comandi == ["npm run build"]
+    assert creati[0].opzioni["network"] == "none"
+    assert creati[0].opzioni["image"] == config.DOCKER_IMAGE
+    assert creati[0].opzioni["timeout"] == config.EXEC_TIMEOUT
+
+
+@pytest.mark.parametrize("esito_build", [{"exit_code": None}, {"exit_code": "boh"}, {"stdout": "x"},
+                                          {"exit_code": True}])
+def test_ms6_un_esito_di_build_malformato_e_un_guasto_registrato(tmp_path, esito_build):
+    """Revisione dell'8 nov: un esito senza codice intero non fa cadere lo sciame."""
+    esito, _, _ = _esegui(tmp_path, build_site=BuildFinta(esito_build))
+
+    riga = _eventi(esito, "build")[0]
+    assert riga["exit_code"] is None and "exit_code" in riga["error"]
+    assert esito.status == "completed" and esito.escalated is False

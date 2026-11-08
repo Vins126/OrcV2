@@ -520,6 +520,43 @@ combattute: dato descrittivo, non parte della regola.*
 - Code aperte nel codice, senza effetto sui numeri: riga troncata in coda al file dei giudizi dopo un arresto,
   π non definito su un votante con una sola categoria (saltato e contato), α ordinale come media a coppie.
 
+### 5.13 Limiti della campagna MVP (8 novembre 2026)
+
+Limiti emersi dalla lettura dei registri delle 15 run valide (5 compiti, bracci B, C e D). Non cambiano le cifre:
+dicono come leggerle.
+
+**Potenza.** Con 5 compiti la prova ha bassa potenza: lo scarto delle differenze di «funziona» fra C e B e' 16,1
+punti e l'intervallo al 95% del test t appaiato ha semi-ampiezza di 20 punti, il doppio del margine τ = 10. Anche
+se la differenza vera fosse quella osservata (+1,7), per avere il limite basso sopra −10 servirebbero 10 compiti;
+per riuscirci 8 volte su 10, circa 15 (calcolo, non misura). «Non dimostrato» qui significa «non misurabile con
+questo numero di compiti», non «C e' peggiore».
+
+**Composizione di C su 000098.** Su questo compito C non ha lavorato come sciame. Lo scheletro, affidato a DeepSeek,
+si e' interrotto per la caduta della connessione durante lo stop della macchina, e i 9 pezzi successivi sono stati
+saltati. Anche la correzione di Opus si e' interrotta prima di scrivere file. Il sito valutato e' quindi il lavoro
+di un solo worker DeepSeek sul piano di Opus: su questo compito C e' piu' vicino a un «pianifica ed esegui» che a
+uno sciame.
+
+**Versioni del codice di C.** Tre run valide di C (000098 e 000058 nella campagna `mvp-C`, 000040 in `mvp-C-r2`)
+sono state eseguite con il codice dello sciame precedente alle correzioni dell'8 novembre: lo scheletro non sapeva
+di essere l'unico pezzo attivo, e la correzione partiva anche quando lo scheletro arrivava al limite di iterazioni
+con il cancello che accettava il sito. Con la regola nuova la correzione non sarebbe partita su 000058 e 000040. Le
+run di 842 e 684 sono state eseguite con il codice corretto.
+
+**Pagine viste dal giudice.** Il giudice vede sempre la pagina `/`, ma non e' la stessa pagina per tutti: su 000040
+la `/` di D e' il carrello, mentre quella di B e' la pagina principale. Il voto D-B di 000040 confronta quindi
+pagine con funzioni diverse.
+
+**Screenshot tagliati.** Gli screenshot si fermano a 4000 px di altezza: 12 immagini su 45 sono al limite. Su B e
+C di 000058 lo sono a tutte e tre le larghezze, e la parte bassa della pagina resta fuori dal giudizio.
+
+**Confronto C-D aggiunto dopo.** Il confronto a coppie fra C e D (5 coppie, entrambi gli ordini, seme 20261109) e'
+stato deciso dopo aver visto i risultati della campagna: e' descrittivo come «piace» e non era nel piano.
+
+**Seme dell'analisi.** Il seme 20261108 dei bootstrap e' stato scelto durante l'analisi. Con 5 compiti gli
+intervalli coincidono con il bootstrap esatto (tutti i 3125 ricampionamenti), quindi le cifre non dipendono dal
+seme; dalle misure successive il seme e' fissato prima (`PROTOCOLLO.md` §10).
+
 
 ---
 

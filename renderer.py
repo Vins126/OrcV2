@@ -383,3 +383,148 @@ def evaluate_site(workspace: Path, script: Path, *, runner: Runner = subprocess.
         return _leggi_valutazione(out, esito.stderr or "")
     finally:
         shutil.rmtree(temporanea, ignore_errors=True)
+
+
+# ── Riquadri della pagina intera, solo per il giudice (MH-4, P6-D1 d) ──────
+# Il giudizio principale resta sugli screenshot di `render_site`, su cui il giudice
+# e' stato calibrato (R1.9). I riquadri servono al giudizio di sensibilita': stessa
+# copia del workspace, stessi limiti del container e stessa vetrina, ma un'immagine
+# e uno script propri, cosi' `orc-renderer:r1` (view_site, cancello, valutazione)
+# resta identica a quella della campagna.
+
+#: Immagine dei riquadri: `docker/renderer.Dockerfile` con `render_tiles.py` in piu'.
+TILES_IMAGE = "orc-renderer:r1t"
+
+
+@dataclass(frozen=True)
+class TileSet:
+    """La pagina `/` a una larghezza, in riquadri dall'alto in basso.
+
+    Attributes:
+        height: altezza vera della pagina in pixel, anche oltre il tetto.
+        tiles: i riquadri copiati nella cartella d'uscita, in ordine.
+        truncated: la pagina continua oltre l'ultimo riquadro concesso.
+    """
+
+    width: int
+    height: int
+    tiles: tuple[Path, ...]
+    truncated: bool
+
+
+@dataclass(frozen=True)
+class TilesResult:
+    """Esito del rendering a riquadri; un sito che non parte ha `widths` vuoto."""
+
+    started: bool
+    start_error: str | None = None
+    widths: dict[int, TileSet] = field(default_factory=dict)
+    versions: dict[str, str] = field(default_factory=dict)
+    vetrina: str | None = None
+
+
+def tiles_command(site: Path, out: Path, name: str, *, max_tiles: int, script: Path | None = None,
+                  code: Path | None = None, image: str = TILES_IMAGE,
+                  start_timeout: int = START_TIMEOUT_S) -> list[str]:
+    """Il `docker run` dei riquadri: quello di `docker_command`, con immagine, script e tetto propri.
+
+    Si parte dal comando del renderer invece di riscriverlo, cosi' rete, utente,
+    limiti e volumi restano gli stessi per costruzione.
+    """
+    comando = docker_command(site, out, name, image=image, start_timeout=start_timeout,
+                             script=script, code=code)
+    comando[comando.index("/opt/orc/render_site.py")] = "/opt/orc/render_tiles.py"
+    return [*comando, "--max-tiles", str(max_tiles)]
+
+
+def _leggi_riquadri(out: Path, out_dir: Path, stderr: str) -> TilesResult:
+    """Legge `result.json` di `render_tiles.py` e copia i riquadri in `out_dir`.
+
+    Raises:
+        RenderError: file mancante, non JSON, senza i campi attesi o con un riquadro mancante.
+    """
+    file = out / "result.json"
+    if not file.is_file():
+        raise RenderError(f"il renderer non ha scritto result.json; stderr: {stderr.strip()[-500:]!r}")
+    try:
+        dati = json.loads(file.read_text())
+    except json.JSONDecodeError as errore:
+        raise RenderError(f"result.json non e' JSON valido: {errore}") from errore
+    if not isinstance(dati, dict) or not isinstance(dati.get("started"), bool):
+        raise RenderError("result.json senza il campo 'started'")
+    vetrina = str(dati["vetrina"]) if dati.get("vetrina") is not None else None
+    versioni = dict(dati.get("versions") or {})
+    if not dati["started"]:
+        return TilesResult(started=False, start_error=str(dati.get("start_error") or "non partito"),
+                           versions=versioni, vetrina=vetrina)
+    grezze = dati.get("widths")
+    if not isinstance(grezze, dict) or {str(w) for w in WIDTHS} - set(grezze):
+        raise RenderError(f"result.json senza i riquadri di tutte le larghezze {WIDTHS}")
+    larghezze: dict[int, TileSet] = {}
+    for w in WIDTHS:
+        voce = grezze[str(w)]
+        try:
+            altezza, nomi, taglio = voce["height"], voce["tiles"], voce["truncated"]
+        except (KeyError, TypeError) as errore:
+            raise RenderError(f"riquadri della larghezza {w} incompleti: {errore}") from errore
+        if (not isinstance(altezza, int) or isinstance(altezza, bool) or not isinstance(taglio, bool)
+                or not isinstance(nomi, list) or not nomi):
+            raise RenderError(f"riquadri della larghezza {w} non validi")
+        copie = []
+        for nome in nomi:
+            sorgente = out / Path(str(nome)).name
+            if not sorgente.is_file():
+                raise RenderError(f"riquadro mancante: {sorgente.name}")
+            copie.append(out_dir / sorgente.name)
+            shutil.copyfile(sorgente, copie[-1])
+        larghezze[w] = TileSet(width=w, height=altezza, tiles=tuple(copie), truncated=taglio)
+    return TilesResult(started=True, widths=larghezze, versions=versioni, vetrina=vetrina)
+
+
+def render_tiles(workspace: Path, out_dir: Path, *, max_tiles: int, script: Path | None = None,
+                 runner: Runner = subprocess.run, image: str = TILES_IMAGE,
+                 start_timeout: int = START_TIMEOUT_S, timeout: int = RENDER_TIMEOUT_S,
+                 limiter: ContainerLimiter | None = None) -> TilesResult:
+    """Avvia il sito di `workspace` e ne salva la pagina `/` in riquadri, su una copia.
+
+    Args:
+        workspace: cartella consegnata dal braccio, con `start.sh` nella radice.
+        out_dir: dove copiare i riquadri (creata se manca).
+        max_tiles: tetto di riquadri per larghezza.
+        script: script del compito; se ha una `vetrina`, i riquadri si fanno dopo.
+
+    Raises:
+        SandboxSlotTimeout: nessun posto libero entro l'attesa del limitatore.
+        RenderError: guasto (tempo scaduto, risultato mancante o illeggibile).
+    """
+    sorgente = Path(workspace)
+    if not (sorgente / "start.sh").is_file():
+        return TilesResult(started=False, start_error="start.sh mancante nella radice del workspace")
+    destinazione = Path(out_dir)
+    destinazione.mkdir(parents=True, exist_ok=True)
+    temporanea = Path(tempfile.mkdtemp(prefix="orc-tiles-"))
+    try:
+        site = temporanea / "site"
+        out = temporanea / "out"
+        shutil.copytree(sorgente, site, symlinks=True)
+        out.mkdir()
+        codice = None
+        if script is not None:
+            codice = temporanea / "py"
+            _copia_codice(codice)
+            script = Path(script).resolve()
+        nome = f"orc-tiles-{uuid.uuid4().hex[:12]}"
+        comando = tiles_command(site, out, nome, max_tiles=max_tiles, script=script, code=codice,
+                                image=image, start_timeout=start_timeout)
+        limitatore = limiter if limiter is not None else shared_limiter()
+        with limitatore.slot():
+            try:
+                esito = runner(comando, capture_output=True, text=True, timeout=timeout)
+            except BaseException as errore:
+                remove_container(nome, runner)
+                if isinstance(errore, subprocess.TimeoutExpired):
+                    raise RenderError(f"tempo scaduto dopo {timeout} s: container {nome} rimosso") from errore
+                raise
+        return _leggi_riquadri(out, destinazione, esito.stderr or "")
+    finally:
+        shutil.rmtree(temporanea, ignore_errors=True)

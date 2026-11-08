@@ -20,6 +20,17 @@ Nota di design (tesi):
     A fine ondata il controllo dei file (S3, task 7, P31-D1) segnala modifiche ai file
     di pezzi di ondate gia' chiuse (P48-D1) e file temporanei senza proprietario; le segnalazioni
     fanno partire la correzione S2 se il tetto lo consente.
+    Migliorie dopo la campagna MVP (8 nov 2026, versione nuova di C da dichiarare, D42):
+      - MS-1: le chiavi non-rotta del contratto diventano note comuni invece di far rifiutare
+        il piano (`swarm_plan.parse_plan`); i worker le vedono.
+      - MS-3: lo scheletro e' solo cablaggio e finisce quando la build passa.
+      - MS-5: tanti posti quanti la sandbox (`config.DOCKER_MAX_CONCURRENT`); in un'ondata
+        partono prima i pezzi del worker forte, poi l'interfaccia, poi i server; a parita' la
+        descrizione piu' lunga prima.
+      - MS-6: niente pezzi di build: dopo l'ultima ondata `npm run build` lo esegue il codice
+        (`build_site`), e una build fallita fa partire la correzione con l'errore.
+      - MS-7: il planner copia parola per parola i `data-testid` del compito; il compito vince
+        sulla descrizione del pezzo (842: il piano rendeva `replay-play` condizionale).
     Limiti: fra pezzi della stessa ondata non si sa chi ha scritto un file;
     le cartelle in IGNORED_DIRS non si controllano.
 """
@@ -34,11 +45,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import config
 from accounting import ModelRegistry
 from agent_factory import Team
+from executors.docker import DockerExecutor
 from gate import GateVerdict, check_site
 from parallel_runner import Admission, JobOutcome, run_parallel
 from swarm_plan import Piece, Plan, PlanError, contract_routes, parse_plan, waves
+from tools.bash import truncate_output
 from tools.load_skill import REQUIRED_SKILLS_PLANNER, REQUIRED_SKILLS_WORKER
 
 WORKER_ROLES = ("worker", "worker_cheap")
@@ -47,6 +61,9 @@ PLANNER_ROLE = "planner"
 MAX_PLAN_ATTEMPTS = 3
 SWARM_DIR = "sciame"
 IGNORED_DIRS = frozenset({"node_modules", "dist", ".taste-skill", ".git", ".vite", "__pycache__"})
+STRONG_WORKER = "worker"
+BUILD_COMMAND = "npm run build"
+BUILD_OUTPUT_CHARS = 4000
 
 
 def snapshot(workspace: Path) -> dict[str, str]:
@@ -102,18 +119,32 @@ def planner_prompt(task_prompt: str, registry: ModelRegistry, routes: Sequence[s
         "Produce ONLY a JSON plan. Do not write files.",
         'Format: {"style": "shared visual style", '
         '"contract": {"GET /api/items": "200 [{\\"id\\": number, \\"name\\": string}]"}, '
+        '"notes": {"errors": "every error is 4xx {\\"error\\": string}"}, '
         '"pieces": [{"id": "skeleton", '
         '"files": ["start.sh"], "depends_on": [], "description": "...", '
         '"routes": [], "worker": "worker_cheap"}]}',
-        "R3.1 (a): first create a shared skeleton piece: start.sh, package.json or equivalent, "
-        "a server with empty contract routes, layout and stylesheet. Then parallel pieces: "
+        "R3.1 (a): first create a shared skeleton piece with only the wiring: start.sh, "
+        "package.json with a build script, the build configuration, index.html, the entry file, "
+        "the app shell with the routes or sections, a server with empty contract routes, and the "
+        "stylesheet with the shared tokens. The skeleton writes no visual components and no section "
+        "content; for each file of another piece that the shell imports it writes a placeholder of "
+        "a few lines that the owner replaces. It does not inspect the site visually: it finishes "
+        "when npm run build succeeds and start.sh serves /. Then parallel pieces: "
         "one interface section per file and one server module per contract resource. "
         "Make those pieces depend on the skeleton; declare any further dependencies.",
+        "Do not create build, integration or verification pieces: after the last piece the "
+        "orchestrator runs npm run build and checks the site itself.",
         "Files must be disjoint across pieces. Assign each contract route to exactly one piece. "
         "The skeleton provides the empty wiring; the resource piece owns the route implementation.",
         'In "contract" write, for every contract route, the exact response shape: '
         "status codes and JSON fields with their types, for success and errors. "
-        "Server and interface pieces must follow it exactly.",
+        "Server and interface pieces must follow it exactly. "
+        'Keys of "contract" are routes only ("METHOD /path"); put rules shared by several routes '
+        '(error shape, persistence) in "notes".',
+        "data-testid markers: in the description of each piece, copy verbatim the rows of the "
+        "task's data-testid table that the piece is responsible for and every task rule that "
+        "mentions them; do not reword them and do not add conditions the task does not state "
+        "(for example, do not render an element only in some states unless the task says so).",
         "Contract routes:", *routes, "Available workers:", *prices,
         "On the Design Arena Website leaderboard Kimi K3.1 Pro is about 15 Elo above "
         "DeepSeek V4.1 Flash (about 52% of head-to-head preferences) at 13-17 times the price",
@@ -130,6 +161,8 @@ def worker_prompt(task_prompt: str, plan: Plan, piece: Piece) -> str:
     others = [f"{other.id}: {', '.join(other.files)}" for other in plan.pieces if other.id != piece.id]
     contract = (["ROUTE CONTRACT", *[f"{route}: {shape}" for route, shape in plan.contract.items()]]
                 if plan.contract else [])
+    notes = (["SHARED NOTES", *[f"{name}: {text}" for name, text in plan.notes.items()]]
+             if plan.notes else [])
     # Chi e' solo nella sua ondata non deve aspettare nessuno: lo scheletro di 842 (campagna MVP,
     # 8 nov 2026) ha atteso 300 s i file di pezzi che partono solo dopo di lui.
     wave = next(batch for batch in waves(plan) if piece in batch)
@@ -140,8 +173,12 @@ def worker_prompt(task_prompt: str, plan: Plan, piece: Piece) -> str:
         "TASK", task_prompt, "SHARED STYLE", plan.style,
         "YOUR PIECE", piece.id, piece.description,
         "YOUR FILES", *piece.files, "YOUR ROUTES", *piece.routes,
-        *contract,
+        *contract, *notes,
         "OTHER PIECES (id and files)", *others,
+        # 842 (campagna MVP): il piano rendeva `replay-play` visibile solo da fermo, contro il
+        # compito, e il worker ha seguito il piano.
+        "If YOUR PIECE contradicts the TASK (for example on a data-testid or on when an element "
+        "is shown), follow the TASK.",
         "Write only your own files. " + company +
         "Do not modify files owned by other pieces. The skeleton writes start.sh. "
         "Never hide, disable or restyle other pieces to inspect your own; "
@@ -153,19 +190,21 @@ def worker_prompt(task_prompt: str, plan: Plan, piece: Piece) -> str:
 
 def escalation_prompt(task_prompt: str, plan: Plan, reason: str | None,
                       incomplete: Mapping[str, str],
-                      file_issues: Mapping[str, str] | None = None) -> str:
+                      file_issues: Mapping[str, str] | None = None,
+                      build_error: str | None = None) -> str:
     """Chiede una correzione sul sito gia' consegnato."""
     rejection = ["GATE REJECTION", reason] if reason else []
+    build = ["BUILD FAILURE", build_error] if build_error else []
     unfinished = (["INCOMPLETE PIECES", *[
         f"{piece.id}: {incomplete[piece.id]} (files: {', '.join(piece.files)})"
         for piece in plan.pieces if piece.id in incomplete]] if incomplete else [])
     files = (["FILE ISSUES", *[f"{path}: {issue}" for path, issue in file_issues.items()]]
              if file_issues else [])
     return "\n".join([
-        "TASK", task_prompt, "PLAN", json.dumps(asdict(plan)), *rejection, *unfinished, *files,
+        "TASK", task_prompt, "PLAN", json.dumps(asdict(plan)), *rejection, *build, *unfinished, *files,
         "Fix the existing site in this shared workspace. Complete the incomplete pieces. "
         "Remove temporary code (for example rules hiding sections) and any temporary, backup "
-        "or preview files left by workers. Finish when start.sh starts the site, "
+        "or preview files left by workers. Finish when npm run build succeeds, start.sh starts the site, "
         "/ responds with HTTP status below 400 and there are no JavaScript errors. "
         "You may use view_site to inspect the site. "
         "Restore files changed by a piece that does not own them if that breaks the owner's work, "
@@ -173,10 +212,42 @@ def escalation_prompt(task_prompt: str, plan: Plan, reason: str | None,
     ])
 
 
+def build_site(workspace: Path) -> dict | None:
+    """Esegue `npm run build` nella sandbox degli agenti, senza rete (MS-6).
+
+    Restituisce l'esito dell'esecutore (`stdout`, `stderr`, `exit_code`), oppure `None` se il
+    workspace non dichiara uno script `build` in `package.json`: un sito statico non si costruisce.
+    """
+    try:
+        scripts = json.loads((Path(workspace) / "package.json").read_text(encoding="utf-8")).get("scripts")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(scripts, dict) or "build" not in scripts:
+        return None
+    executor = DockerExecutor(
+        str(workspace), image=config.DOCKER_IMAGE, timeout=config.EXEC_TIMEOUT,
+        memory=config.DOCKER_MEMORY, pids_limit=config.DOCKER_PIDS_LIMIT,
+        shm_size=config.DOCKER_SHM_SIZE, network="none")
+    return executor.run(BUILD_COMMAND)
+
+
+def launch_order(batch: Sequence[Piece]) -> list[Piece]:
+    """Ordine di partenza in un'ondata: prima i pezzi che dureranno di piu' (MS-5).
+
+    Dalla campagna MVP: i pezzi del worker forte erano i piu' lunghi (000040 `ui-cart` e' partito
+    dopo 16 minuti di coda), i pezzi d'interfaccia duravano 6-16 minuti e quelli di server 1-3.
+    A parita', la descrizione piu' lunga prima; l'ordinamento e' stabile, quindi a pari chiave
+    resta l'ordine del piano.
+    """
+    return sorted(batch, key=lambda piece: (piece.worker != STRONG_WORKER, bool(piece.routes),
+                                            -len(piece.description)))
+
+
 def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
               budget_usd: float | None, max_iterations: int | None = None,
-              max_parallel: int = 4,
-              gate: Callable[[Path, Path], GateVerdict] = check_site) -> SwarmResult:
+              max_parallel: int = config.DOCKER_MAX_CONCURRENT,
+              gate: Callable[[Path, Path], GateVerdict] = check_site,
+              build_site: Callable[[Path], dict | None] = build_site) -> SwarmResult:
     """Esegue il piano per ondate, con spesa condivisa e registro dal thread chiamante."""
     team = Team(budget_usd)
     log_path = Path(out_dir) / SWARM_DIR / "swarm.jsonl"
@@ -232,6 +303,7 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
         else:
             error = str(result.status)
         emit("plan", attempt=attempt, valid=plan is not None, error=error,
+             notes=sorted(plan.notes) if plan is not None else [],
              agent_id=planner.agent_id, run_id=run_id(planner))
         if result.status != "completed":
             return finish("budget_exhausted" if result.status == "budget_exhausted" else "plan_failed")
@@ -298,7 +370,8 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
                 piece_event(outcome.job, wave, "unexpected_error",
                             error_type=type(outcome.error).__name__)
 
-        outcomes = run_parallel(ready, work, max_workers=max_parallel, admit=admit, on_done=on_done)
+        outcomes = run_parallel(launch_order(ready), work, max_workers=max_parallel, admit=admit,
+                                on_done=on_done)
         after = snapshot(workspace)
         changed = sorted(path for path in before.keys() | after.keys()
                          if before.get(path) != after.get(path))
@@ -328,6 +401,31 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
         emit("gate", phase=phase, accepted=verdict.accepted, reason=verdict.reason)
         return verdict
 
+    def run_build(phase: str) -> str | None:
+        # La build non costa dollari: gira anche al tetto, cosi' si consegna il sito costruito.
+        # Un guasto (Docker, timeout) si registra e non e' un errore del sito, come per il cancello.
+        try:
+            outcome = build_site(workspace)
+        except Exception as error:
+            emit("build", phase=phase, exit_code=None, skipped=False, error=str(error))
+            return None
+        if outcome is None:
+            emit("build", phase=phase, exit_code=None, skipped=True, error=None)
+            return None
+        code = outcome.get("exit_code")
+        # Un esito senza codice intero (una build iniettata scritta male) e' un guasto, non un rifiuto.
+        if not isinstance(code, int) or isinstance(code, bool):
+            emit("build", phase=phase, exit_code=None, skipped=False, error=f"exit_code non valido: {code!r}")
+            return None
+        emit("build", phase=phase, exit_code=code, skipped=False, error=None)
+        if code == 0:
+            return None
+        output = f"{outcome.get('stdout', '')}\n{outcome.get('stderr', '')}".strip()
+        # L'errore di Vite sta in testa, lo stack di esbuild in coda: si tengono entrambi.
+        return (f"{BUILD_COMMAND} exited with {code}:\n"
+                f"{truncate_output(output, BUILD_OUTPUT_CHARS, BUILD_OUTPUT_CHARS // 2)}")
+
+    build_error = run_build("initial")
     verdict = inspect("initial")
     accepted = verdict is not None and verdict.accepted
 
@@ -342,14 +440,16 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
 
     incomplete = {piece.id: states[piece.id] for piece in plan.pieces if not finished(piece)}
     rejected = verdict is not None and not verdict.accepted
-    if not (budget_stop or exhausted or at_limit()) and (rejected or incomplete or file_issues):
+    if not (budget_stop or exhausted or at_limit()) and (rejected or incomplete or file_issues
+                                                         or build_error):
         escalated = True
         agent = None
         error_type = None
         try:
             agent = build(PLANNER_ROLE, REQUIRED_SKILLS_WORKER)
             reason = verdict.reason if verdict is not None and not verdict.accepted else None
-            result = agent.assign(escalation_prompt(prompt, plan, reason, incomplete, file_issues),
+            result = agent.assign(escalation_prompt(prompt, plan, reason, incomplete, file_issues,
+                                                    build_error),
                                   max_iterations=max_iterations)
             status = str(result.status)
         except Exception as error:
@@ -360,5 +460,6 @@ def run_swarm(factory: Any, prompt: str, workspace: Path, out_dir: Path, *,
              run_id=run_id(agent) if agent is not None else None, status=status,
              cost=agent.accountant.total_cost if agent is not None else 0.0, error_type=error_type,
              incomplete=incomplete, file_issues=file_issues)
+        run_build("after_escalation")
         verdict = inspect("after_escalation")
     return finish("budget_exhausted" if budget_stop or exhausted else "completed", verdict)

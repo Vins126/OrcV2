@@ -11,6 +11,20 @@ class PlanError(Exception):
     """Il piano non rispetta il contratto richiesto."""
 
 
+ROUTE_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+
+
+def is_route(text: str) -> bool:
+    """Vero per «METODO /percorso»: le altre chiavi del contratto sono note comuni."""
+    parts = text.replace("`", "").strip().split(maxsplit=1)
+    return len(parts) == 2 and parts[0].upper() in ROUTE_METHODS and parts[1].strip().startswith("/")
+
+
+def _as_text(value: object) -> str:
+    """Una nota resta testo; un valore JSON di altro tipo si riscrive come JSON."""
+    return value.strip() if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
 def normalize_route(text: str) -> str:
     """Uniforma metodo e percorso, eliminando backtick e query."""
     parts = text.replace("`", "").strip().split(maxsplit=1)
@@ -31,7 +45,7 @@ def contract_routes(prompt: str) -> tuple[str, ...]:
             active = line.strip() == "## Routes contract"
         elif active and line.strip().startswith("|"):
             cells = [cell.strip().replace("`", "") for cell in line.strip().split("|")[1:-1]]
-            if len(cells) >= 2 and cells[0].upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+            if len(cells) >= 2 and cells[0].upper() in ROUTE_METHODS:
                 route = normalize_route(f"{cells[0]} {cells[1]}")
                 if route not in routes:
                     routes.append(route)
@@ -52,11 +66,17 @@ class Piece:
 
 @dataclass(frozen=True)
 class Plan:
-    """Stile comune e pezzi nell'ordine scelto dal planner."""
+    """Stile comune e pezzi nell'ordine scelto dal planner.
+
+    `notes` sono regole comuni a piu' rotte o pezzi (forma degli errori, persistenza): il
+    planner le scrive in `notes` o, come nella campagna MVP, come chiavi non-rotta di
+    `contract` (MS-1, 8 nov 2026).
+    """
 
     style: str
     pieces: tuple[Piece, ...]
     contract: dict[str, str] = field(default_factory=dict)
+    notes: dict[str, str] = field(default_factory=dict)
 
 
 def parse_plan(text: str, *, routes: Sequence[str], workers: Sequence[str]) -> Plan:
@@ -119,8 +139,19 @@ def parse_plan(text: str, *, routes: Sequence[str], workers: Sequence[str]) -> P
     raw_contract = data.get("contract", {})
     if not isinstance(raw_contract, dict):
         raise PlanError("contract deve essere un oggetto JSON")
+    raw_notes = data.get("notes", {})
+    if not isinstance(raw_notes, dict):
+        raise PlanError("notes deve essere un oggetto JSON")
+    notes = {str(name): _as_text(text) for name, text in raw_notes.items()}
     contract: dict[str, str] = {}
     for route, shape in raw_contract.items():
+        # Campagna MVP: 4 piani su 5 rifiutati per `COMMON` o `_persistence` nel contratto, e
+        # il secondo tentativo costava 0,99 $ in tutto. Una regola comune non e' un errore del
+        # piano: si sposta nelle note, e il registro dice quali chiavi sono state spostate.
+        if not is_route(route):
+            # Una nota esplicita con lo stesso nome non si cancella: questa prende un nome distinto.
+            notes[f"contract {route}" if route in notes else route] = _as_text(shape)
+            continue
         normalized = normalize_route(route)
         if not isinstance(shape, str) or not shape.strip():
             raise PlanError(f"{normalized}: forma della risposta non valida")
@@ -129,7 +160,7 @@ def parse_plan(text: str, *, routes: Sequence[str], workers: Sequence[str]) -> P
         normalized = normalize_route(route)
         if normalized not in contract:
             raise PlanError(f"{normalized}: forma della risposta mancante")
-    return Plan(plan.style, plan.pieces, contract)
+    return Plan(plan.style, plan.pieces, contract, notes)
 
 
 def _levels(plan: Plan) -> dict[str, int]:

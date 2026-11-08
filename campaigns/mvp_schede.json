@@ -1,0 +1,57 @@
+{
+  "7de26441f6726ee268849e09ad0a74942606d0cc330cc70fd1eb9be19d9a16c2": {
+    "task": "000098",
+    "title": "Noleggio auto",
+    "objective": "Sfogliare auto di tipi diversi, scegliere date e orari, prenotare, pagare e vedere le proprie prenotazioni.",
+    "lookFor": [
+      "Catalogo delle auto chiaro",
+      "Scelta di date e pagamento comprensibile",
+      "Elenco delle prenotazioni leggibile"
+    ],
+    "note": null
+  },
+  "6366bebf3710af87426806fc368f56a7fd50aeae2dfcba1cd6da60808656fe6c": {
+    "task": "000040",
+    "title": "Sito di una societa' di consulenza",
+    "objective": "Presentare formazione su leadership e business (workshop, corsi, podcast, blog) e permettere di acquistarla.",
+    "lookFor": [
+      "Sezioni riconoscibili",
+      "Servizi e prezzi facili da trovare",
+      "Carrello e acquisto chiari"
+    ],
+    "note": null
+  },
+  "ec2940f4e612ac6d8046dee25cf05800a68b7e3f51be3411634ff7147302a9e5": {
+    "task": "000058",
+    "title": "Coaching uno a uno",
+    "objective": "Test di personalita', profilo, scelta di un coach, prenotazione di sessioni e obiettivi con avanzamento.",
+    "lookFor": [
+      "Percorso fra le funzioni chiaro",
+      "Schede dei coach leggibili",
+      "Obiettivi e avanzamento visibili"
+    ],
+    "note": null
+  },
+  "c9d3a170e569bccd4c8abcbc852bb5bd8fdb1b6cf2303cadf3b96ec773443dc2": {
+    "task": "842",
+    "title": "Console di sicurezza",
+    "objective": "Due moduli: stato dei partecipanti con heartbeat e grafico dei tempi di cifratura; riproduzione delle operazioni su una timeline e differenze di configurazione.",
+    "lookFor": [
+      "Distinzione dei due moduli",
+      "Stato e grafico leggibili",
+      "Timeline e differenze evidenziate"
+    ],
+    "note": null
+  },
+  "59f311d60446602d2508bc457589253d72a004b2df40458df3ae33f9d3a9be1a": {
+    "task": "684",
+    "title": "Etichette per i file",
+    "objective": "Caricare file, dare a ciascuno piu' etichette e filtrare la lista per etichetta.",
+    "lookFor": [
+      "Lista dei file ordinata",
+      "Etichette ben visibili",
+      "Filtro comprensibile"
+    ],
+    "note": null
+  }
+}

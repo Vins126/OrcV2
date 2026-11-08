@@ -126,7 +126,17 @@ sviluppo, la regola di spesa, la valutazione invisibile ai bracci.
    842 e 684 e' stato eseguito con queste correzioni, C su 000098, 000040 e 000058 senza: va dichiarato.
    **Problema aperto:** l'agente si ferma solo quando il modello chiude da se'; D arriva sempre al limite
    di 80 iterazioni con il lavoro gia' finito.
-   **Prossimo:** giudice sulle coppie, V, analisi §10.
+   **Giudizio a coppie, 8 nov 2026:** ✅ coppie C-B e D-B sui 5 compiti in entrambi gli ordini, 20 chiamate
+   (GPT-6.1 Sol via Codex, D52). Mappa delle run valide e seme in `campaigns/mvp_giudizio.toml`, schede dei
+   compiti in `campaigns/mvp_schede.json` (dal §1 dei materiali di `campaigns/r1_valutazione/`), comando
+   `campaign.py judge-runs`; piano congelato con l'impronta di ogni immagine in `runs/giudizio-mvp/coppie.json`,
+   giudizi in `runs/giudizio-mvp/giudizi.jsonl`. Voto dalla parte del braccio in prova (+2 molto meglio di B):
+   C-B media −0,50 (000040 +1,5; 000058 −1,5; 000098 +1,0; 684 −2,0; 842 −1,5); D-B media +0,40 (000040 +1,0;
+   000058 +1,0; 000098 +1,0; 684 −1,0; 842 0). 0 non valutabili, 0 tempi scaduti, 387 s. In 9 coppie su 10 i
+   due ordini danno direzioni opposte come atteso; in D-B/842 il giudice preferisce la seconda posizione in
+   entrambi (pari per posizione). «Piace» resta descrittiva (`PROTOCOLLO.md` §6). La motivazione testuale
+   del giudice non e' conservata (come in calibrazione). Consumo della finestra di Codex non misurato.
+   **Prossimo:** V, analisi §10.
 8. **Facoltativo, se avanza tempo:** braccio H (R2.7).
 
 **Tolto e passato a lavoro futuro (↪️).** R2.1b (genera immagine); pilota R2.4, sostituito dalla run di prova;
@@ -153,6 +163,104 @@ R6.4); H se non c'e' tempo.
 - [x] Piano, ondate, escalation e tetto di squadra coperti da test con modelli finti (3 nov).
 - [ ] B, D e C eseguiti sui 5 compiti con costo misurato; V composta; coppie C-B e D-B giudicate.
 - [ ] Tabella costo, «funziona», «piace» per braccio e grafico costo-qualita'; limiti scritti nella tesi.
+
+---
+
+## Migliorie proposte dopo la campagna MVP (8 novembre 2026) ⬜ da ordinare
+
+**Origine.** Lettura dei registri delle 15 run valide (registri delle run, `sciame/swarm.jsonl`, `valutazione.json`,
+workspace e screenshot; analisi locale in `runs/analisi-mvp/`, cartella non versionata). Le cifre di effetto sono
+**stime calcolate sui registri**, non misure: diventano dati solo con nuove run. Nessuna di queste voci cambia le run
+gia' fatte. **Regola di parita' (D42):** una miglioria dell'harness si da' a tutti i bracci e richiede di rifare B, C
+e D; una miglioria dello sciame tocca solo C e produce una versione nuova di C, da dichiarare accanto alla campagna.
+Ordine e scelta da decidere; nessuna e' ancora approvata.
+
+### Sciame (solo C)
+
+Scelte dell'8 nov 2026 dopo la verifica dei registri e la ricerca (fonti nel registro della sessione). Le voci 🟨
+sono nel codice (`swarm.py`, `swarm_plan.py`, test con modelli e Docker finti) e formano una **versione nuova di C**,
+da dichiarare accanto alla campagna MVP; nessuna e' ancora misurata con modelli veri.
+
+- 🟨 **MS-1 — Piano accettato al primo tentativo.** In 4 compiti su 5 il primo piano era rifiutato per chiavi di
+  `contract` che non sono rotte (`COMMON`, `_persistence`). Correzione della stima: aggiustare il piano risparmia il
+  costo del *secondo* tentativo, 0,99 $ (14% di C) e circa 1 minuto a compito, non 1,93 $ (il primo si paga
+  comunque). Fatto: una chiave non-rotta diventa una nota comune del piano (`notes`), il registro `plan` la nomina,
+  i worker vedono le note; il prompt del planner dice che le chiavi di `contract` sono solo rotte.
+- 🟨 **MS-2 — Correzione evitata quando lo scheletro arriva al limite ma il sito e' accettato.** Nel codice dall'8
+  nov. Stima: −1,34 $ e −3,5 minuti su 000040 e 000058.
+- 🟨 **MS-3 — Scheletro solo cablaggio.** Gli scheletri arrivati a 80 iterazioni possedevano 16 e 13 file (000040
+  anche componenti condivisi e 17 `view_site`); quelli chiusi da soli 12 e 9. Fatto: il prompt del planner limita
+  lo scheletro al cablaggio, con segnaposto di poche righe e senza controlli visivi; finisce quando la build passa.
+  Nessun tetto di iterazioni proprio (vedi MH-1). Su 000098 lo scheletro chiude `service_unavailable` dentro la
+  finestra dello stop della macchina: guasto di fornitura, non difetto dello scheletro.
+- ⬜ **MS-4 — Worker intermedio.** Kimi K3.1 Pro resta fra le scelte del planner (scelta dell'8 nov). Dato da
+  tenere presente: i suoi 2 pezzi costano 1,05 $, di cui 0,68 $ dopo l'ultima scrittura di file.
+- 🟨 **MS-5 — Piu' pezzi in parallelo e pezzi lunghi prima.** Le cause dell'attesa erano tre: 4 posti contro 6,
+  coda nell'ordine del piano (su 000040 `ui-cart` parte dopo 16 minuti di coda), barriera fra ondate. Fatto: posti
+  = `config.DOCKER_MAX_CONCURRENT`; in un'ondata partono prima i pezzi del worker forte, poi l'interfaccia, poi i
+  server. La barriera resta (togliere le ondate cambierebbe il controllo dei file a fine ondata). Stima a mano su
+  000040: pezzi e build finiti a ~40 minuti invece di 53.
+- 🟨 **MS-6 — Build dal codice.** Fatto: il planner non crea pezzi di build o verifica; dopo l'ultima ondata lo
+  sciame esegue `npm run build` nella sandbox, senza rete (evento `build` nel registro). Una build fallita fa partire
+  la correzione con l'errore; un guasto della build si registra e non la fa partire; dopo la correzione la build si
+  ripete. Provato su una copia di un workspace consegnato: build riuscita in circa 3 s, e build con un file rotto
+  riportata con file, riga e messaggio.
+- 🟨 **MS-7 — `data-testid` del compito.** Correzione della diagnosi: su 842 `replay-play` mancava all'apertura
+  perche' il piano lo rendeva visibile solo a riproduzione ferma, mentre il prompt rende condizionale solo
+  `replay-pause`; il worker ha seguito il piano. Fatto: il planner copia parola per parola righe e regole dei
+  `data-testid` nei pezzi, senza aggiungere condizioni, e il worker segue il compito se il pezzo lo contraddice. Il
+  controllo nel browser dei `data-testid` resta a MH-2 (cancello comune).
+- **Lavoro dopo l'ultima scrittura nei pezzi (stima sui registri).** Il 64% della spesa dei worker e il 61% del
+  loro tempo di modello cadono dopo l'ultima `write_file`: limite superiore, perche' i comandi bash lunghi non sono
+  registrati. Si risolve con MH-1 per tutti i bracci.
+- **Effetto complessivo stimato.** Con MS-1 e MS-2 il costo di C sui 5 compiti scenderebbe da 7,19 $ a circa
+  4,9 $ (C/B da 0,51 a circa 0,35); con MS-3, MS-5 e MS-6 il tempo su 000040 da 56 a circa 35-40 minuti. Stime,
+  da misurare con una run della versione nuova di C.
+
+### Harness (tutti i bracci)
+
+- **MH-1 — Regola d'arresto.** Un agente si ferma solo quando il modello chiude da se': D arriva sempre a 80
+  iterazioni e spende in media il 36% del costo dopo l'ultima scrittura di un file (stessa tendenza nei worker di C).
+  Proposta: chiusura quando il cancello accetta e da N iterazioni non si scrivono file. E' il problema aperto gia'
+  elencato sotto.
+- **MH-2 — Cancello con i requisiti pubblici del prompt.** Il cancello oggi accetta tutti e 5 i siti di D, compresi
+  quelli a 61 e 80 punti, quindi V coincide con D. Proposta: aggiungere colori di sfondo e componenti richiesti dal
+  prompt e presenza dei `data-testid` della tabella (informazioni pubbliche, D48). Ipotesi calcolata: D su 000040 e
+  000058 verrebbe respinto (passi falliti sui colori del prompt) e V farebbe 93,3 di «funziona» a 8,54 $ (61% di B),
+  contro C a 93,3 e 7,19 $: il confronto C contro V diventerebbe informativo.
+- **MH-3 — `read_file` per le immagini.** Gli agenti provano ad aprire i PNG dei propri screenshot con `read_file`,
+  che fallisce (`UnicodeDecodeError`); solo `view_site` mostra immagini. Proposta: restituire le immagini al modello.
+- **MH-4 — Screenshot del giudice omogenei.** Gli screenshot sono tagliati a 4000 px (B e C su 000058: il giudice non
+  vede la parte bassa) e mostrano sempre `/`, che non e' la stessa pagina per tutti (su 000040 `/` di D e' il
+  carrello). Proposta: altezza maggiore o piu' schermate, e la stessa rotta per tutti i bracci.
+  **Fatto l'8 nov come analisi di sensibilita'** (il giudizio principale resta quello calibrato, R1.9). Le immagini
+  tagliate sono 12 su 45, non 2. La rotta resta `/`: il compito non dice cosa debba esserci, e la pagina d'arrivo e'
+  quella che vede un utente. La pagina intera si divide in riquadri alti quanto la finestra (900 px) con
+  `docker/render_tiles.py` su `orc-renderer:r1t` (l'immagine della campagna piu' lo script; `r1`, `view_site` e
+  cancello invariati), sulle stesse 10 coppie, con lo stesso seme e gli stessi lati (`judge_tiles.py`, prompt
+  `campaigns/r1_giudice/voto_riquadri.txt`). Altezze vere delle pagine tagliate: fino a 9188 px (C su 000058 a 375 px).
+  20 chiamate, fino a 50 immagini per chiamata, 0 non valutabili. C-B: −0,50 come nel giudizio calibrato. D-B: −0,20
+  contro +0,40. Una coppia senza immagini tagliate (C-B/000098) cambia segno anch'essa: il cambio non si attribuisce
+  solo al taglio. «Piace» di D contro B non si distingue da 0; quello di C contro B regge al taglio.
+
+### Misura e tesi
+
+- **MM-1 — Coppie C-D al giudice.** ✅ 8 nov. 5 coppie, 10 chiamate Codex in entrambi gli ordini; da dichiarare come
+  aggiunte dopo i risultati della campagna. Mappa `campaigns/mvp_giudizio_cd.toml` (riferimento D, seme 20261109),
+  stesse immagini del giudizio C-B e D-B. Esito: C-D media −0,70 su 5 compiti (000040 +1,0; 000058 −1,5; 000098 −1,0;
+  684 −1,0; 842 −1,0), 0 non valutabili, 0 tempi scaduti, 539 s. Coerente con C-B −0,50 e D-B +0,40: nessun compito
+  con ordine circolare fra i tre bracci.
+- **MM-2 — Potenza.** Con lo scarto di «funziona» osservato (16,1 punti) e la differenza osservata (+1,7), il limite
+  basso della differenza C−B supera −10 in media con circa 8 compiti (approssimazione normale), ma con il test t
+  appaiato richiesto dal §10 ne servono 10, e per riuscirci 8 volte su 10 circa 15 (circa 21 se la differenza vera
+  fosse 0). Calcolo, non misura. Lavoro futuro, o seconda campagna.
+- **MM-3 — Semi delle analisi fissati prima.** ✅ 8 nov. Il seme del bootstrap dell'analisi dell'8 nov e' stato
+  scelto durante l'analisi: dichiarato in `PROTOCOLLO.md` §10, con il seme 20261021 fissato per le prossime misure.
+  Con 5 compiti gli intervalli coincidono con il bootstrap esatto, quindi le cifre non cambiano.
+- **MM-4 — Composizione di C da dichiarare.** Su 000098 lo scheletro (DeepSeek, 66 iterazioni, 14 file scritti) si
+  interrompe per connessione caduta (`service_unavailable`), gli altri 9 pezzi sono saltati, il cancello accetta il
+  sito e la correzione di Opus si interrompe a sua volta senza scrivere file (solo 3 `load_skill`): il sito
+  consegnato e' il solo scheletro di DeepSeek sul piano di Opus. Su quel compito C non ha lavorato come sciame.
 
 ---
 
